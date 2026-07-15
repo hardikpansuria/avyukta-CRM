@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import ClientRedirect from "./client-redirect";
 
 export default function Home() {
-  redirect("/login");
+  return <ClientRedirect href="/login" />;
 }
