@@ -6,6 +6,8 @@ import { verifySuperAdmin } from "@/lib/auth/verify-super-admin";
 
 import { SignOutButton } from "./sign-out-button";
 
+export const dynamic = "force-dynamic";
+
 export default async function SuperAdminDashboardLayout({
   children,
 }: Readonly<{

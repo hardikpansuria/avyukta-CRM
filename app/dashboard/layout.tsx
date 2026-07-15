@@ -6,6 +6,8 @@ import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 
 import { SignOutButton } from "./sign-out-button";
 
+export const dynamic = "force-dynamic";
+
 const roleLinks = {
   admin: [
     { href: "/dashboard", label: "Dashboard" },
