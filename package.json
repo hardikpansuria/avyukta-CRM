@@ -25,12 +25,10 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  {
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   }
-}
 }
