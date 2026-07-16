@@ -46,6 +46,8 @@ lib-cov
 # Build output and framework caches
 .next
 /.next/
+/.next/dev/
+/.next/types/
 out
 /out/
 /build
@@ -77,6 +79,10 @@ vite.config.ts.timestamp-*
 node-waf
 .lock-wscript
 *.tgz
+
+# Generated local artifacts
+/tmp/
+/output/
 
 # Environment files
 .env
