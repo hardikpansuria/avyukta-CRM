@@ -11,10 +11,17 @@ export const dynamic = "force-dynamic";
 const roleLinks = {
   admin: [
     { href: "/dashboard", label: "Dashboard" },
+    { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/employees", label: "Employees" },
   ],
-  accountant: [{ href: "/dashboard", label: "Dashboard" }],
-  sales: [{ href: "/dashboard", label: "Dashboard" }],
+  accountant: [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/dashboard/customers", label: "Customers" },
+  ],
+  sales: [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/dashboard/customers", label: "Customers" },
+  ],
 };
 
 export default async function DashboardLayout({
