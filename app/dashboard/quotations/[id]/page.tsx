@@ -4,7 +4,11 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  DownloadIcon,
+  PrinterIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +29,10 @@ import {
   quotationStatuses,
   SectionCard,
 } from "../quotation-ui";
+import {
+  downloadQuotationPdf,
+  printQuotation,
+} from "../quotation-document";
 
 type Profile = {
   full_name?: string | null;
@@ -200,6 +208,7 @@ export default function QuotationDetailPage() {
   const [isWorking, setIsWorking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -273,6 +282,7 @@ export default function QuotationDetailPage() {
   const noteSections = detail.note_sections ?? [];
   const statusHistory = detail.status_history ?? [];
   const revisions = detail.revisions ?? [];
+  const printableDetail = detail;
 
   async function updateStatus() {
     setError(null);
@@ -326,6 +336,27 @@ export default function QuotationDetailPage() {
     }
   }
 
+  function handlePrint() {
+    setError(null);
+
+    if (!printQuotation(printableDetail)) {
+      setError("Unable to open the print window. Please allow pop-ups and try again.");
+    }
+  }
+
+  async function handleDownloadPdf() {
+    setError(null);
+    setIsDownloading(true);
+
+    try {
+      await downloadQuotationPdf(printableDetail);
+    } catch {
+      setError("Unable to generate the quotation PDF.");
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl pb-24">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -339,6 +370,25 @@ export default function QuotationDetailPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            className="h-10 rounded-md"
+            type="button"
+            variant="outline"
+            onClick={handlePrint}
+          >
+            <PrinterIcon className="size-4" />
+            Print
+          </Button>
+          <Button
+            className="h-10 rounded-md"
+            disabled={isDownloading}
+            type="button"
+            variant="outline"
+            onClick={() => void handleDownloadPdf()}
+          >
+            <DownloadIcon className="size-4" />
+            {isDownloading ? "Preparing PDF..." : "Download PDF"}
+          </Button>
           <Button
             className="h-10 rounded-md"
             nativeButton={false}
@@ -621,6 +671,25 @@ export default function QuotationDetailPage() {
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 px-6 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:left-64">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-end gap-3">
+          <Button
+            className="h-10 rounded-md"
+            type="button"
+            variant="outline"
+            onClick={handlePrint}
+          >
+            <PrinterIcon className="size-4" />
+            Print
+          </Button>
+          <Button
+            className="h-10 rounded-md"
+            disabled={isDownloading}
+            type="button"
+            variant="outline"
+            onClick={() => void handleDownloadPdf()}
+          >
+            <DownloadIcon className="size-4" />
+            {isDownloading ? "Preparing PDF..." : "Download PDF"}
+          </Button>
           <Select
             value={statusValue}
             onValueChange={(value) => setStatusValue(String(value ?? "draft"))}
