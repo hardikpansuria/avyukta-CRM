@@ -2,22 +2,62 @@
 
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ExternalLinkIcon,
+  FileTextIcon,
+  PlusIcon,
+  SaveIcon,
+  Trash2Icon,
+  UploadIcon,
+} from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   calculateQuotationTotals,
+  type CalculatedLabourItem,
+  type CalculatedMaterialItem,
+  type CalculatedScope,
   type LabourItemInput,
   type MaterialItemInput,
   type ScopeChargeInput,
   type ScopeInput,
 } from "@/lib/quotations/scope-calculations";
+import { cn } from "@/lib/utils";
 
 const inputClass =
-  "h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-300";
-const textareaClass =
-  "min-h-24 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-300";
-const labelClass = "text-sm font-medium text-zinc-800 dark:text-zinc-200";
-const cardClass =
-  "rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950";
+  "h-9 rounded-md border-zinc-300 bg-white text-sm dark:border-zinc-700 dark:bg-zinc-900";
+const calculatedClass =
+  "flex min-h-9 items-center rounded-md border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium tabular-nums text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-200";
 
 function newMaterialItem(): MaterialItemInput {
   return {
@@ -85,17 +125,6 @@ function formatCurrency(value: number | string | null | undefined) {
   }).format(numberValue);
 }
 
-function formatLabel(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 export function ScopeBuilder({
   quotationId,
   scopes,
@@ -127,8 +156,7 @@ export function ScopeBuilder({
     itemIndex: number,
     updates: Partial<MaterialItemInput>,
   ) {
-    const scope = scopes[scopeIndex];
-    const materialItems = scope.material_items ?? [];
+    const materialItems = scopes[scopeIndex].material_items ?? [];
     updateScope(scopeIndex, {
       material_items: materialItems.map((item, index) =>
         index === itemIndex ? { ...item, ...updates } : item,
@@ -141,8 +169,7 @@ export function ScopeBuilder({
     itemIndex: number,
     updates: Partial<LabourItemInput>,
   ) {
-    const scope = scopes[scopeIndex];
-    const labourItems = scope.labour_items ?? [];
+    const labourItems = scopes[scopeIndex].labour_items ?? [];
     updateScope(scopeIndex, {
       labour_items: labourItems.map((item, index) =>
         index === itemIndex ? { ...item, ...updates } : item,
@@ -155,8 +182,7 @@ export function ScopeBuilder({
     chargeIndex: number,
     updates: Partial<ScopeChargeInput>,
   ) {
-    const scope = scopes[scopeIndex];
-    const charges = scope.scope_charges ?? [];
+    const charges = scopes[scopeIndex].scope_charges ?? [];
     updateScope(scopeIndex, {
       scope_charges: charges.map((charge, index) =>
         index === chargeIndex ? { ...charge, ...updates } : charge,
@@ -190,8 +216,20 @@ export function ScopeBuilder({
       return;
     }
 
-    if (file.type !== "application/pdf") {
+    const looksLikePdf =
+      file.type === "application/pdf" ||
+      file.type === "application/x-pdf" ||
+      file.type === "application/octet-stream" ||
+      file.type === "" ||
+      file.name.toLowerCase().endsWith(".pdf");
+
+    if (!looksLikePdf) {
       setDocumentError("Supplier quote must be a PDF.");
+      return;
+    }
+
+    if (file.size === 0) {
+      setDocumentError("Supplier quote PDF is empty.");
       return;
     }
 
@@ -288,10 +326,20 @@ export function ScopeBuilder({
 
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         {documentError ? (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-            {documentError}
+          <div
+            className="sticky top-20 z-30 flex items-start justify-between gap-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm dark:border-red-900/60 dark:bg-red-950 dark:text-red-200"
+            role="alert"
+          >
+            <span>{documentError}</span>
+            <button
+              className="shrink-0 font-medium hover:underline"
+              type="button"
+              onClick={() => setDocumentError(null)}
+            >
+              Dismiss
+            </button>
           </div>
         ) : null}
 
@@ -301,24 +349,25 @@ export function ScopeBuilder({
               Scope Builder
             </h2>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Build materials, labour, and additional charges for this draft.
+              Build the materials, labour, and charges included in this quote.
             </p>
           </div>
-          <button
-            className="inline-flex h-10 w-full items-center justify-center whitespace-nowrap rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 sm:w-auto"
+          <Button
+            className="h-9 w-full rounded-md sm:w-auto"
             type="button"
             onClick={() => onChange([...scopes, newScope(scopes.length)])}
           >
+            <PlusIcon data-icon="inline-start" />
             Add Scope of Work
-          </button>
+          </Button>
         </div>
 
         {scopes.length === 0 ? (
-          <div className={cardClass}>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              No scopes added yet.
-            </p>
-          </div>
+          <EmptyTabState
+            actionLabel="Add first scope"
+            message="Add a scope of work to begin building this quotation."
+            onAction={() => onChange([newScope(0)])}
+          />
         ) : null}
 
         {scopes.map((scope, scopeIndex) => {
@@ -327,41 +376,68 @@ export function ScopeBuilder({
           const calculatedScope = calculated.scopes[scopeIndex];
 
           return (
-            <article className={cardClass} key={scopeId}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <article
+              className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+              key={scopeId}
+            >
+              <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800 sm:px-5">
+                <Button
+                  aria-expanded={!isCollapsed}
+                  className="size-8 rounded-md"
+                  size="icon-sm"
+                  title={isCollapsed ? "Expand scope" : "Collapse scope"}
+                  type="button"
+                  variant="ghost"
+                  onClick={() => toggleScope(scopeId)}
+                >
+                  {isCollapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
+                  <span className="sr-only">
+                    {isCollapsed ? "Expand scope" : "Collapse scope"}
+                  </span>
+                </Button>
                 <button
-                  className="text-left"
+                  className="min-w-0 flex-1 text-left"
                   type="button"
                   onClick={() => toggleScope(scopeId)}
                 >
-                  <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-                    Scope of Work {scopeIndex + 1}
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    Scope {scopeIndex + 1}
                   </p>
-                  <h3 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                  <h3 className="truncate text-base font-semibold text-zinc-950 dark:text-zinc-50">
                     {scope.scope_title || `Scope of Work ${scopeIndex + 1}`}
                   </h3>
                 </button>
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                <div className="hidden text-right sm:block">
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Scope total
+                  </p>
+                  <p className="text-sm font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
                     {formatCurrency(calculatedScope?.scope_total_after_discount)}
                   </p>
-                  <button
-                    className="shrink-0 whitespace-nowrap rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                    type="button"
-                    onClick={() =>
-                      onChange(scopes.filter((_, index) => index !== scopeIndex))
-                    }
-                  >
-                    Remove
-                  </button>
                 </div>
+                <ConfirmDeleteButton
+                  description={`This will remove Scope ${scopeIndex + 1} and all of its material, labour, and charge rows.`}
+                  label="Delete scope"
+                  onConfirm={() =>
+                    onChange(scopes.filter((_, index) => index !== scopeIndex))
+                  }
+                />
               </div>
 
-              {!isCollapsed ? (
-                <div className="mt-5 space-y-6">
+              {isCollapsed ? (
+                <div className="flex items-center justify-between px-4 py-3 sm:hidden">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Scope total
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
+                    {formatCurrency(calculatedScope?.scope_total_after_discount)}
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-5 p-4 sm:p-5">
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Scope Title">
-                      <input
+                      <Input
                         className={inputClass}
                         value={scope.scope_title ?? ""}
                         onChange={(event) =>
@@ -371,52 +447,10 @@ export function ScopeBuilder({
                         }
                       />
                     </Field>
-                    <Field label="Labour Calculation Method">
-                      <select
-                        className={inputClass}
-                        value={scope.labour_calculation_method ?? "hourly"}
-                        onChange={(event) =>
-                          updateScope(scopeIndex, {
-                            labour_calculation_method: event.target.value,
-                          })
-                        }
-                      >
-                        <option value="hourly">Hourly</option>
-                        <option value="crew">Crew</option>
-                      </select>
-                    </Field>
-                    <Field label="Regular Hourly Rate">
-                      <input
-                        className={inputClass}
-                        min="0"
-                        step="0.01"
-                        type="number"
-                        value={String(scope.regular_hourly_rate ?? "")}
-                        onChange={(event) =>
-                          updateScope(scopeIndex, {
-                            regular_hourly_rate: event.target.value,
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field label="Overtime Hourly Rate">
-                      <input
-                        className={inputClass}
-                        min="0"
-                        step="0.01"
-                        type="number"
-                        value={String(scope.overtime_hourly_rate ?? "")}
-                        onChange={(event) =>
-                          updateScope(scopeIndex, {
-                            overtime_hourly_rate: event.target.value,
-                          })
-                        }
-                      />
-                    </Field>
-                    <div className="md:col-span-2">
+                    <div className="md:row-span-2">
                       <Field label="Scope Description">
-                        <textarea
-                          className={textareaClass}
+                        <Textarea
+                          className="min-h-28 rounded-md border-zinc-300 bg-white text-sm dark:border-zinc-700 dark:bg-zinc-900"
                           value={scope.scope_description ?? ""}
                           onChange={(event) =>
                             updateScope(scopeIndex, {
@@ -428,540 +462,179 @@ export function ScopeBuilder({
                     </div>
                   </div>
 
-                  <BuilderSection
-                    title="Material Cost"
-                    onAdd={() =>
-                      updateScope(scopeIndex, {
-                        material_items: [
-                          ...(scope.material_items ?? []),
-                          newMaterialItem(),
-                        ],
-                      })
-                    }
-                  >
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[1450px] text-left text-sm">
-                        <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-                          <tr>
-                            <th className="px-3 py-2">Description</th>
-                            <th className="px-3 py-2">Category</th>
-                            <th className="px-3 py-2">Supplier</th>
-                            <th className="px-3 py-2">Quote Ref</th>
-                            <th className="px-3 py-2">Qty</th>
-                            <th className="px-3 py-2">Unit</th>
-                            <th className="px-3 py-2">Unit Cost</th>
-                            <th className="px-3 py-2">Material Cost</th>
-                            <th className="px-3 py-2">Profit Type</th>
-                            <th className="px-3 py-2">Profit Value</th>
-                            <th className="px-3 py-2">Profit</th>
-                            <th className="px-3 py-2">Line Total</th>
-                            <th className="px-3 py-2">Supplier PDF</th>
-                            <th className="px-3 py-2"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                          {(scope.material_items ?? []).map((item, itemIndex) => {
-                            const calculatedItem =
-                              calculatedScope?.material_items[itemIndex];
+                  <Tabs defaultValue="materials">
+                    <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-md bg-zinc-100 p-1 dark:bg-zinc-900">
+                      <TabsTrigger
+                        className="h-8 flex-none rounded-sm px-3"
+                        value="materials"
+                      >
+                        Materials
+                        <TabCount value={scope.material_items?.length ?? 0} />
+                      </TabsTrigger>
+                      <TabsTrigger
+                        className="h-8 flex-none rounded-sm px-3"
+                        value="labour"
+                      >
+                        Labour
+                        <TabCount value={scope.labour_items?.length ?? 0} />
+                      </TabsTrigger>
+                      <TabsTrigger
+                        className="h-8 flex-none rounded-sm px-3"
+                        value="charges"
+                      >
+                        Additional Charges
+                        <TabCount value={scope.scope_charges?.length ?? 0} />
+                      </TabsTrigger>
+                      <TabsTrigger
+                        className="h-8 flex-none rounded-sm px-3"
+                        value="summary"
+                      >
+                        Summary
+                      </TabsTrigger>
+                    </TabsList>
 
-                            return (
-                              <tr key={item.id ?? itemIndex}>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    value={item.material_description ?? ""}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        material_description: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    value={item.material_category ?? ""}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        material_category: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    value={item.supplier_name ?? ""}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        supplier_name: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    value={item.supplier_quote_reference ?? ""}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        supplier_quote_reference:
-                                          event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    min="0"
-                                    step="0.01"
-                                    type="number"
-                                    value={String(item.quantity ?? "")}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        quantity: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    value={item.unit ?? ""}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        unit: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    min="0"
-                                    step="0.01"
-                                    type="number"
-                                    value={String(item.unit_cost ?? "")}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        unit_cost: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2 font-medium">
-                                  {formatCurrency(
-                                    calculatedItem?.material_cost,
-                                  )}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <select
-                                    className={inputClass}
-                                    value={item.profit_type ?? "none"}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        profit_type: event.target.value,
-                                      })
-                                    }
-                                  >
-                                    <option value="none">None</option>
-                                    <option value="percentage">Percentage</option>
-                                    <option value="amount">Amount</option>
-                                  </select>
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    min="0"
-                                    step="0.01"
-                                    type="number"
-                                    value={String(item.profit_value ?? "")}
-                                    onChange={(event) =>
-                                      updateMaterial(scopeIndex, itemIndex, {
-                                        profit_value: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2 font-medium">
-                                  {formatCurrency(calculatedItem?.profit_amount)}
-                                </td>
-                                <td className="px-3 py-2 font-semibold">
-                                  {formatCurrency(calculatedItem?.line_total)}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <SupplierQuoteCell
-                                    isWorking={
-                                      workingMaterialId === item.id
-                                    }
-                                    item={item}
-                                    onRemove={() =>
-                                      void removeSupplierQuote(
-                                        scopeIndex,
-                                        itemIndex,
-                                      )
-                                    }
-                                    onUpload={(file) =>
-                                      void uploadSupplierQuote(
-                                        scopeIndex,
-                                        itemIndex,
-                                        file,
-                                      )
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <button
-                                    className="text-sm font-medium text-zinc-500 hover:text-red-600 dark:text-zinc-400"
-                                    type="button"
-                                    onClick={() =>
-                                      updateScope(scopeIndex, {
-                                        material_items: (
-                                          scope.material_items ?? []
-                                        ).filter(
-                                          (_, index) => index !== itemIndex,
-                                        ),
-                                      })
-                                    }
-                                  >
-                                    Remove
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </BuilderSection>
+                    <TabsContent className="pt-4" value="materials">
+                      <MaterialSection
+                        calculatedItems={calculatedScope?.material_items ?? []}
+                        items={scope.material_items ?? []}
+                        workingMaterialId={workingMaterialId}
+                        onAdd={() =>
+                          updateScope(scopeIndex, {
+                            material_items: [
+                              ...(scope.material_items ?? []),
+                              newMaterialItem(),
+                            ],
+                          })
+                        }
+                        onDelete={(itemIndex) =>
+                          updateScope(scopeIndex, {
+                            material_items: (
+                              scope.material_items ?? []
+                            ).filter((_, index) => index !== itemIndex),
+                          })
+                        }
+                        onRemoveDocument={(itemIndex) =>
+                          void removeSupplierQuote(scopeIndex, itemIndex)
+                        }
+                        onUpdate={(itemIndex, updates) =>
+                          updateMaterial(scopeIndex, itemIndex, updates)
+                        }
+                        onUpload={(itemIndex, file) =>
+                          void uploadSupplierQuote(
+                            scopeIndex,
+                            itemIndex,
+                            file,
+                          )
+                        }
+                      />
+                    </TabsContent>
 
-                  <BuilderSection
-                    title="Labour Cost"
-                    onAdd={() =>
-                      updateScope(scopeIndex, {
-                        labour_items: [
-                          ...(scope.labour_items ?? []),
-                          newLabourItem(),
-                        ],
-                      })
-                    }
-                  >
-                    <div className="mb-4 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-                            Labour calculation method
-                          </p>
-                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                            Crew mode adds workers, days, and hours per day.
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 sm:w-64">
-                          {[
-                            ["hourly", "Hourly"],
-                            ["crew", "Crew"],
-                          ].map(([value, label]) => (
-                            <button
-                              className={
-                                scope.labour_calculation_method === value
-                                  ? "h-10 whitespace-nowrap rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white dark:bg-zinc-50 dark:text-zinc-950"
-                                  : "h-10 whitespace-nowrap rounded-md border border-zinc-300 px-3 text-sm font-semibold text-zinc-700 transition hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-950"
-                              }
-                              key={value}
-                              type="button"
-                              onClick={() =>
-                                updateScope(scopeIndex, {
-                                  labour_calculation_method: value,
-                                })
-                              }
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[1000px] text-left text-sm">
-                        <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-                          <tr>
-                            <th className="px-3 py-2">Description</th>
-                            {scope.labour_calculation_method === "crew" ? (
-                              <>
-                                <th className="px-3 py-2">Workers</th>
-                                <th className="px-3 py-2">Days</th>
-                                <th className="px-3 py-2">Hours/Day</th>
-                              </>
-                            ) : (
-                              <th className="px-3 py-2">Total Hours</th>
-                            )}
-                            <th className="px-3 py-2">Work Type</th>
-                            <th className="px-3 py-2">Regular Hours</th>
-                            <th className="px-3 py-2">Overtime Hours</th>
-                            <th className="px-3 py-2">Total Cost</th>
-                            <th className="px-3 py-2"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                          {(scope.labour_items ?? []).map((item, itemIndex) => {
-                            const calculatedItem =
-                              calculatedScope?.labour_items[itemIndex];
+                    <TabsContent className="pt-4" value="labour">
+                      <LabourSection
+                        calculatedScope={calculatedScope}
+                        items={scope.labour_items ?? []}
+                        method={scope.labour_calculation_method ?? "hourly"}
+                        overtimeRate={scope.overtime_hourly_rate}
+                        regularRate={scope.regular_hourly_rate}
+                        onAdd={() =>
+                          updateScope(scopeIndex, {
+                            labour_items: [
+                              ...(scope.labour_items ?? []),
+                              newLabourItem(),
+                            ],
+                          })
+                        }
+                        onDelete={(itemIndex) =>
+                          updateScope(scopeIndex, {
+                            labour_items: (scope.labour_items ?? []).filter(
+                              (_, index) => index !== itemIndex,
+                            ),
+                          })
+                        }
+                        onMethodChange={(value) =>
+                          updateScope(scopeIndex, {
+                            labour_calculation_method: value,
+                          })
+                        }
+                        onOvertimeRateChange={(value) =>
+                          updateScope(scopeIndex, {
+                            overtime_hourly_rate: value,
+                          })
+                        }
+                        onRegularRateChange={(value) =>
+                          updateScope(scopeIndex, {
+                            regular_hourly_rate: value,
+                          })
+                        }
+                        onUpdate={(itemIndex, updates) =>
+                          updateLabour(scopeIndex, itemIndex, updates)
+                        }
+                      />
+                    </TabsContent>
 
-                            return (
-                              <tr key={item.id ?? itemIndex}>
-                                <td className="px-3 py-2">
-                                  <input
-                                    className={inputClass}
-                                    value={item.labour_description ?? ""}
-                                    onChange={(event) =>
-                                      updateLabour(scopeIndex, itemIndex, {
-                                        labour_description: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </td>
-                                {scope.labour_calculation_method === "crew" ? (
-                                  <>
-                                    <td className="px-3 py-2">
-                                      <NumberCell
-                                        value={item.number_of_workers}
-                                        onChange={(value) =>
-                                          updateLabour(scopeIndex, itemIndex, {
-                                            number_of_workers: value,
-                                          })
-                                        }
-                                      />
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      <NumberCell
-                                        value={item.number_of_days}
-                                        onChange={(value) =>
-                                          updateLabour(scopeIndex, itemIndex, {
-                                            number_of_days: value,
-                                          })
-                                        }
-                                      />
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      <NumberCell
-                                        value={item.hours_per_day}
-                                        onChange={(value) =>
-                                          updateLabour(scopeIndex, itemIndex, {
-                                            hours_per_day: value,
-                                          })
-                                        }
-                                      />
-                                    </td>
-                                  </>
-                                ) : (
-                                  <td className="px-3 py-2">
-                                    <NumberCell
-                                      value={item.total_hours}
-                                      onChange={(value) =>
-                                        updateLabour(scopeIndex, itemIndex, {
-                                          total_hours: value,
-                                        })
-                                      }
-                                    />
-                                  </td>
-                                )}
-                                <td className="px-3 py-2">
-                                  <select
-                                    className={inputClass}
-                                    value={item.work_type ?? "regular"}
-                                    onChange={(event) =>
-                                      updateLabour(scopeIndex, itemIndex, {
-                                        work_type: event.target.value,
-                                      })
-                                    }
-                                  >
-                                    <option value="regular">Regular</option>
-                                    <option value="overtime">Overtime</option>
-                                    <option value="weekend">Weekend</option>
-                                    <option value="confined_space">
-                                      Confined Space
-                                    </option>
-                                  </select>
-                                </td>
-                                <td className="px-3 py-2">
-                                  {calculatedItem?.regular_hours ?? 0}
-                                </td>
-                                <td className="px-3 py-2">
-                                  {calculatedItem?.overtime_hours ?? 0}
-                                </td>
-                                <td className="px-3 py-2 font-semibold">
-                                  {formatCurrency(calculatedItem?.total_cost)}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <button
-                                    className="text-sm font-medium text-zinc-500 hover:text-red-600 dark:text-zinc-400"
-                                    type="button"
-                                    onClick={() =>
-                                      updateScope(scopeIndex, {
-                                        labour_items: (
-                                          scope.labour_items ?? []
-                                        ).filter(
-                                          (_, index) => index !== itemIndex,
-                                        ),
-                                      })
-                                    }
-                                  >
-                                    Remove
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </BuilderSection>
+                    <TabsContent className="pt-4" value="charges">
+                      <ChargesSection
+                        charges={scope.scope_charges ?? []}
+                        onAdd={() =>
+                          updateScope(scopeIndex, {
+                            scope_charges: [
+                              ...(scope.scope_charges ?? []),
+                              newScopeCharge(),
+                            ],
+                          })
+                        }
+                        onDelete={(chargeIndex) =>
+                          updateScope(scopeIndex, {
+                            scope_charges: (scope.scope_charges ?? []).filter(
+                              (_, index) => index !== chargeIndex,
+                            ),
+                          })
+                        }
+                        onUpdate={(chargeIndex, updates) =>
+                          updateCharge(scopeIndex, chargeIndex, updates)
+                        }
+                      />
+                    </TabsContent>
 
-                  <BuilderSection
-                    title="Additional Charges"
-                    onAdd={() =>
-                      updateScope(scopeIndex, {
-                        scope_charges: [
-                          ...(scope.scope_charges ?? []),
-                          newScopeCharge(),
-                        ],
-                      })
-                    }
-                  >
-                    <div className="grid gap-3">
-                      {(scope.scope_charges ?? []).map((charge, chargeIndex) => (
-                        <div
-                          className="grid gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800 md:grid-cols-[1fr_180px_auto]"
-                          key={charge.id ?? chargeIndex}
-                        >
-                          <input
-                            className={inputClass}
-                            placeholder="Description"
-                            value={charge.description ?? ""}
-                            onChange={(event) =>
-                              updateCharge(scopeIndex, chargeIndex, {
-                                description: event.target.value,
-                              })
-                            }
-                          />
-                          <input
-                            className={inputClass}
-                            min="0"
-                            step="0.01"
-                            type="number"
-                            value={String(charge.amount ?? "")}
-                            onChange={(event) =>
-                              updateCharge(scopeIndex, chargeIndex, {
-                                amount: event.target.value,
-                              })
-                            }
-                          />
-                          <button
-                            className="text-sm font-medium text-zinc-500 hover:text-red-600 dark:text-zinc-400"
-                            type="button"
-                            onClick={() =>
-                              updateScope(scopeIndex, {
-                                scope_charges: (
-                                  scope.scope_charges ?? []
-                                ).filter((_, index) => index !== chargeIndex),
-                              })
-                            }
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </BuilderSection>
-
-                  <div className="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900">
-                    <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-                      Scope Summary
-                    </h4>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <SummaryLine
-                        label="Material Total"
-                        value={formatCurrency(calculatedScope?.material_total)}
+                    <TabsContent className="pt-4" value="summary">
+                      <ScopeSummary
+                        calculatedScope={calculatedScope}
+                        discountType={scope.discount_type ?? "none"}
+                        discountValue={scope.discount_value}
+                        onDiscountTypeChange={(value) =>
+                          updateScope(scopeIndex, { discount_type: value })
+                        }
+                        onDiscountValueChange={(value) =>
+                          updateScope(scopeIndex, { discount_value: value })
+                        }
                       />
-                      <SummaryLine
-                        label="Material Profit Total"
-                        value={formatCurrency(
-                          calculatedScope?.material_profit_total,
-                        )}
-                      />
-                      <SummaryLine
-                        label="Labour Total"
-                        value={formatCurrency(calculatedScope?.labour_total)}
-                      />
-                      <SummaryLine
-                        label="Additional Charges Total"
-                        value={formatCurrency(
-                          calculatedScope?.additional_charges_total,
-                        )}
-                      />
-                      <SummaryLine
-                        label="Subtotal Before Discount"
-                        value={formatCurrency(
-                          calculatedScope?.scope_subtotal_before_discount,
-                        )}
-                      />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Discount Type">
-                          <select
-                            className={inputClass}
-                            value={scope.discount_type ?? "none"}
-                            onChange={(event) =>
-                              updateScope(scopeIndex, {
-                                discount_type: event.target.value,
-                              })
-                            }
-                          >
-                            <option value="none">None</option>
-                            <option value="percentage">Percentage</option>
-                            <option value="amount">Amount</option>
-                          </select>
-                        </Field>
-                        <Field label="Discount Value">
-                          <input
-                            className={inputClass}
-                            min="0"
-                            step="0.01"
-                            type="number"
-                            value={String(scope.discount_value ?? "")}
-                            onChange={(event) =>
-                              updateScope(scopeIndex, {
-                                discount_value: event.target.value,
-                              })
-                            }
-                          />
-                        </Field>
-                      </div>
-                      <SummaryLine
-                        label="Discount Amount"
-                        value={formatCurrency(calculatedScope?.discount_amount)}
-                      />
-                      <SummaryLine
-                        label="Scope Total After Discount"
-                        strong
-                        value={formatCurrency(
-                          calculatedScope?.scope_total_after_discount,
-                        )}
-                      />
-                    </div>
-                  </div>
+                    </TabsContent>
+                  </Tabs>
                 </div>
-              ) : null}
+              )}
             </article>
           );
         })}
       </div>
 
-      <aside className="xl:sticky xl:top-6 xl:self-start">
-        <div className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
-            Draft Totals
-          </h2>
+      <aside className="xl:sticky xl:top-24 xl:self-start">
+        <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Live quotation totals
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-zinc-950 dark:text-zinc-50">
+                Draft Summary
+              </h2>
+            </div>
+            <Badge
+              className="rounded-md border-zinc-200 dark:border-zinc-700"
+              variant="outline"
+            >
+              {scopes.length} {scopes.length === 1 ? "scope" : "scopes"}
+            </Badge>
+          </div>
           <div className="mt-5 space-y-3">
             <SummaryLine
               label="Material Total"
@@ -982,75 +655,1002 @@ export function ScopeBuilder({
               )}
             />
             <SummaryLine
-              label="Scope Discounts"
-              value={formatCurrency(calculated.totals.scopes_discount_total)}
+              label="Discounts"
+              value={`-${formatCurrency(calculated.totals.scopes_discount_total)}`}
             />
-            <div className="border-t border-zinc-200 pt-3 dark:border-zinc-800">
+            <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
               <SummaryLine
-                label="Overall Draft Subtotal"
+                label="Draft Subtotal"
                 strong
                 value={formatCurrency(calculated.totals.grand_total_before_tax)}
               />
             </div>
           </div>
+          <Button className="mt-5 h-10 w-full rounded-md" type="submit">
+            <SaveIcon data-icon="inline-start" />
+            Save Draft
+          </Button>
         </div>
       </aside>
     </section>
   );
 }
 
-function Field({
-  label,
-  children,
+function MaterialSection({
+  items,
+  calculatedItems,
+  workingMaterialId,
+  onAdd,
+  onUpdate,
+  onDelete,
+  onUpload,
+  onRemoveDocument,
 }: {
-  label: string;
-  children: ReactNode;
+  items: MaterialItemInput[];
+  calculatedItems: CalculatedMaterialItem[];
+  workingMaterialId: string | null;
+  onAdd: () => void;
+  onUpdate: (index: number, updates: Partial<MaterialItemInput>) => void;
+  onDelete: (index: number) => void;
+  onUpload: (index: number, file: File) => void;
+  onRemoveDocument: (index: number) => void;
 }) {
   return (
-    <label className="block">
-      <span className={labelClass}>{label}</span>
-      <div className="mt-2">{children}</div>
-    </label>
+    <TabSection
+      actionLabel="Add Material"
+      description="Enter supplier cost and margin details for each material."
+      title="Material Cost"
+      onAdd={onAdd}
+    >
+      {items.length === 0 ? (
+        <EmptyTabState
+          actionLabel="Add material"
+          message="No material rows have been added to this scope."
+          onAction={onAdd}
+        />
+      ) : (
+        <>
+          <div className="hidden overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 lg:block">
+            <Table className="min-w-[1540px]">
+              <TableHeader className="bg-zinc-50 dark:bg-zinc-900/80">
+                <TableRow className="hover:bg-transparent">
+                  {[
+                    "Description",
+                    "Category",
+                    "Supplier",
+                    "Quote Ref",
+                    "Qty",
+                    "Unit",
+                    "Unit Cost",
+                    "Material Cost",
+                    "Profit Type",
+                    "Profit Value",
+                    "Profit",
+                    "Line Total",
+                    "Supplier PDF",
+                    "",
+                  ].map((header) => (
+                    <TableHead
+                      className="h-10 px-2 text-xs text-zinc-500 dark:text-zinc-400"
+                      key={header || "actions"}
+                    >
+                      {header}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item, itemIndex) => {
+                  const calculatedItem = calculatedItems[itemIndex];
+
+                  return (
+                    <TableRow className="align-top" key={item.id ?? itemIndex}>
+                      <TableCell className="w-52 p-2">
+                        <Input
+                          aria-label="Material description"
+                          className={inputClass}
+                          value={item.material_description ?? ""}
+                          onChange={(event) =>
+                            onUpdate(itemIndex, {
+                              material_description: event.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-36 p-2">
+                        <Input
+                          aria-label="Material category"
+                          className={inputClass}
+                          value={item.material_category ?? ""}
+                          onChange={(event) =>
+                            onUpdate(itemIndex, {
+                              material_category: event.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-40 p-2">
+                        <Input
+                          aria-label="Supplier"
+                          className={inputClass}
+                          value={item.supplier_name ?? ""}
+                          onChange={(event) =>
+                            onUpdate(itemIndex, {
+                              supplier_name: event.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-36 p-2">
+                        <Input
+                          aria-label="Supplier quote reference"
+                          className={inputClass}
+                          value={item.supplier_quote_reference ?? ""}
+                          onChange={(event) =>
+                            onUpdate(itemIndex, {
+                              supplier_quote_reference: event.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-24 p-2">
+                        <NumberInput
+                          ariaLabel="Quantity"
+                          value={item.quantity}
+                          onChange={(value) =>
+                            onUpdate(itemIndex, { quantity: value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-24 p-2">
+                        <Input
+                          aria-label="Unit"
+                          className={inputClass}
+                          value={item.unit ?? ""}
+                          onChange={(event) =>
+                            onUpdate(itemIndex, { unit: event.target.value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-28 p-2">
+                        <NumberInput
+                          ariaLabel="Unit cost"
+                          value={item.unit_cost}
+                          onChange={(value) =>
+                            onUpdate(itemIndex, { unit_cost: value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-32 p-2">
+                        <CalculatedValue
+                          value={formatCurrency(calculatedItem?.material_cost)}
+                        />
+                      </TableCell>
+                      <TableCell className="w-36 p-2">
+                        <CompactSelect
+                          ariaLabel="Profit type"
+                          options={[
+                            ["none", "None"],
+                            ["percentage", "Percentage"],
+                            ["amount", "Amount"],
+                          ]}
+                          value={item.profit_type ?? "none"}
+                          onChange={(value) =>
+                            onUpdate(itemIndex, { profit_type: value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-28 p-2">
+                        <NumberInput
+                          ariaLabel="Profit value"
+                          value={item.profit_value}
+                          onChange={(value) =>
+                            onUpdate(itemIndex, { profit_value: value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-28 p-2">
+                        <CalculatedValue
+                          value={formatCurrency(calculatedItem?.profit_amount)}
+                        />
+                      </TableCell>
+                      <TableCell className="w-32 p-2">
+                        <CalculatedValue
+                          strong
+                          value={formatCurrency(calculatedItem?.line_total)}
+                        />
+                      </TableCell>
+                      <TableCell className="w-56 p-2">
+                        <SupplierQuoteCell
+                          isWorking={workingMaterialId === item.id}
+                          item={item}
+                          onRemove={() => onRemoveDocument(itemIndex)}
+                          onUpload={(file) => onUpload(itemIndex, file)}
+                        />
+                      </TableCell>
+                      <TableCell className="w-12 p-2">
+                        <ConfirmDeleteButton
+                          description="This material row will be removed from the scope."
+                          label="Delete material"
+                          onConfirm={() => onDelete(itemIndex)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="space-y-3 lg:hidden">
+            {items.map((item, itemIndex) => {
+              const calculatedItem = calculatedItems[itemIndex];
+
+              return (
+                <div
+                  className="rounded-md border border-zinc-200 p-4 dark:border-zinc-800"
+                  key={item.id ?? itemIndex}
+                >
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                      Material {itemIndex + 1}
+                    </p>
+                    <ConfirmDeleteButton
+                      description="This material row will be removed from the scope."
+                      label="Delete material"
+                      onConfirm={() => onDelete(itemIndex)}
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <Field label="Material Description">
+                        <Input
+                          className={inputClass}
+                          value={item.material_description ?? ""}
+                          onChange={(event) =>
+                            onUpdate(itemIndex, {
+                              material_description: event.target.value,
+                            })
+                          }
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Category">
+                      <Input
+                        className={inputClass}
+                        value={item.material_category ?? ""}
+                        onChange={(event) =>
+                          onUpdate(itemIndex, {
+                            material_category: event.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Supplier">
+                      <Input
+                        className={inputClass}
+                        value={item.supplier_name ?? ""}
+                        onChange={(event) =>
+                          onUpdate(itemIndex, {
+                            supplier_name: event.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Supplier Quote Ref">
+                      <Input
+                        className={inputClass}
+                        value={item.supplier_quote_reference ?? ""}
+                        onChange={(event) =>
+                          onUpdate(itemIndex, {
+                            supplier_quote_reference: event.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Quantity">
+                      <NumberInput
+                        value={item.quantity}
+                        onChange={(value) =>
+                          onUpdate(itemIndex, { quantity: value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Unit">
+                      <Input
+                        className={inputClass}
+                        value={item.unit ?? ""}
+                        onChange={(event) =>
+                          onUpdate(itemIndex, { unit: event.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Unit Cost">
+                      <NumberInput
+                        value={item.unit_cost}
+                        onChange={(value) =>
+                          onUpdate(itemIndex, { unit_cost: value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Profit Type">
+                      <CompactSelect
+                        options={[
+                          ["none", "None"],
+                          ["percentage", "Percentage"],
+                          ["amount", "Amount"],
+                        ]}
+                        value={item.profit_type ?? "none"}
+                        onChange={(value) =>
+                          onUpdate(itemIndex, { profit_type: value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Profit Value">
+                      <NumberInput
+                        value={item.profit_value}
+                        onChange={(value) =>
+                          onUpdate(itemIndex, { profit_value: value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Material Cost">
+                      <CalculatedValue
+                        value={formatCurrency(calculatedItem?.material_cost)}
+                      />
+                    </Field>
+                    <Field label="Profit Amount">
+                      <CalculatedValue
+                        value={formatCurrency(calculatedItem?.profit_amount)}
+                      />
+                    </Field>
+                    <Field label="Line Total">
+                      <CalculatedValue
+                        strong
+                        value={formatCurrency(calculatedItem?.line_total)}
+                      />
+                    </Field>
+                    <div className="sm:col-span-2">
+                      <Field label="Supplier Quote PDF">
+                        <SupplierQuoteCell
+                          isWorking={workingMaterialId === item.id}
+                          item={item}
+                          onRemove={() => onRemoveDocument(itemIndex)}
+                          onUpload={(file) => onUpload(itemIndex, file)}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </TabSection>
   );
 }
 
-function BuilderSection({
-  title,
+function LabourSection({
+  items,
+  calculatedScope,
+  method,
+  regularRate,
+  overtimeRate,
   onAdd,
-  children,
+  onUpdate,
+  onDelete,
+  onMethodChange,
+  onRegularRateChange,
+  onOvertimeRateChange,
 }: {
-  title: string;
+  items: LabourItemInput[];
+  calculatedScope: CalculatedScope | undefined;
+  method: string;
+  regularRate: number | string | null | undefined;
+  overtimeRate: number | string | null | undefined;
   onAdd: () => void;
-  children: ReactNode;
+  onUpdate: (index: number, updates: Partial<LabourItemInput>) => void;
+  onDelete: (index: number) => void;
+  onMethodChange: (value: string) => void;
+  onRegularRateChange: (value: string) => void;
+  onOvertimeRateChange: (value: string) => void;
+}) {
+  const isCrew = method === "crew";
+  const regularHours = (calculatedScope?.labour_items ?? []).reduce(
+    (sum, item) => sum + item.regular_hours,
+    0,
+  );
+  const overtimeHours = (calculatedScope?.labour_items ?? []).reduce(
+    (sum, item) => sum + item.overtime_hours,
+    0,
+  );
+
+  return (
+    <TabSection
+      actionLabel="Add Labour"
+      description="Choose a calculation method, set rates, and add labour rows."
+      title="Labour Cost"
+      onAdd={onAdd}
+    >
+      <div className="mb-4 grid gap-4 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div>
+          <Label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            Labour Calculation Method
+          </Label>
+          <div className="mt-2 inline-grid w-full grid-cols-2 rounded-md border border-zinc-300 bg-white p-1 dark:border-zinc-700 dark:bg-zinc-950 sm:w-auto">
+            {[
+              ["hourly", "Hourly Basis"],
+              ["crew", "Crew Calculation"],
+            ].map(([value, label]) => (
+              <Button
+                aria-pressed={method === value}
+                className={cn(
+                  "h-8 rounded-sm px-4",
+                  method === value
+                    ? "bg-zinc-950 text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                    : "text-zinc-600 dark:text-zinc-300",
+                )}
+                key={value}
+                type="button"
+                variant={method === value ? "default" : "ghost"}
+                onClick={() => onMethodChange(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Regular Hourly Rate">
+            <NumberInput
+              value={regularRate}
+              onChange={onRegularRateChange}
+            />
+          </Field>
+          <Field label="Overtime Hourly Rate">
+            <NumberInput
+              value={overtimeRate}
+              onChange={onOvertimeRateChange}
+            />
+          </Field>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <EmptyTabState
+          actionLabel="Add labour"
+          message="No labour rows have been added to this scope."
+          onAction={onAdd}
+        />
+      ) : (
+        <>
+          <div className="hidden overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 lg:block">
+            <Table className="min-w-[1050px]">
+              <TableHeader className="bg-zinc-50 dark:bg-zinc-900/80">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                    Description
+                  </TableHead>
+                  {isCrew ? (
+                    <>
+                      <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                        Workers
+                      </TableHead>
+                      <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                        Days
+                      </TableHead>
+                      <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                        Hours/Day
+                      </TableHead>
+                    </>
+                  ) : (
+                    <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                      Total Hours
+                    </TableHead>
+                  )}
+                  <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                    Work Type
+                  </TableHead>
+                  <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                    Regular Hours
+                  </TableHead>
+                  <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                    Overtime Hours
+                  </TableHead>
+                  <TableHead className="h-10 px-2 text-xs text-zinc-500">
+                    Total Cost
+                  </TableHead>
+                  <TableHead className="h-10 w-12 px-2" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item, itemIndex) => (
+                  <LabourDesktopRow
+                    calculatedItem={
+                      calculatedScope?.labour_items[itemIndex]
+                    }
+                    isCrew={isCrew}
+                    item={item}
+                    key={item.id ?? itemIndex}
+                    onDelete={() => onDelete(itemIndex)}
+                    onUpdate={(updates) => onUpdate(itemIndex, updates)}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="space-y-3 lg:hidden">
+            {items.map((item, itemIndex) => (
+              <LabourMobileCard
+                calculatedItem={calculatedScope?.labour_items[itemIndex]}
+                isCrew={isCrew}
+                item={item}
+                itemNumber={itemIndex + 1}
+                key={item.id ?? itemIndex}
+                onDelete={() => onDelete(itemIndex)}
+                onUpdate={(updates) => onUpdate(itemIndex, updates)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {isCrew ? (
+        <div className="mt-4 grid gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:grid-cols-3">
+          <Metric label="Total Regular Hours" value={String(regularHours)} />
+          <Metric label="Total Overtime Hours" value={String(overtimeHours)} />
+          <Metric
+            label="Total Labour Cost"
+            strong
+            value={formatCurrency(calculatedScope?.labour_total)}
+          />
+        </div>
+      ) : null}
+    </TabSection>
+  );
+}
+
+function LabourDesktopRow({
+  item,
+  calculatedItem,
+  isCrew,
+  onUpdate,
+  onDelete,
+}: {
+  item: LabourItemInput;
+  calculatedItem: CalculatedLabourItem | undefined;
+  isCrew: boolean;
+  onUpdate: (updates: Partial<LabourItemInput>) => void;
+  onDelete: () => void;
 }) {
   return (
-    <section className="rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-          {title}
-        </h4>
-        <button
-          className="shrink-0 whitespace-nowrap rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-          type="button"
-          onClick={onAdd}
-        >
-          Add Row
-        </button>
+    <TableRow className="align-top">
+      <TableCell className="w-64 p-2">
+        <Input
+          aria-label="Labour description"
+          className={inputClass}
+          value={item.labour_description ?? ""}
+          onChange={(event) =>
+            onUpdate({ labour_description: event.target.value })
+          }
+        />
+      </TableCell>
+      {isCrew ? (
+        <>
+          <TableCell className="w-24 p-2">
+            <NumberInput
+              ariaLabel="Number of workers"
+              value={item.number_of_workers}
+              onChange={(value) => onUpdate({ number_of_workers: value })}
+            />
+          </TableCell>
+          <TableCell className="w-24 p-2">
+            <NumberInput
+              ariaLabel="Number of days"
+              value={item.number_of_days}
+              onChange={(value) => onUpdate({ number_of_days: value })}
+            />
+          </TableCell>
+          <TableCell className="w-24 p-2">
+            <NumberInput
+              ariaLabel="Hours per day"
+              value={item.hours_per_day}
+              onChange={(value) => onUpdate({ hours_per_day: value })}
+            />
+          </TableCell>
+        </>
+      ) : (
+        <TableCell className="w-28 p-2">
+          <NumberInput
+            ariaLabel="Total hours"
+            value={item.total_hours}
+            onChange={(value) => onUpdate({ total_hours: value })}
+          />
+        </TableCell>
+      )}
+      <TableCell className="w-40 p-2">
+        <WorkTypeSelect
+          value={item.work_type ?? "regular"}
+          onChange={(value) => onUpdate({ work_type: value })}
+        />
+      </TableCell>
+      <TableCell className="w-32 p-2">
+        <CalculatedValue value={String(calculatedItem?.regular_hours ?? 0)} />
+      </TableCell>
+      <TableCell className="w-32 p-2">
+        <CalculatedValue value={String(calculatedItem?.overtime_hours ?? 0)} />
+      </TableCell>
+      <TableCell className="w-32 p-2">
+        <CalculatedValue
+          strong
+          value={formatCurrency(calculatedItem?.total_cost)}
+        />
+      </TableCell>
+      <TableCell className="w-12 p-2">
+        <ConfirmDeleteButton
+          description="This labour row will be removed from the scope."
+          label="Delete labour"
+          onConfirm={onDelete}
+        />
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function LabourMobileCard({
+  item,
+  calculatedItem,
+  itemNumber,
+  isCrew,
+  onUpdate,
+  onDelete,
+}: {
+  item: LabourItemInput;
+  calculatedItem: CalculatedLabourItem | undefined;
+  itemNumber: number;
+  isCrew: boolean;
+  onUpdate: (updates: Partial<LabourItemInput>) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+          Labour {itemNumber}
+        </p>
+        <ConfirmDeleteButton
+          description="This labour row will be removed from the scope."
+          label="Delete labour"
+          onConfirm={onDelete}
+        />
       </div>
-      <div className="p-4">{children}</div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Field label="Labour Description">
+            <Input
+              className={inputClass}
+              value={item.labour_description ?? ""}
+              onChange={(event) =>
+                onUpdate({ labour_description: event.target.value })
+              }
+            />
+          </Field>
+        </div>
+        {isCrew ? (
+          <>
+            <Field label="Number of Workers">
+              <NumberInput
+                value={item.number_of_workers}
+                onChange={(value) => onUpdate({ number_of_workers: value })}
+              />
+            </Field>
+            <Field label="Number of Days">
+              <NumberInput
+                value={item.number_of_days}
+                onChange={(value) => onUpdate({ number_of_days: value })}
+              />
+            </Field>
+            <Field label="Hours Per Day">
+              <NumberInput
+                value={item.hours_per_day}
+                onChange={(value) => onUpdate({ hours_per_day: value })}
+              />
+            </Field>
+          </>
+        ) : (
+          <Field label="Total Hours">
+            <NumberInput
+              value={item.total_hours}
+              onChange={(value) => onUpdate({ total_hours: value })}
+            />
+          </Field>
+        )}
+        <Field label="Work Type">
+          <WorkTypeSelect
+            value={item.work_type ?? "regular"}
+            onChange={(value) => onUpdate({ work_type: value })}
+          />
+        </Field>
+        <Field label="Regular Hours">
+          <CalculatedValue value={String(calculatedItem?.regular_hours ?? 0)} />
+        </Field>
+        <Field label="Overtime Hours">
+          <CalculatedValue value={String(calculatedItem?.overtime_hours ?? 0)} />
+        </Field>
+        <Field label="Total Cost">
+          <CalculatedValue
+            strong
+            value={formatCurrency(calculatedItem?.total_cost)}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+function ChargesSection({
+  charges,
+  onAdd,
+  onUpdate,
+  onDelete,
+}: {
+  charges: ScopeChargeInput[];
+  onAdd: () => void;
+  onUpdate: (index: number, updates: Partial<ScopeChargeInput>) => void;
+  onDelete: (index: number) => void;
+}) {
+  return (
+    <TabSection
+      actionLabel="Add Charge"
+      description="Add scope-specific costs such as freight, travel, or rentals."
+      title="Additional Charges"
+      onAdd={onAdd}
+    >
+      {charges.length === 0 ? (
+        <EmptyTabState
+          actionLabel="Add charge"
+          message="No additional charges have been added to this scope."
+          onAction={onAdd}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+          <div className="hidden grid-cols-[minmax(0,1fr)_180px_48px] gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/80 md:grid">
+            <span>Description</span>
+            <span>Amount</span>
+            <span className="sr-only">Actions</span>
+          </div>
+          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {charges.map((charge, chargeIndex) => (
+              <div
+                className="grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_180px_48px] md:items-center"
+                key={charge.id ?? chargeIndex}
+              >
+                <Field mobileOnlyLabel="Description">
+                  <Input
+                    className={inputClass}
+                    placeholder="e.g. Freight, crane rental, travel"
+                    value={charge.description ?? ""}
+                    onChange={(event) =>
+                      onUpdate(chargeIndex, {
+                        description: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field mobileOnlyLabel="Amount">
+                  <NumberInput
+                    value={charge.amount}
+                    onChange={(value) =>
+                      onUpdate(chargeIndex, { amount: value })
+                    }
+                  />
+                </Field>
+                <ConfirmDeleteButton
+                  description="This additional charge will be removed from the scope."
+                  label="Delete charge"
+                  onConfirm={() => onDelete(chargeIndex)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </TabSection>
+  );
+}
+
+function ScopeSummary({
+  calculatedScope,
+  discountType,
+  discountValue,
+  onDiscountTypeChange,
+  onDiscountValueChange,
+}: {
+  calculatedScope: CalculatedScope | undefined;
+  discountType: string;
+  discountValue: number | string | null | undefined;
+  onDiscountTypeChange: (value: string) => void;
+  onDiscountValueChange: (value: string) => void;
+}) {
+  return (
+    <section>
+      <div className="mb-4">
+        <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+          Scope Summary
+        </h4>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Review the scope totals and apply a scope-level discount.
+        </p>
+      </div>
+      <div className="grid gap-5 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SummaryTile
+            label="Material Total"
+            value={formatCurrency(calculatedScope?.material_total)}
+          />
+          <SummaryTile
+            label="Material Profit"
+            value={formatCurrency(calculatedScope?.material_profit_total)}
+          />
+          <SummaryTile
+            label="Labour Total"
+            value={formatCurrency(calculatedScope?.labour_total)}
+          />
+          <SummaryTile
+            label="Additional Charges"
+            value={formatCurrency(calculatedScope?.additional_charges_total)}
+          />
+          <SummaryTile
+            label="Subtotal Before Discount"
+            value={formatCurrency(
+              calculatedScope?.scope_subtotal_before_discount,
+            )}
+          />
+          <SummaryTile
+            label="Discount"
+            value={`-${formatCurrency(calculatedScope?.discount_amount)}`}
+          />
+        </div>
+        <div className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-950">
+          <div className="grid gap-4">
+            <Field label="Discount Type">
+              <CompactSelect
+                options={[
+                  ["none", "None"],
+                  ["percentage", "Percentage"],
+                  ["amount", "Amount"],
+                ]}
+                value={discountType}
+                onChange={onDiscountTypeChange}
+              />
+            </Field>
+            <Field label="Discount Value">
+              <NumberInput
+                value={discountValue}
+                onChange={onDiscountValueChange}
+              />
+            </Field>
+          </div>
+          <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Scope Total
+            </p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
+              {formatCurrency(calculatedScope?.scope_total_after_discount)}
+            </p>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
 
-function NumberCell({
+function TabSection({
+  title,
+  description,
+  actionLabel,
+  onAdd,
+  children,
+}: {
+  title: string;
+  description: string;
+  actionLabel: string;
+  onAdd: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+            {title}
+          </h4>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            {description}
+          </p>
+        </div>
+        <Button
+          className="h-8 w-full rounded-md sm:w-auto"
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={onAdd}
+        >
+          <PlusIcon data-icon="inline-start" />
+          {actionLabel}
+        </Button>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function EmptyTabState({
+  message,
+  actionLabel,
+  onAction,
+}: {
+  message: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50/60 px-5 py-8 text-center dark:border-zinc-700 dark:bg-zinc-900/30">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400">{message}</p>
+      <Button
+        className="mt-4 h-8 rounded-md"
+        size="sm"
+        type="button"
+        variant="outline"
+        onClick={onAction}
+      >
+        <PlusIcon data-icon="inline-start" />
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  mobileOnlyLabel,
+  children,
+}: {
+  label?: string;
+  mobileOnlyLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      {label ? (
+        <Label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+          {label}
+        </Label>
+      ) : null}
+      {mobileOnlyLabel ? (
+        <Label className="mb-2 block text-xs font-medium text-zinc-600 dark:text-zinc-300 md:hidden">
+          {mobileOnlyLabel}
+        </Label>
+      ) : null}
+      <div className={label ? "mt-2" : undefined}>{children}</div>
+    </div>
+  );
+}
+
+function NumberInput({
   value,
   onChange,
+  ariaLabel,
 }: {
   value: number | string | null | undefined;
   onChange: (value: string) => void;
+  ariaLabel?: string;
 }) {
   return (
-    <input
+    <Input
+      aria-label={ariaLabel}
       className={inputClass}
       min="0"
       step="0.01"
@@ -1058,6 +1658,81 @@ function NumberCell({
       value={String(value ?? "")}
       onChange={(event) => onChange(event.target.value)}
     />
+  );
+}
+
+function CompactSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  options: Array<[string, string]>;
+  onChange: (value: string) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(nextValue) => onChange(String(nextValue ?? ""))}
+    >
+      <SelectTrigger
+        aria-label={ariaLabel}
+        className="h-9 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="start">
+        {options.map(([optionValue, optionLabel]) => (
+          <SelectItem key={optionValue} value={optionValue}>
+            {optionLabel}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function WorkTypeSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <CompactSelect
+      ariaLabel="Work type"
+      options={[
+        ["regular", "Regular"],
+        ["overtime", "Overtime"],
+        ["weekend", "Weekend"],
+        ["confined_space", "Confined Space"],
+      ]}
+      value={value}
+      onChange={onChange}
+    />
+  );
+}
+
+function CalculatedValue({
+  value,
+  strong,
+}: {
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        calculatedClass,
+        strong &&
+          "border-zinc-300 bg-zinc-100 font-semibold text-zinc-950 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50",
+      )}
+    >
+      {value}
+    </div>
   );
 }
 
@@ -1076,33 +1751,44 @@ function SupplierQuoteCell({
 
   if (!item.is_persisted) {
     return (
-      <span className="text-xs text-zinc-500 dark:text-zinc-400">
-        Save quotation first
-      </span>
+      <div className="flex min-h-9 items-center gap-2 rounded-md border border-dashed border-zinc-300 px-3 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+        <FileTextIcon className="size-3.5" />
+        Available after save
+      </div>
     );
   }
 
   return (
-    <div className="min-w-52">
+    <div className="min-w-0">
       {document ? (
-        <p className="mb-2 truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">
+        <p className="mb-2 max-w-48 truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">
           {document.file_name}
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
         {document?.signed_url ? (
-          <button
-            className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          <Button
+            className="h-8 rounded-md"
+            size="sm"
             type="button"
+            variant="outline"
             onClick={() => window.open(document.signed_url ?? "", "_blank")}
           >
+            <ExternalLinkIcon data-icon="inline-start" />
             View
-          </button>
+          </Button>
         ) : null}
-        <label className="cursor-pointer rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900">
+        <label
+          className={cn(
+            buttonVariants({ size: "sm", variant: "outline" }),
+            "h-8 cursor-pointer rounded-md",
+            isWorking && "pointer-events-none opacity-50",
+          )}
+        >
+          <UploadIcon className="size-4" />
           {isWorking ? "Uploading..." : document ? "Replace" : "Upload PDF"}
           <input
-            accept="application/pdf"
+            accept=".pdf,application/pdf"
             className="sr-only"
             disabled={isWorking}
             type="file"
@@ -1117,16 +1803,118 @@ function SupplierQuoteCell({
           />
         </label>
         {document ? (
-          <button
-            className="rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/60 dark:text-red-200 dark:hover:bg-red-950/40"
+          <Button
+            className="h-8 rounded-md"
             disabled={isWorking}
+            size="sm"
             type="button"
+            variant="destructive"
             onClick={onRemove}
           >
-            {isWorking ? "Removing..." : "Remove"}
-          </button>
+            Remove PDF
+          </Button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function ConfirmDeleteButton({
+  label,
+  description,
+  onConfirm,
+}: {
+  label: string;
+  description: string;
+  onConfirm: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        className="size-8 rounded-md text-zinc-500 hover:text-red-600 dark:text-zinc-400"
+        size="icon-sm"
+        title={label}
+        type="button"
+        variant="ghost"
+        onClick={() => setOpen(true)}
+      >
+        <Trash2Icon />
+        <span className="sr-only">{label}</span>
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="gap-5 rounded-lg" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Confirm deletion</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              className="rounded-md"
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="rounded-md"
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                onConfirm();
+                setOpen(false);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function TabCount({ value }: { value: number }) {
+  return (
+    <span className="rounded-sm bg-zinc-200 px-1.5 py-0.5 text-[10px] leading-none text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">
+      {value}
+    </span>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p
+        className={cn(
+          "mt-1 text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-200",
+          strong && "font-semibold text-zinc-950 dark:text-zinc-50",
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SummaryTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-700 dark:bg-zinc-950">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-1 text-sm font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
+        {value}
+      </p>
     </div>
   );
 }
@@ -1142,15 +1930,12 @@ function SummaryLine({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
-      <span className="text-zinc-500 dark:text-zinc-400">
-        {formatLabel(label)}
-      </span>
+      <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
       <span
-        className={
-          strong
-            ? "font-semibold text-zinc-950 dark:text-zinc-50"
-            : "font-medium text-zinc-700 dark:text-zinc-200"
-        }
+        className={cn(
+          "font-medium tabular-nums text-zinc-700 dark:text-zinc-200",
+          strong && "text-base font-semibold text-zinc-950 dark:text-zinc-50",
+        )}
       >
         {value}
       </span>

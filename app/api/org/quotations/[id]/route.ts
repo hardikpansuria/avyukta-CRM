@@ -53,6 +53,11 @@ export async function GET(
     quotation: result.quotation,
     contacts: result.contacts ?? [],
     scopes: result.scopes ?? [],
+    final_adjustments: result.final_adjustments ?? [],
+    note_sections: result.note_sections ?? [],
+    status_history: result.status_history ?? [],
+    revisions: result.revisions ?? [],
+    tax_warning: result.tax_warning ?? null,
   });
 }
 

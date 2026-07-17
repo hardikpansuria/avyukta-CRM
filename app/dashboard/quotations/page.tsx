@@ -3,6 +3,46 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import {
+  CircleDollarSignIcon,
+  FileTextIcon,
+  FilterXIcon,
+  PlusIcon,
+  SearchIcon,
+  SendIcon,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+import {
+  DateText,
+  EmptyState,
+  formatCurrency,
+  formatDateTime,
+  formatPlainDate,
+  MoneyText,
+  PageHeader,
+  QuotationStatusBadge,
+  quotationStatuses,
+  SectionCard,
+} from "./quotation-ui";
 
 type Profile = {
   full_name?: string | null;
@@ -27,72 +67,6 @@ type Quotation = {
   prepared_by_profile?: Profile | null;
   sales_rep_profile?: Profile | null;
 };
-
-const statuses = [
-  ["draft", "Draft"],
-  ["pending_approval", "Pending Approval"],
-  ["sent", "Sent"],
-  ["accepted", "Accepted"],
-  ["rejected", "Rejected"],
-  ["expired", "Expired"],
-  ["converted_to_work_order", "Converted to Work Order"],
-];
-
-function formatStatus(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatPlainDate(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(date);
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en-CA", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function formatCurrency(value: number | string | null | undefined) {
-  const numberValue =
-    typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
-
-  if (!Number.isFinite(numberValue)) {
-    return "-";
-  }
-
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(numberValue);
-}
 
 function profileName(profile: Profile | null | undefined) {
   if (!profile) {
@@ -168,58 +142,124 @@ export default function QuotationsPage() {
     };
   }, [queryString]);
 
-  return (
-    <div className="mx-auto max-w-7xl">
-      <div className="mb-6 flex flex-col gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-            Quotations
-          </h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Search, filter, and open quotation drafts for this organization.
-          </p>
-        </div>
-        <Link
-          className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-950/20 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          href="/dashboard/quotations/new"
-        >
-          Create Quotation
-        </Link>
-      </div>
+  function openQuotation(quotationId: string) {
+    router.push(`/dashboard/quotations/${quotationId}`);
+  }
 
-      <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
+  const hasFilters = Boolean(search.trim() || status);
+  const draftCount = quotations.filter(
+    (quotation) => quotation.status === "draft",
+  ).length;
+  const sentCount = quotations.filter(
+    (quotation) => quotation.status === "sent",
+  ).length;
+  const visibleValue = quotations.reduce(
+    (sum, quotation) => sum + Number(quotation.grand_total ?? 0),
+    0,
+  );
+  const selectedStatusLabel =
+    quotationStatuses.find(([value]) => value === status)?.[1] ??
+    "All statuses";
+
+  return (
+    <div className="mx-auto max-w-7xl pb-12">
+      <PageHeader
+        action={
+          <Button
+            className="h-10 rounded-md px-4 font-semibold"
+            nativeButton={false}
+            render={<Link href="/dashboard/quotations/new" />}
+            size="lg"
+          >
+            <PlusIcon data-icon="inline-start" />
+            Create Quotation
+          </Button>
+        }
+        description="Search, filter, and manage draft and customer-facing quotations."
+        title="Quotations"
+      />
+
+      <section
+        aria-label="Quotation overview"
+        className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        <QuotationMetric
+          icon={<FileTextIcon />}
+          label="Current Results"
+          value={String(quotations.length)}
+        />
+        <QuotationMetric
+          icon={<FileTextIcon />}
+          label="Draft"
+          value={String(draftCount)}
+        />
+        <QuotationMetric
+          icon={<SendIcon />}
+          label="Sent"
+          value={String(sentCount)}
+        />
+        <QuotationMetric
+          icon={<CircleDollarSignIcon />}
+          label="Visible Value"
+          value={formatCurrency(visibleValue)}
+        />
+      </section>
+
+      <SectionCard className="mb-6">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px_auto] lg:items-end">
           <label className="block">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-              Search
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              Search quotations
             </span>
-            <input
-              className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-300"
-              placeholder="Quotation number, customer, project, or RFQ"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+            <div className="relative mt-2">
+              <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" />
+              <Input
+                className="h-10 rounded-md border-zinc-300 bg-white pl-10 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                placeholder="Quotation number, customer, project, RFQ..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Status
             </span>
-            <select
-              className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-300"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
+            <Select
+              value={status || "all"}
+              onValueChange={(value) =>
+                setStatus(value === "all" ? "" : String(value ?? ""))
+              }
             >
-              <option value="">All statuses</option>
-              {statuses.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="mt-2 h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                <SelectValue>{selectedStatusLabel}</SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectItem value="all">All statuses</SelectItem>
+                {quotationStatuses.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
+          <Button
+            className="h-10 rounded-md"
+            disabled={!hasFilters}
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setSearch("");
+              setStatus("");
+            }}
+          >
+            <FilterXIcon data-icon="inline-start" />
+            Clear
+          </Button>
         </div>
-      </section>
+      </SectionCard>
 
       {error ? (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
@@ -227,112 +267,183 @@ export default function QuotationsPage() {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-          <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-            Quotation Register
-          </h2>
-        </div>
+      <SectionCard
+        description={
+          hasFilters
+            ? `${quotations.length} matching quotation${quotations.length === 1 ? "" : "s"}`
+            : "Click a row to open quotation details."
+        }
+        title="Quotation Register"
+      >
+        {isLoading ? <QuotationTableSkeleton /> : null}
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1250px] border-collapse text-left text-sm">
-            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-              <tr>
-                <th className="px-5 py-3 font-semibold">Quotation Number</th>
-                <th className="px-5 py-3 font-semibold">Customer</th>
-                <th className="px-5 py-3 font-semibold">Project Name</th>
-                <th className="px-5 py-3 font-semibold">Quote Date</th>
-                <th className="px-5 py-3 font-semibold">Expiry Date</th>
-                <th className="px-5 py-3 font-semibold">Prepared By</th>
-                <th className="px-5 py-3 font-semibold">Sales Rep</th>
-                <th className="px-5 py-3 font-semibold">Status</th>
-                <th className="px-5 py-3 font-semibold">Grand Total</th>
-                <th className="px-5 py-3 font-semibold">Updated At</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {isLoading ? (
-                <tr>
-                  <td
-                    className="px-5 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400"
-                    colSpan={10}
-                  >
-                    Loading quotations...
-                  </td>
-                </tr>
-              ) : quotations.length === 0 ? (
-                <tr>
-                  <td className="px-5 py-12 text-center" colSpan={10}>
-                    <div className="mx-auto max-w-sm">
-                      <p className="text-sm font-medium text-zinc-950 dark:text-zinc-50">
-                        No quotations found
+        {!isLoading && quotations.length === 0 ? (
+          <EmptyState
+            action={
+              <Button
+                className="rounded-md px-4"
+                nativeButton={false}
+                render={<Link href="/dashboard/quotations/new" />}
+              >
+                Create Quotation
+              </Button>
+            }
+            description="Create a draft quotation to start the estimating workflow."
+            title="No quotations found"
+          />
+        ) : null}
+
+        {!isLoading && quotations.length > 0 ? (
+          <>
+            <div className="hidden md:block">
+              <Table className="min-w-[1180px]">
+                <TableHeader className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900/80 dark:text-zinc-400">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Quotation Number</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Quote Date</TableHead>
+                    <TableHead>Expiry Date</TableHead>
+                    <TableHead>Prepared By</TableHead>
+                    <TableHead>Sales Rep</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Grand Total</TableHead>
+                    <TableHead>Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {quotations.map((quotation) => (
+                    <TableRow
+                      className="cursor-pointer focus-within:bg-zinc-50 hover:bg-zinc-50 dark:focus-within:bg-zinc-900/70 dark:hover:bg-zinc-900/70"
+                      key={quotation.id}
+                      tabIndex={0}
+                      onClick={() => openQuotation(quotation.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          openQuotation(quotation.id);
+                        }
+                      }}
+                    >
+                      <TableCell className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                        {quotation.quotation_number ?? "Pending"}
+                      </TableCell>
+                      <TableCell className="font-medium text-zinc-950 dark:text-zinc-50">
+                        {quotation.customer?.company_name ?? "-"}
+                      </TableCell>
+                      <TableCell className="max-w-56 whitespace-normal text-zinc-700 dark:text-zinc-300">
+                        <span className="line-clamp-1">
+                          {quotation.project_name ?? "-"}
+                        </span>
+                        {quotation.customer_rfq_number ? (
+                          <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                            RFQ {quotation.customer_rfq_number}
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        <DateText value={quotation.quote_date} />
+                      </TableCell>
+                      <TableCell>
+                        <DateText value={quotation.expiry_date} />
+                      </TableCell>
+                      <TableCell className="text-zinc-700 dark:text-zinc-300">
+                        {profileName(quotation.prepared_by_profile)}
+                      </TableCell>
+                      <TableCell className="text-zinc-700 dark:text-zinc-300">
+                        {profileName(quotation.sales_rep_profile)}
+                      </TableCell>
+                      <TableCell>
+                        <QuotationStatusBadge status={quotation.status} />
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-zinc-950 dark:text-zinc-50">
+                        <MoneyText value={quotation.grand_total} />
+                      </TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        {formatDateTime(quotation.updated_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:hidden">
+              {quotations.map((quotation) => (
+                <button
+                  className="w-full p-4 text-left transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-zinc-400 dark:hover:bg-zinc-900"
+                  key={quotation.id}
+                  type="button"
+                  onClick={() => openQuotation(quotation.id)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                        {quotation.quotation_number ?? "Pending"}
                       </p>
-                      <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                        Create a draft quotation to start the estimating
-                        workflow.
+                      <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                        {quotation.customer?.company_name ?? "-"}
                       </p>
                     </div>
-                  </td>
-                </tr>
-              ) : (
-                quotations.map((quotation) => (
-                  <tr
-                    className="cursor-pointer transition hover:bg-zinc-50 dark:hover:bg-zinc-900/70"
-                    key={quotation.id}
-                    tabIndex={0}
-                    onClick={() =>
-                      router.push(`/dashboard/quotations/${quotation.id}`)
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        router.push(`/dashboard/quotations/${quotation.id}`);
-                      }
-                    }}
-                  >
-                    <td className="px-5 py-4 font-mono text-xs text-zinc-700 dark:text-zinc-300">
-                      {quotation.quotation_number ?? "Pending"}
-                    </td>
-                    <td className="px-5 py-4 font-medium text-zinc-950 dark:text-zinc-50">
-                      {quotation.customer?.company_name ?? "-"}
-                    </td>
-                    <td className="px-5 py-4 text-zinc-700 dark:text-zinc-300">
-                      {quotation.project_name ?? "-"}
-                      {quotation.customer_rfq_number ? (
-                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                          RFQ {quotation.customer_rfq_number}
-                        </p>
-                      ) : null}
-                    </td>
-                    <td className="px-5 py-4 text-zinc-700 dark:text-zinc-300">
-                      {formatPlainDate(quotation.quote_date)}
-                    </td>
-                    <td className="px-5 py-4 text-zinc-700 dark:text-zinc-300">
-                      {formatPlainDate(quotation.expiry_date)}
-                    </td>
-                    <td className="px-5 py-4 text-zinc-700 dark:text-zinc-300">
-                      {profileName(quotation.prepared_by_profile)}
-                    </td>
-                    <td className="px-5 py-4 text-zinc-700 dark:text-zinc-300">
-                      {profileName(quotation.sales_rep_profile)}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="inline-flex rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-200">
-                        {formatStatus(quotation.status)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-zinc-700 dark:text-zinc-300">
+                    <QuotationStatusBadge status={quotation.status} />
+                  </div>
+                  <p className="mt-3 text-sm text-zinc-700 dark:text-zinc-300">
+                    {quotation.project_name ?? "No project name"}
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+                    <span>Quote {formatPlainDate(quotation.quote_date)}</span>
+                    <span>Expires {formatPlainDate(quotation.expiry_date)}</span>
+                    <span>{profileName(quotation.sales_rep_profile)}</span>
+                    <span className="text-right font-semibold text-zinc-950 dark:text-zinc-50">
                       {formatCurrency(quotation.grand_total)}
-                    </td>
-                    <td className="px-5 py-4 text-zinc-600 dark:text-zinc-400">
-                      {formatDateTime(quotation.updated_at)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </SectionCard>
+    </div>
+  );
+}
+
+function QuotationMetric({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600 [&_svg]:size-4 dark:bg-zinc-900 dark:text-zinc-300">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
+        <p className="mt-1 truncate text-lg font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function QuotationTableSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div
+          className="grid gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800 md:grid-cols-[120px_1fr_1fr_110px_110px_1fr_1fr_130px_110px]"
+          key={index}
+        >
+          {Array.from({ length: 9 }).map((__, cellIndex) => (
+            <Skeleton className="h-5 rounded-md" key={cellIndex} />
+          ))}
         </div>
-      </section>
+      ))}
     </div>
   );
 }

@@ -2,8 +2,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { ArrowLeftIcon, SaveIcon } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   FinalAdjustmentInput,
   ScopeInput,
@@ -14,6 +25,12 @@ import {
   FinalSections,
   type NoteSectionInput,
 } from "./final-sections";
+import {
+  PageHeader,
+  QuotationStatusBadge,
+  quotationStatuses,
+  SectionCard,
+} from "./quotation-ui";
 import { ScopeBuilder } from "./scope-builder";
 
 type Profile = {
@@ -67,20 +84,7 @@ type Quotation = {
   customer?: CustomerSummary | null;
 };
 
-const inputClass =
-  "mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-300";
 const labelClass = "text-sm font-medium text-zinc-800 dark:text-zinc-200";
-const cardClass =
-  "rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950";
-const statuses = [
-  ["draft", "Draft"],
-  ["pending_approval", "Pending Approval"],
-  ["sent", "Sent"],
-  ["accepted", "Accepted"],
-  ["rejected", "Rejected"],
-  ["expired", "Expired"],
-  ["converted_to_work_order", "Converted to Work Order"],
-];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -145,6 +149,9 @@ export function QuotationForm({
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(mode === "edit");
   const [isSaving, setIsSaving] = useState(false);
+  const [persistedQuotationId, setPersistedQuotationId] = useState(
+    quotationId ?? "",
+  );
 
   const salesAssignees = useMemo(
     () =>
@@ -169,6 +176,10 @@ export function QuotationForm({
         .includes(search),
     );
   }, [customerSearch, customers]);
+  const selectedCustomer = customers.find(
+    (customer) => customer.id === selectedCustomerId,
+  );
+  const isPersisted = Boolean(persistedQuotationId);
 
   useEffect(() => {
     async function loadLookups() {
@@ -351,34 +362,60 @@ export function QuotationForm({
     setIsSaving(true);
 
     try {
+      const headerPayload = {
+        customer_id: selectedCustomerId,
+        quote_date: quoteDate,
+        expiry_date: expiryDate,
+        project_name: projectName,
+        project_location: projectLocation,
+        customer_rfq_number: customerRfqNumber,
+        sales_rep_id: salesRepId,
+        status,
+        contact_ids: selectedContactIds,
+      };
+      let targetQuotationId = persistedQuotationId;
+
+      if (!targetQuotationId) {
+        const createResponse = await fetch("/api/org/quotations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(headerPayload),
+        });
+        const createPayload = (await createResponse.json().catch(() => null)) as
+          | {
+              quotation?: { id: string; quotation_number?: string | null };
+              error?: string;
+            }
+          | null;
+
+        if (!createResponse.ok || !createPayload?.quotation) {
+          setError(createPayload?.error ?? "Unable to create quotation.");
+          return;
+        }
+
+        targetQuotationId = createPayload.quotation.id;
+        setPersistedQuotationId(targetQuotationId);
+        setQuotationNumber(
+          createPayload.quotation.quotation_number ?? "Pending",
+        );
+      }
+
       const response = await fetch(
-        mode === "edit" && quotationId
-          ? `/api/org/quotations/${quotationId}`
-          : "/api/org/quotations",
+        `/api/org/quotations/${targetQuotationId}`,
         {
-          method: mode === "edit" ? "PATCH" : "POST",
+          method: "PATCH",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            customer_id: selectedCustomerId,
-            quote_date: quoteDate,
-            expiry_date: expiryDate,
-            project_name: projectName,
-            project_location: projectLocation,
-            customer_rfq_number: customerRfqNumber,
-            sales_rep_id: salesRepId,
-            status,
-            contact_ids: selectedContactIds,
-            ...(mode === "edit"
-              ? {
-                  scopes,
-                  final_discount_type: finalDiscountType,
-                  final_discount_value: finalDiscountValue,
-                  final_adjustments: finalAdjustments,
-                  note_sections: noteSections,
-                }
-              : {}),
+            ...headerPayload,
+            scopes,
+            final_discount_type: finalDiscountType,
+            final_discount_value: finalDiscountValue,
+            final_adjustments: finalAdjustments,
+            note_sections: noteSections,
           }),
         },
       );
@@ -387,7 +424,10 @@ export function QuotationForm({
         | null;
 
       if (!response.ok || !payload?.quotation) {
-        setError(payload?.error ?? "Unable to save quotation.");
+        setError(
+          payload?.error ??
+            "Quotation was created, but the complete draft could not be saved. Try Save Draft again.",
+        );
         return;
       }
 
@@ -401,34 +441,56 @@ export function QuotationForm({
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-6xl rounded-lg border border-zinc-200 bg-white p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+      <div className="mx-auto max-w-6xl rounded-lg border border-zinc-200 bg-white p-8 text-sm text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
         Loading quotation editor...
       </div>
     );
   }
 
+  const backHref =
+    isPersisted
+      ? `/dashboard/quotations/${persistedQuotationId}`
+      : "/dashboard/quotations";
+  const selectedContacts = contacts.filter((contact) =>
+    selectedContactIds.includes(contact.id),
+  );
+
   return (
-    <form className="mx-auto max-w-6xl pb-24" onSubmit={handleSubmit}>
-      <div className="mb-6 flex flex-col gap-3 border-b border-zinc-200 pb-6 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-            {mode === "edit" ? "Edit Quotation" : "Create Quotation"}
-          </h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Save the quotation header as a draft before building scope and
-            totals.
-          </p>
+    <form className="mx-auto max-w-6xl pb-10" onSubmit={handleSubmit}>
+      <PageHeader
+        description="Build the complete customer quotation and save everything as one draft."
+        title={mode === "edit" ? "Edit Quotation" : "Create Quotation"}
+      />
+
+      <div className="sticky top-0 z-20 mb-6 rounded-lg border border-zinc-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 font-mono text-xs font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+              {quotationNumber}
+            </span>
+            <QuotationStatusBadge status={status} />
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button
+              className="h-10 rounded-md"
+              nativeButton={false}
+              render={<Link href={backHref} />}
+              type="button"
+              variant="outline"
+            >
+              <ArrowLeftIcon data-icon="inline-start" />
+              Back
+            </Button>
+            <Button
+              className="h-10 rounded-md font-semibold"
+              disabled={isSaving}
+              type="submit"
+            >
+              <SaveIcon data-icon="inline-start" />
+              {isSaving ? "Saving..." : "Save Draft"}
+            </Button>
+          </div>
         </div>
-        <Link
-          className="text-sm font-medium text-zinc-600 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50"
-          href={
-            mode === "edit" && quotationId
-              ? `/dashboard/quotations/${quotationId}`
-              : "/dashboard/quotations"
-          }
-        >
-          {mode === "edit" ? "Back to quotation" : "Back to quotations"}
-        </Link>
       </div>
 
       {error ? (
@@ -438,14 +500,15 @@ export function QuotationForm({
       ) : null}
 
       <div className="space-y-6">
-        <section className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
-            Quotation Header
-          </h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <SectionCard
+          description="Core quotation dates and identifiers."
+          title="Quotation Header"
+        >
+          <div className="grid gap-4 md:grid-cols-2">
             <ReadOnlyField label="Quotation Number" value={quotationNumber} />
             <TextField
               label="Quote Date"
+              required
               type="date"
               value={quoteDate}
               onChange={setQuoteDate}
@@ -457,64 +520,144 @@ export function QuotationForm({
               onChange={setExpiryDate}
             />
             <ReadOnlyField label="Revision Number" value={revisionNumber} />
-            <ReadOnlyField label="Prepared By" value={preparedBy} />
-            <SelectField
-              label="Sales Representative"
-              value={salesRepId}
-              onChange={setSalesRepId}
-              options={salesAssignees.map((assignee) => [
-                assignee.id,
-                assigneeName(assignee),
-              ])}
-              placeholder="Unassigned"
-            />
             <SelectField
               label="Status"
               value={status}
               onChange={setStatus}
-              options={statuses}
-              disabled={mode === "new"}
+              options={quotationStatuses}
+              disabled={!isPersisted}
             />
           </div>
-        </section>
+        </SectionCard>
 
-        <section className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
-            Customer
-          </h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label>
-              <span className={labelClass}>Search Customer</span>
-              <input
-                className={inputClass}
-                disabled={mode === "edit"}
+        <SectionCard
+          description="Choose the customer and contacts attached to this quotation."
+          title="Customer Information"
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <FieldShell label="Search Customer">
+              <Input
+                className="h-10 rounded-md border-zinc-300 bg-white text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                disabled={isPersisted}
                 placeholder="Search by company or code"
                 value={customerSearch}
                 onChange={(event) => setCustomerSearch(event.target.value)}
               />
-            </label>
-            <label>
-              <span className={labelClass}>Customer</span>
-              <select
-                className={inputClass}
-                disabled={mode === "edit"}
-                required
-                value={selectedCustomerId}
-                onChange={(event) => {
-                  setSelectedCustomerId(event.target.value);
+            </FieldShell>
+            <FieldShell label="Customer" required>
+              <Select
+                disabled={isPersisted}
+                value={selectedCustomerId || "__empty"}
+                onValueChange={(value) => {
+                  const nextValue = value === "__empty" ? "" : String(value);
+                  setSelectedCustomerId(nextValue);
                   setContacts([]);
                   setSelectedContactIds([]);
                 }}
               >
-                <option value="">Select customer</option>
-                {filteredCustomers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.company_name}
-                    {customer.customer_code ? ` (${customer.customer_code})` : ""}
-                  </option>
+                <SelectTrigger className="h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                  <SelectValue>
+                    {selectedCustomer
+                      ? `${selectedCustomer.company_name}${
+                          selectedCustomer.customer_code
+                            ? ` (${selectedCustomer.customer_code})`
+                            : ""
+                        }`
+                      : "Select customer"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectItem value="__empty">Select customer</SelectItem>
+                  {filteredCustomers.map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.company_name}
+                      {customer.customer_code
+                        ? ` (${customer.customer_code})`
+                        : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FieldShell>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                  Selected Contacts
+                </h3>
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  Select up to 2 contacts to snapshot onto this quotation.
+                </p>
+              </div>
+              <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                {selectedContactIds.length}/2 selected
+              </p>
+            </div>
+
+            {selectedContacts.length > 0 ? (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {selectedContacts.map((contact) => (
+                  <span
+                    className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+                    key={contact.id}
+                  >
+                    {contactName(contact)}
+                  </span>
                 ))}
-              </select>
-            </label>
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              {!selectedCustomerId ? (
+                <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+                  Select a customer to choose contacts.
+                </p>
+              ) : contacts.length === 0 ? (
+                <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+                  This customer does not have active contacts yet.
+                </p>
+              ) : (
+                contacts.map((contact) => {
+                  const selected = selectedContactIds.includes(contact.id);
+
+                  return (
+                    <Label
+                      className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition ${
+                        selected
+                          ? "border-zinc-950 bg-zinc-50 dark:border-zinc-200 dark:bg-zinc-900"
+                          : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+                      }`}
+                      key={contact.id}
+                    >
+                      <input
+                        checked={selected}
+                        className="mt-1"
+                        type="checkbox"
+                        onChange={() => toggleContact(contact.id)}
+                      />
+                      <span>
+                        <span className="font-medium text-zinc-950 dark:text-zinc-50">
+                          {contactName(contact)}
+                        </span>
+                        <span className="mt-1 block text-zinc-600 dark:text-zinc-400">
+                          {contact.email || "-"} · {contactPhone(contact)}
+                        </span>
+                      </span>
+                    </Label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          description="Project-specific reference information for the quotation."
+          title="Project Information"
+        >
+          <div className="grid gap-4 md:grid-cols-2">
             <TextField
               label="Project Name"
               value={projectName}
@@ -531,106 +674,45 @@ export function QuotationForm({
               onChange={setCustomerRfqNumber}
             />
           </div>
-        </section>
+        </SectionCard>
 
-        <section className={cardClass}>
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
-                Customer Contacts
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Select up to 2 contacts to snapshot onto this quotation.
-              </p>
-            </div>
-            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-              {selectedContactIds.length}/2 selected
-            </p>
-          </div>
-
-          <div className="mt-5 grid gap-3 lg:grid-cols-2">
-            {!selectedCustomerId ? (
-              <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
-                Select a customer to choose contacts.
-              </p>
-            ) : contacts.length === 0 ? (
-              <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
-                This customer does not have active contacts yet.
-              </p>
-            ) : (
-              contacts.map((contact) => (
-                <label
-                  className="flex gap-3 rounded-md border border-zinc-200 p-3 text-sm transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
-                  key={contact.id}
-                >
-                  <input
-                    checked={selectedContactIds.includes(contact.id)}
-                    className="mt-1"
-                    type="checkbox"
-                    onChange={() => toggleContact(contact.id)}
-                  />
-                  <span>
-                    <span className="font-medium text-zinc-950 dark:text-zinc-50">
-                      {contactName(contact)}
-                    </span>
-                    <span className="mt-1 block text-zinc-600 dark:text-zinc-400">
-                      {contact.email || "-"} · {contactPhone(contact)}
-                    </span>
-                  </span>
-                </label>
-              ))
-            )}
-          </div>
-        </section>
-
-        {mode === "edit" ? (
-          <>
-            <ScopeBuilder
-              quotationId={quotationId ?? ""}
-              scopes={scopes}
-              onChange={setScopes}
+        <SectionCard
+          description="Internal owner and assignment details."
+          title="Internal Assignment"
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <ReadOnlyField label="Prepared By" value={preparedBy} />
+            <SelectField
+              label="Sales Representative"
+              value={salesRepId}
+              onChange={setSalesRepId}
+              options={salesAssignees.map((assignee) => [
+                assignee.id,
+                assigneeName(assignee),
+              ])}
+              placeholder="Unassigned"
             />
-            <FinalSections
-              finalAdjustments={finalAdjustments}
-              finalDiscountType={finalDiscountType}
-              finalDiscountValue={finalDiscountValue}
-              noteSections={noteSections}
-              scopes={scopes}
-              taxRate={taxRate}
-              taxWarning={taxWarning}
-              onFinalAdjustmentsChange={setFinalAdjustments}
-              onFinalDiscountTypeChange={setFinalDiscountType}
-              onFinalDiscountValueChange={setFinalDiscountValue}
-              onNoteSectionsChange={setNoteSections}
-            />
-          </>
-        ) : null}
-      </div>
+          </div>
+        </SectionCard>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 px-6 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:left-64">
-        <div className="mx-auto flex max-w-6xl items-center justify-end gap-3">
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-300 px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            href={
-              mode === "edit" && quotationId
-                ? `/dashboard/quotations/${quotationId}`
-                : "/dashboard/quotations"
-            }
-          >
-            Cancel
-          </Link>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-            disabled={isSaving}
-            type="submit"
-          >
-            {isSaving
-              ? "Saving..."
-              : mode === "edit"
-                ? "Save Changes"
-                : "Save Draft"}
-          </button>
-        </div>
+        <ScopeBuilder
+          quotationId={persistedQuotationId}
+          scopes={scopes}
+          onChange={setScopes}
+        />
+        <FinalSections
+          finalAdjustments={finalAdjustments}
+          finalDiscountType={finalDiscountType}
+          finalDiscountValue={finalDiscountValue}
+          noteSections={noteSections}
+          scopes={scopes}
+          taxRate={taxRate}
+          taxWarning={taxWarning}
+          onFinalAdjustmentsChange={setFinalAdjustments}
+          onFinalDiscountTypeChange={setFinalDiscountType}
+          onFinalDiscountValueChange={setFinalDiscountValue}
+          onNoteSectionsChange={setNoteSections}
+        />
       </div>
     </form>
   );
@@ -638,14 +720,13 @@ export function QuotationForm({
 
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
-    <label>
-      <span className={labelClass}>{label}</span>
-      <input
-        className={`${inputClass} bg-zinc-50 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400`}
+    <FieldShell label={label}>
+      <Input
+        className="h-10 rounded-md border-zinc-200 bg-zinc-50 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
         readOnly
         value={value}
       />
-    </label>
+    </FieldShell>
   );
 }
 
@@ -654,22 +735,24 @@ function TextField({
   value,
   onChange,
   type = "text",
+  required,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  required?: boolean;
 }) {
   return (
-    <label>
-      <span className={labelClass}>{label}</span>
-      <input
-        className={inputClass}
+    <FieldShell label={label} required={required}>
+      <Input
+        className="h-10 rounded-md border-zinc-300 bg-white text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        required={required}
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
-    </label>
+    </FieldShell>
   );
 }
 
@@ -688,22 +771,55 @@ function SelectField({
   placeholder?: string;
   disabled?: boolean;
 }) {
+  const emptyValue = "__empty";
+  const selectedLabel =
+    options.find(([optionValue]) => optionValue === value)?.[1] ??
+    placeholder ??
+    "Select option";
+
   return (
-    <label>
-      <span className={labelClass}>{label}</span>
-      <select
-        className={inputClass}
+    <FieldShell label={label}>
+      <Select
         disabled={disabled}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        value={value || emptyValue}
+        onValueChange={(nextValue) =>
+          onChange(nextValue === emptyValue ? "" : String(nextValue ?? ""))
+        }
       >
-        {placeholder ? <option value="">{placeholder}</option> : null}
-        {options.map(([optionValue, labelText]) => (
-          <option key={optionValue} value={optionValue}>
-            {labelText}
-          </option>
-        ))}
-      </select>
-    </label>
+        <SelectTrigger className="h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+          <SelectValue>{selectedLabel}</SelectValue>
+        </SelectTrigger>
+        <SelectContent align="start">
+          {placeholder ? (
+            <SelectItem value={emptyValue}>{placeholder}</SelectItem>
+          ) : null}
+          {options.map(([optionValue, labelText]) => (
+            <SelectItem key={optionValue} value={optionValue}>
+              {labelText}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </FieldShell>
+  );
+}
+
+function FieldShell({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <Label className={labelClass}>
+        {label}
+        {required ? <span className="text-red-600">*</span> : null}
+      </Label>
+      <div className="mt-2">{children}</div>
+    </div>
   );
 }

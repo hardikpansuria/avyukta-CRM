@@ -4,6 +4,27 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+import {
+  formatCurrency,
+  formatDateTime,
+  formatPlainDate,
+  formatStatus,
+  QuotationStatusBadge,
+  quotationStatuses,
+  SectionCard,
+} from "../quotation-ui";
 
 type Profile = {
   full_name?: string | null;
@@ -93,16 +114,6 @@ type Revision = {
   created_at?: string | null;
 };
 
-const statuses = [
-  ["draft", "Draft"],
-  ["pending_approval", "Pending Approval"],
-  ["sent", "Sent"],
-  ["accepted", "Accepted"],
-  ["rejected", "Rejected"],
-  ["expired", "Expired"],
-  ["converted_to_work_order", "Converted to Work Order"],
-];
-
 type MaterialItem = {
   id: string;
   material_description?: string | null;
@@ -171,62 +182,6 @@ const cardClass =
   "rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950";
 const labelClass =
   "text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400";
-
-function formatStatus(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatPlainDate(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(date);
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("en-CA", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function formatCurrency(value: number | string | null | undefined) {
-  const numberValue =
-    typeof value === "number" ? value : Number.parseFloat(String(value ?? "0"));
-
-  if (!Number.isFinite(numberValue)) {
-    return "-";
-  }
-
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-  }).format(numberValue);
-}
 
 function profileName(profile: Profile | null | undefined) {
   if (!profile) {
@@ -312,6 +267,12 @@ export default function QuotationDetailPage() {
   }
 
   const quotation = detail.quotation;
+  const contacts = detail.contacts ?? [];
+  const scopes = detail.scopes ?? [];
+  const finalAdjustments = detail.final_adjustments ?? [];
+  const noteSections = detail.note_sections ?? [];
+  const statusHistory = detail.status_history ?? [];
+  const revisions = detail.revisions ?? [];
 
   async function updateStatus() {
     setError(null);
@@ -367,29 +328,32 @@ export default function QuotationDetailPage() {
 
   return (
     <div className="mx-auto max-w-6xl pb-24">
-      <div className="mb-6 flex flex-col gap-3 border-b border-zinc-200 pb-6 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
             {quotation.quotation_number ?? "Pending Quotation"}
           </h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
             {quotation.customer?.company_name ?? "-"} ·{" "}
             {quotation.project_name ?? "No project name"}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-300 px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            href="/dashboard/quotations"
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            className="h-10 rounded-md"
+            nativeButton={false}
+            render={<Link href="/dashboard/quotations" />}
+            variant="outline"
           >
             Back to Quotations
-          </Link>
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-            href={`/dashboard/quotations/${quotation.id}/edit`}
+          </Button>
+          <Button
+            className="h-10 rounded-md font-semibold"
+            nativeButton={false}
+            render={<Link href={`/dashboard/quotations/${quotation.id}/edit`} />}
           >
             Edit
-          </Link>
+          </Button>
         </div>
       </div>
 
@@ -399,13 +363,13 @@ export default function QuotationDetailPage() {
         </div>
       ) : null}
 
-      <section className={cardClass}>
+      <section className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="font-mono text-sm text-zinc-500 dark:text-zinc-400">
               {quotation.quotation_number ?? "Pending"}
             </p>
-            <h2 className="mt-2 text-xl font-semibold text-zinc-950 dark:text-zinc-50">
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
               {quotation.project_name ?? "Untitled Project"}
             </h2>
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
@@ -415,9 +379,7 @@ export default function QuotationDetailPage() {
                 : ""}
             </p>
           </div>
-          <span className="inline-flex rounded-full border border-zinc-200 px-3 py-1 text-sm font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-200">
-            {formatStatus(quotation.status)}
-          </span>
+          <QuotationStatusBadge className="h-7 px-3 text-sm" status={quotation.status} />
         </div>
       </section>
 
@@ -437,17 +399,14 @@ export default function QuotationDetailPage() {
       </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
-            Selected Customer Contacts
-          </h2>
-          <div className="mt-5 space-y-3">
-            {detail.contacts.length === 0 ? (
+        <SectionCard title="Selected Customer Contacts">
+          <div className="space-y-3">
+            {contacts.length === 0 ? (
               <p className="rounded-md bg-zinc-50 px-3 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
                 No contacts selected.
               </p>
             ) : (
-              detail.contacts.map((contact, index) => (
+              contacts.map((contact, index) => (
                 <div
                   className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800"
                   key={contact.id ?? index}
@@ -463,18 +422,15 @@ export default function QuotationDetailPage() {
               ))
             )}
           </div>
-        </div>
+        </SectionCard>
 
-        <div className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
-            Header Details
-          </h2>
-          <div className="mt-5 grid gap-4">
+        <SectionCard title="Header Details">
+          <div className="grid gap-4">
             <DetailRow label="Customer RFQ Number" value={quotation.customer_rfq_number ?? "-"} />
             <DetailRow label="Revision Number" value={String(quotation.revision_number ?? 0)} />
             <DetailRow label="Customer Code" value={quotation.customer?.customer_code ?? "-"} />
           </div>
-        </div>
+        </SectionCard>
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -487,14 +443,14 @@ export default function QuotationDetailPage() {
               Read-only scope, material, labour, and charge details.
             </p>
           </div>
-          {detail.scopes.length === 0 ? (
+          {scopes.length === 0 ? (
             <div className={cardClass}>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
                 No scopes added yet.
               </p>
             </div>
           ) : (
-            detail.scopes.map((scope, index) => (
+            scopes.map((scope, index) => (
               <ScopeCard key={scope.id} scope={scope} scopeNumber={index + 1} />
             ))
           )}
@@ -565,12 +521,12 @@ export default function QuotationDetailPage() {
             Final Additional Charges
           </h2>
           <div className="mt-5 space-y-3">
-            {detail.final_adjustments.length === 0 ? (
+            {finalAdjustments.length === 0 ? (
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
                 No final additional charges.
               </p>
             ) : (
-              detail.final_adjustments.map((adjustment) => (
+              finalAdjustments.map((adjustment) => (
                 <SummaryLine
                   key={adjustment.id}
                   label={adjustment.description ?? "Additional Charge"}
@@ -614,7 +570,7 @@ export default function QuotationDetailPage() {
       <section className="mt-6 grid gap-6 lg:grid-cols-2">
         <TimelineCard
           emptyText="No status history yet."
-          items={detail.status_history.map((item) => ({
+          items={statusHistory.map((item) => ({
             id: item.id,
             title: formatStatus(item.new_status),
             meta: formatDateTime(item.created_at),
@@ -624,7 +580,7 @@ export default function QuotationDetailPage() {
         />
         <TimelineCard
           emptyText="No revision snapshots yet."
-          items={detail.revisions.map((item) => ({
+          items={revisions.map((item) => ({
             id: item.id,
             title: `Revision ${item.revision_number ?? 0}`,
             meta: formatDateTime(item.created_at),
@@ -640,12 +596,12 @@ export default function QuotationDetailPage() {
             Notes and Terms
           </h2>
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            {detail.note_sections.length === 0 ? (
+            {noteSections.length === 0 ? (
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
                 No notes or terms saved.
               </p>
             ) : (
-              detail.note_sections.map((section) => (
+              noteSections.map((section) => (
                 <div
                   className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800"
                   key={section.id}
@@ -665,45 +621,54 @@ export default function QuotationDetailPage() {
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 px-6 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:left-64">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-end gap-3">
-          <select
-            className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+          <Select
             value={statusValue}
-            onChange={(event) => setStatusValue(event.target.value)}
+            onValueChange={(value) => setStatusValue(String(value ?? "draft"))}
           >
-            {statuses.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-300 px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            <SelectTrigger className="h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 sm:w-56">
+              <SelectValue placeholder="Change status" />
+            </SelectTrigger>
+            <SelectContent align="start">
+              {quotationStatuses.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            className="h-10 rounded-md"
             disabled={isWorking}
             type="button"
+            variant="outline"
             onClick={() => void updateStatus()}
           >
             Change Status
-          </button>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-300 px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          </Button>
+          <Button
+            className="h-10 rounded-md"
             disabled={isWorking}
             type="button"
+            variant="outline"
             onClick={() => void createRevision()}
           >
             Create Revision Snapshot
-          </button>
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-            href={`/dashboard/quotations/${quotation.id}/edit`}
+          </Button>
+          <Button
+            className="h-10 rounded-md font-semibold"
+            nativeButton={false}
+            render={<Link href={`/dashboard/quotations/${quotation.id}/edit`} />}
           >
             Edit
-          </Link>
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-300 px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            href="/dashboard/quotations"
+          </Button>
+          <Button
+            className="h-10 rounded-md"
+            nativeButton={false}
+            render={<Link href="/dashboard/quotations" />}
+            variant="outline"
           >
             Back
-          </Link>
+          </Button>
         </div>
       </div>
     </div>
@@ -762,152 +727,213 @@ function ScopeCard({
   scope: Scope;
   scopeNumber: number;
 }) {
+  const materialItems = scope.material_items ?? [];
+  const labourItems = scope.labour_items ?? [];
+  const scopeCharges = scope.scope_charges ?? [];
+
   return (
-    <article className={cardClass}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-            Scope of Work {scopeNumber}
-          </p>
-          <h3 className="mt-1 text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+    <details
+      className="group overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+      open
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-4 px-4 py-4 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:hover:bg-zinc-900/60 [&::-webkit-details-marker]:hidden sm:px-5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 text-lg text-zinc-500 transition group-open:rotate-90 dark:border-zinc-700 dark:text-zinc-400">
+          <ChevronRightIcon className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            Scope {scopeNumber}
+          </span>
+          <span className="block truncate text-base font-semibold text-zinc-950 dark:text-zinc-50">
             {scope.scope_title ?? "Scope of Work"}
-          </h3>
-          {scope.scope_description ? (
-            <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
+          </span>
+        </span>
+        <span className="text-right">
+          <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+            Scope total
+          </span>
+          <span className="block text-sm font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
+            {formatCurrency(scope.scope_total_after_discount)}
+          </span>
+        </span>
+      </summary>
+
+      <div className="border-t border-zinc-200 p-4 dark:border-zinc-800 sm:p-5">
+        {scope.scope_description ? (
+          <div className="mb-5">
+            <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">
+              Scope Description
+            </p>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-600 dark:text-zinc-300">
               {scope.scope_description}
             </p>
-          ) : null}
-        </div>
-        <div className="rounded-md bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50">
-          {formatCurrency(scope.scope_total_after_discount)}
-        </div>
-      </div>
+          </div>
+        ) : null}
 
-      <div className="mt-5 grid gap-4 md:grid-cols-3">
-        <DetailRow
-          label="Labour Method"
-          value={formatStatus(scope.labour_calculation_method)}
-        />
-        <DetailRow
-          label="Regular Rate"
-          value={formatCurrency(scope.regular_hourly_rate)}
-        />
-        <DetailRow
-          label="Overtime Rate"
-          value={formatCurrency(scope.overtime_hourly_rate)}
-        />
-      </div>
+        <div className="mb-5 grid gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:grid-cols-3">
+          <ScopeMetric
+            label="Labour Method"
+            value={formatStatus(scope.labour_calculation_method)}
+          />
+          <ScopeMetric
+            label="Regular Hourly Rate"
+            value={formatCurrency(scope.regular_hourly_rate)}
+          />
+          <ScopeMetric
+            label="Overtime Hourly Rate"
+            value={formatCurrency(scope.overtime_hourly_rate)}
+          />
+        </div>
 
-      <ReadOnlyTable
-        emptyText="No material rows."
-        headers={[
-          "Description",
-          "Category",
-          "Supplier",
-          "Quote Ref",
-          "Qty",
-          "Unit",
-          "Unit Cost",
-          "Cost",
-          "Profit",
-          "Line Total",
-          "Supplier PDF",
-        ]}
-        rows={scope.material_items.map((item) => [
-          item.material_description ?? "-",
-          item.material_category ?? "-",
-          item.supplier_name ?? "-",
-          item.supplier_quote_reference ?? "-",
-          String(item.quantity ?? 0),
-          item.unit ?? "-",
-          formatCurrency(item.unit_cost),
-          formatCurrency(item.material_cost),
-          formatCurrency(item.profit_amount),
-          formatCurrency(item.line_total),
-          item.supplier_quote_document?.signed_url ? (
-            <PdfLink
-              fileName={item.supplier_quote_document.file_name}
-              signedUrl={item.supplier_quote_document.signed_url}
+        <Tabs defaultValue="materials">
+          <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-md bg-zinc-100 p-1 dark:bg-zinc-900">
+            <TabsTrigger
+              className="h-8 flex-none rounded-sm px-3"
+              value="materials"
+            >
+              Materials
+              <ScopeTabCount value={materialItems.length} />
+            </TabsTrigger>
+            <TabsTrigger
+              className="h-8 flex-none rounded-sm px-3"
+              value="labour"
+            >
+              Labour
+              <ScopeTabCount value={labourItems.length} />
+            </TabsTrigger>
+            <TabsTrigger
+              className="h-8 flex-none rounded-sm px-3"
+              value="charges"
+            >
+              Additional Charges
+              <ScopeTabCount value={scopeCharges.length} />
+            </TabsTrigger>
+            <TabsTrigger
+              className="h-8 flex-none rounded-sm px-3"
+              value="summary"
+            >
+              Summary
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent className="pt-4" value="materials">
+            <ReadOnlyTable
+              emptyText="No material rows in this scope."
+              headers={[
+                "Description",
+                "Category",
+                "Supplier",
+                "Quote Ref",
+                "Qty",
+                "Unit",
+                "Unit Cost",
+                "Material Cost",
+                "Profit",
+                "Line Total",
+                "Supplier PDF",
+              ]}
+              rows={materialItems.map((item) => [
+                item.material_description ?? "-",
+                item.material_category ?? "-",
+                item.supplier_name ?? "-",
+                item.supplier_quote_reference ?? "-",
+                String(item.quantity ?? 0),
+                item.unit ?? "-",
+                formatCurrency(item.unit_cost),
+                formatCurrency(item.material_cost),
+                formatCurrency(item.profit_amount),
+                formatCurrency(item.line_total),
+                item.supplier_quote_document?.signed_url ? (
+                  <PdfLink
+                    fileName={item.supplier_quote_document.file_name}
+                    key="pdf"
+                    signedUrl={item.supplier_quote_document.signed_url}
+                  />
+                ) : (
+                  "-"
+                ),
+              ])}
+              title="Material Cost"
             />
-          ) : (
-            "-"
-          ),
-        ])}
-        title="Material Cost"
-      />
+          </TabsContent>
 
-      <ReadOnlyTable
-        emptyText="No labour rows."
-        headers={[
-          "Description",
-          "Method",
-          "Work Type",
-          "Regular Hours",
-          "Overtime Hours",
-          "Regular Cost",
-          "Overtime Cost",
-          "Total Cost",
-        ]}
-        rows={scope.labour_items.map((item) => [
-          item.labour_description ?? "-",
-          formatStatus(item.calculation_method),
-          formatStatus(item.work_type),
-          String(item.regular_hours ?? 0),
-          String(item.overtime_hours ?? 0),
-          formatCurrency(item.regular_cost),
-          formatCurrency(item.overtime_cost),
-          formatCurrency(item.total_cost),
-        ])}
-        title="Labour Cost"
-      />
+          <TabsContent className="pt-4" value="labour">
+            <ReadOnlyTable
+              emptyText="No labour rows in this scope."
+              headers={[
+                "Description",
+                "Method",
+                "Work Type",
+                "Regular Hours",
+                "Overtime Hours",
+                "Regular Cost",
+                "Overtime Cost",
+                "Total Cost",
+              ]}
+              rows={labourItems.map((item) => [
+                item.labour_description ?? "-",
+                formatStatus(item.calculation_method),
+                formatStatus(item.work_type),
+                String(item.regular_hours ?? 0),
+                String(item.overtime_hours ?? 0),
+                formatCurrency(item.regular_cost),
+                formatCurrency(item.overtime_cost),
+                formatCurrency(item.total_cost),
+              ])}
+              title="Labour Cost"
+            />
+          </TabsContent>
 
-      <ReadOnlyTable
-        emptyText="No additional charges."
-        headers={["Description", "Amount"]}
-        rows={scope.scope_charges.map((charge) => [
-          charge.description ?? "-",
-          formatCurrency(charge.amount),
-        ])}
-        title="Additional Charges"
-      />
+          <TabsContent className="pt-4" value="charges">
+            <ReadOnlyTable
+              emptyText="No additional charges in this scope."
+              headers={["Description", "Amount"]}
+              rows={scopeCharges.map((charge) => [
+                charge.description ?? "-",
+                formatCurrency(charge.amount),
+              ])}
+              title="Additional Charges"
+            />
+          </TabsContent>
 
-      <div className="mt-5 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900">
-        <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-          Scope Totals
-        </h4>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <SummaryLine
-            label="Material Total"
-            value={formatCurrency(scope.material_total)}
-          />
-          <SummaryLine
-            label="Material Profit"
-            value={formatCurrency(scope.material_profit_total)}
-          />
-          <SummaryLine
-            label="Labour Total"
-            value={formatCurrency(scope.labour_total)}
-          />
-          <SummaryLine
-            label="Additional Charges"
-            value={formatCurrency(scope.additional_charges_total)}
-          />
-          <SummaryLine
-            label="Subtotal Before Discount"
-            value={formatCurrency(scope.scope_subtotal_before_discount)}
-          />
-          <SummaryLine
-            label="Discount"
-            value={formatCurrency(scope.discount_amount)}
-          />
-          <SummaryLine
-            label="Scope Total After Discount"
-            strong
-            value={formatCurrency(scope.scope_total_after_discount)}
-          />
-        </div>
+          <TabsContent className="pt-4" value="summary">
+            <div className="grid gap-4 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:grid-cols-2">
+              <ScopeSummaryTile
+                label="Material Total"
+                value={formatCurrency(scope.material_total)}
+              />
+              <ScopeSummaryTile
+                label="Material Profit"
+                value={formatCurrency(scope.material_profit_total)}
+              />
+              <ScopeSummaryTile
+                label="Labour Total"
+                value={formatCurrency(scope.labour_total)}
+              />
+              <ScopeSummaryTile
+                label="Additional Charges"
+                value={formatCurrency(scope.additional_charges_total)}
+              />
+              <ScopeSummaryTile
+                label="Subtotal Before Discount"
+                value={formatCurrency(scope.scope_subtotal_before_discount)}
+              />
+              <ScopeSummaryTile
+                label="Discount"
+                value={`-${formatCurrency(scope.discount_amount)}`}
+              />
+              <div className="border-t border-zinc-200 pt-4 dark:border-zinc-700 sm:col-span-2">
+                <SummaryLine
+                  label="Scope Total"
+                  strong
+                  value={formatCurrency(scope.scope_total_after_discount)}
+                />
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
-    </article>
+    </details>
   );
 }
 
@@ -923,46 +949,100 @@ function ReadOnlyTable({
   emptyText: string;
 }) {
   return (
-    <section className="mt-5 rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <section className="overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
       <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h4 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
           {title}
         </h4>
       </div>
       {rows.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
           {emptyText}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-              <tr>
-                {headers.map((header) => (
-                  <th className="px-4 py-2 font-semibold" key={header}>
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {rows.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
-                    <td
-                      className="px-4 py-3 text-zinc-700 dark:text-zinc-300"
-                      key={`${rowIndex}-${cellIndex}`}
-                    >
-                      {cell}
-                    </td>
+        <>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-zinc-50 text-xs text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                <tr>
+                  {headers.map((header) => (
+                    <th className="px-4 py-2 font-medium" key={header}>
+                      {header}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                {rows.map((row, rowIndex) => (
+                  <tr
+                    className="transition hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                    key={rowIndex}
+                  >
+                    {row.map((cell, cellIndex) => (
+                      <td
+                        className="px-4 py-3 text-zinc-700 dark:text-zinc-300"
+                        key={`${rowIndex}-${cellIndex}`}
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:hidden">
+            {rows.map((row, rowIndex) => (
+              <div className="space-y-3 p-4" key={rowIndex}>
+                {row.map((cell, cellIndex) => (
+                  <div
+                    className="flex items-start justify-between gap-4 text-sm"
+                    key={`${rowIndex}-${cellIndex}`}
+                  >
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      {headers[cellIndex]}
+                    </span>
+                    <span className="min-w-0 text-right font-medium text-zinc-700 dark:text-zinc-200">
+                      {cell}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </section>
+  );
+}
+
+function ScopeMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-1 text-sm font-medium text-zinc-950 dark:text-zinc-50">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ScopeSummaryTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-700 dark:bg-zinc-950">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-1 text-sm font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ScopeTabCount({ value }: { value: number }) {
+  return (
+    <span className="rounded-sm bg-zinc-200 px-1.5 py-0.5 text-[10px] leading-none text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">
+      {value}
+    </span>
   );
 }
 

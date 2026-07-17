@@ -7,12 +7,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const bucketName = "quotation-documents";
 const maxPdfBytes = 10 * 1024 * 1024;
+const pdfMimeTypes = new Set([
+  "application/pdf",
+  "application/x-pdf",
+  "application/octet-stream",
+  "",
+]);
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
 
-function safeFileName(name: string) {
+function safePdfFileName(name: string) {
   const normalized = name
     .trim()
     .toLowerCase()
@@ -20,7 +26,13 @@ function safeFileName(name: string) {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 
-  return normalized || "supplier-quote.pdf";
+  const fileName = normalized || "supplier-quote.pdf";
+
+  return fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`;
+}
+
+function hasPdfSignature(bytes: Buffer) {
+  return bytes.length >= 5 && bytes.subarray(0, 5).toString("ascii") === "%PDF-";
 }
 
 async function verifyQuotationMaterial(
@@ -94,8 +106,15 @@ export async function POST(
     return jsonError("Supplier quote PDF is required", 400);
   }
 
-  if (file.type !== "application/pdf") {
+  if (
+    !pdfMimeTypes.has(file.type.toLowerCase()) &&
+    !file.name.toLowerCase().endsWith(".pdf")
+  ) {
     return jsonError("Supplier quote must be a PDF", 400);
+  }
+
+  if (file.size === 0) {
+    return jsonError("Supplier quote PDF is empty", 400);
   }
 
   if (file.size > maxPdfBytes) {
@@ -104,38 +123,74 @@ export async function POST(
 
   const filePath = `${session.org_id}/quotations/${id}/materials/${materialItemId}/supplier-quote.pdf`;
   const bytes = Buffer.from(await file.arrayBuffer());
+
+  if (!hasPdfSignature(bytes)) {
+    return jsonError("Supplier quote must be a valid PDF", 400);
+  }
+
+  const { data: existingDocument, error: existingDocumentError } =
+    await validation.admin
+      .from("quotation_material_documents")
+      .select("id")
+      .eq("org_id", session.org_id)
+      .eq("quotation_id", id)
+      .eq("material_item_id", materialItemId)
+      .maybeSingle();
+
+  if (existingDocumentError) {
+    console.error("Unable to check supplier quote metadata", {
+      code: existingDocumentError.code,
+      message: existingDocumentError.message,
+    });
+    return jsonError("Unable to prepare supplier quote upload", 500);
+  }
+
   const { error: uploadError } = await validation.admin.storage
     .from(bucketName)
     .upload(filePath, bytes, {
-      contentType: file.type,
+      contentType: "application/pdf",
       upsert: true,
     });
 
   if (uploadError) {
+    console.error("Unable to upload supplier quote file", {
+      message: uploadError.message,
+    });
     return jsonError("Unable to upload supplier quote", 500);
   }
 
-  const { data: document, error: documentError } = await validation.admin
-    .from("quotation_material_documents")
-    .upsert(
-      {
-        org_id: session.org_id,
-        quotation_id: id,
-        scope_id: validation.materialItem.scope_id,
-        material_item_id: materialItemId,
-        storage_bucket: bucketName,
-        file_name: safeFileName(file.name),
-        file_path: filePath,
-        file_size: file.size,
-        mime_type: file.type,
-        uploaded_by: session.user.id,
-      },
-      { onConflict: "material_item_id" },
-    )
+  const documentValues = {
+    org_id: session.org_id,
+    quotation_id: id,
+    scope_id: validation.materialItem.scope_id,
+    material_item_id: materialItemId,
+    storage_bucket: bucketName,
+    file_name: safePdfFileName(file.name),
+    file_path: filePath,
+    file_size: file.size,
+    mime_type: "application/pdf",
+    uploaded_by: session.user.id,
+  };
+  const documentQuery = existingDocument
+    ? validation.admin
+        .from("quotation_material_documents")
+        .update(documentValues)
+        .eq("id", existingDocument.id)
+        .eq("org_id", session.org_id)
+        .eq("quotation_id", id)
+        .eq("material_item_id", materialItemId)
+    : validation.admin
+        .from("quotation_material_documents")
+        .insert(documentValues);
+  const { data: document, error: documentError } = await documentQuery
     .select("*")
     .single();
 
   if (documentError || !document) {
+    console.error("Unable to save supplier quote metadata", {
+      code: documentError?.code,
+      message: documentError?.message,
+    });
     return jsonError("Unable to save supplier quote metadata", 500);
   }
 

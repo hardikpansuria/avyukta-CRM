@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ReactNode } from "react";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 
+import { DashboardNavigation } from "./dashboard-navigation";
 import { SignOutButton } from "./sign-out-button";
 
 export const dynamic = "force-dynamic";
@@ -43,43 +43,63 @@ export default async function DashboardLayout({
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-100 text-zinc-950">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-zinc-200 bg-white p-6 md:flex md:flex-col">
-        <div>
-          <p className="text-lg font-semibold">{session.org_name}</p>
-          <p className="mt-1 text-sm text-zinc-500">{session.org_code}</p>
+    <div className="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-zinc-200 bg-white md:flex md:flex-col dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex h-16 items-center gap-3 border-b border-zinc-200 px-5 dark:border-zinc-800">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-950 text-sm font-semibold text-white dark:bg-zinc-50 dark:text-zinc-950">
+            A
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{session.org_name}</p>
+            <p className="mt-0.5 truncate text-xs uppercase text-zinc-500 dark:text-zinc-400">
+              {session.org_code}
+            </p>
+          </div>
         </div>
-        <div className="mt-6 rounded-md bg-zinc-50 p-3 text-sm">
-          <p className="font-medium text-zinc-950">{session.user.email}</p>
-          <p className="mt-1 capitalize text-zinc-500">{session.role}</p>
+        <div className="flex-1 overflow-y-auto px-3 py-5">
+          <p className="mb-2 px-3 text-xs font-medium uppercase text-zinc-400 dark:text-zinc-500">
+            Workspace
+          </p>
+          <DashboardNavigation links={links} />
         </div>
-        <nav className="mt-8 space-y-1">
-          {links.map((link) => (
-            <Link
-              className="block rounded-md px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950"
-              href={link.href}
-              key={link.href}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="mt-auto">
+        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
+          <div className="mb-3 min-w-0 px-1">
+            <p className="truncate text-sm font-medium text-zinc-950 dark:text-zinc-50">
+              {session.user.email}
+            </p>
+            <p className="mt-0.5 text-xs capitalize text-zinc-500 dark:text-zinc-400">
+              {session.role}
+            </p>
+          </div>
           <SignOutButton />
         </div>
       </aside>
 
       <div className="md:pl-64">
-        <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 md:hidden">
-          <div>
-            <p className="font-semibold">{session.org_name}</p>
-            <p className="text-sm text-zinc-500">
-              {session.user.email} · {session.role}
-            </p>
+        <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur md:hidden dark:border-zinc-800 dark:bg-zinc-950/95">
+          <div className="flex h-16 items-center justify-between gap-3 px-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-950 text-sm font-semibold text-white dark:bg-zinc-50 dark:text-zinc-950">
+                A
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">
+                  {session.org_name}
+                </p>
+                <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                  {session.user.email}
+                </p>
+              </div>
+            </div>
+            <SignOutButton compact />
           </div>
-          <SignOutButton />
+          <div className="overflow-x-auto border-t border-zinc-100 px-3 py-2 dark:border-zinc-900">
+            <DashboardNavigation links={links} mobile />
+          </div>
         </header>
-        <main className="px-6 py-8">{children}</main>
+        <main className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+          {children}
+        </main>
       </div>
     </div>
   );
