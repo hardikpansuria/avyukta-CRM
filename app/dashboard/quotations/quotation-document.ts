@@ -60,7 +60,6 @@ export type PrintableQuotationDetail = {
       supplier_name?: string | null;
       supplier_quote_reference?: string | null;
       quantity?: number | string | null;
-      unit?: string | null;
       unit_cost?: number | string | null;
       material_cost?: number | string | null;
       profit_amount?: number | string | null;
@@ -80,6 +79,11 @@ export type PrintableQuotationDetail = {
     scope_charges?: Array<{
       description?: string | null;
       amount?: number | string | null;
+      profit_type?: string | null;
+      profit_value?: number | string | null;
+      profit_amount?: number | string | null;
+      line_total?: number | string | null;
+      supporting_document?: { file_name?: string | null } | null;
     }>;
   }>;
   final_adjustments?: Array<{
@@ -193,7 +197,7 @@ function buildPrintHtml(detail: PrintableQuotationDetail) {
         ]
           .filter(Boolean)
           .join(" / ") || "-",
-        `${item.quantity ?? 0} ${item.unit ?? ""}`.trim(),
+        String(item.quantity ?? 0),
         money(item.unit_cost),
         money(item.material_cost),
         money(item.profit_amount),
@@ -212,6 +216,13 @@ function buildPrintHtml(detail: PrintableQuotationDetail) {
       const chargeRows = (scope.scope_charges ?? []).map((charge) => [
         charge.description ?? "-",
         money(charge.amount),
+        titleCase(charge.profit_type),
+        charge.profit_type === "percentage"
+          ? `${charge.profit_value ?? 0}%`
+          : money(charge.profit_value),
+        money(charge.profit_amount),
+        money(charge.line_total),
+        charge.supporting_document?.file_name ?? "-",
       ]);
 
       return `
@@ -232,7 +243,7 @@ function buildPrintHtml(detail: PrintableQuotationDetail) {
           </div>
           <h3>Materials</h3>
           ${htmlTable(
-            ["Description", "Category", "Supplier", "Quote Ref", "Qty / Unit", "Unit Cost", "Cost", "Profit", "Line Total"],
+            ["Description", "Category", "Supplier", "Quote Ref", "Quantity", "Unit Cost", "Cost", "Profit", "Line Total"],
             materialRows,
           )}
           <h3>Labour</h3>
@@ -241,7 +252,10 @@ function buildPrintHtml(detail: PrintableQuotationDetail) {
             labourRows,
           )}
           <h3>Additional Charges</h3>
-          ${htmlTable(["Description", "Amount"], chargeRows)}
+          ${htmlTable(
+            ["Description", "Base Amount", "Profit Type", "Profit Value", "Profit Amount", "Line Total", "Supporting PDF"],
+            chargeRows,
+          )}
           <div class="scope-total">
             <span>Materials <b>${escapeHtml(money(scope.material_total))}</b></span>
             <span>Material Profit <b>${escapeHtml(money(scope.material_profit_total))}</b></span>
@@ -585,7 +599,7 @@ export async function downloadQuotationPdf(
 
     heading("Materials");
     table(
-      ["Description", "Category", "Supplier / Quote Ref", "Qty / Unit", "Unit Cost", "Material Cost", "Profit", "Line Total"],
+      ["Description", "Category", "Supplier / Quote Ref", "Quantity", "Unit Cost", "Material Cost", "Profit", "Line Total"],
       (scope.material_items ?? []).map((item) => [
         item.material_description ?? "-",
         item.material_category ?? "-",
@@ -598,7 +612,7 @@ export async function downloadQuotationPdf(
         ]
           .filter(Boolean)
           .join(" / ") || "-",
-        `${item.quantity ?? 0} ${item.unit ?? ""}`.trim(),
+        String(item.quantity ?? 0),
         money(item.unit_cost),
         money(item.material_cost),
         money(item.profit_amount),
@@ -629,12 +643,19 @@ export async function downloadQuotationPdf(
 
     heading("Additional Charges");
     table(
-      ["Description", "Amount"],
+      ["Description", "Base Amount", "Profit Type", "Profit Value", "Profit Amount", "Line Total", "Supporting PDF"],
       (scope.scope_charges ?? []).map((charge) => [
         charge.description ?? "-",
         money(charge.amount),
+        titleCase(charge.profit_type),
+        charge.profit_type === "percentage"
+          ? `${charge.profit_value ?? 0}%`
+          : money(charge.profit_value),
+        money(charge.profit_amount),
+        money(charge.line_total),
+        charge.supporting_document?.file_name ?? "-",
       ]),
-      { 0: { cellWidth: contentWidth - 38 }, 1: { cellWidth: 38 } },
+      { 0: { cellWidth: 62 }, 6: { cellWidth: 48 } },
     );
 
     heading("Scope Summary");

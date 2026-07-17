@@ -60,6 +60,13 @@ function newAdjustment(): FinalAdjustmentInput {
   };
 }
 
+function decimalValue(value: string) {
+  const nextValue = value.trim();
+  return nextValue === "" || /^\d+(?:\.\d*)?$/.test(nextValue)
+    ? nextValue
+    : null;
+}
+
 export function FinalSections({
   scopes,
   finalDiscountType,
@@ -137,13 +144,16 @@ export function FinalSections({
               </span>
               <input
                 className={`${inputClass} mt-2`}
-                min="0"
-                step="0.01"
-                type="number"
+                inputMode="decimal"
+                type="text"
                 value={finalDiscountValue}
-                onChange={(event) =>
-                  onFinalDiscountValueChange(event.target.value)
-                }
+                onChange={(event) => {
+                  const value = decimalValue(event.target.value);
+
+                  if (value !== null) {
+                    onFinalDiscountValueChange(value);
+                  }
+                }}
               />
             </label>
           </div>
@@ -192,13 +202,16 @@ export function FinalSections({
                 </select>
                 <input
                   className={inputClass}
-                  min="0"
-                  step="0.01"
-                  type="number"
+                  inputMode="decimal"
+                  type="text"
                   value={String(adjustment.value ?? "")}
-                  onChange={(event) =>
-                    updateAdjustment(index, { value: event.target.value })
-                  }
+                  onChange={(event) => {
+                    const value = decimalValue(event.target.value);
+
+                    if (value !== null) {
+                      updateAdjustment(index, { value });
+                    }
+                  }}
                 />
                 <button
                   className="text-sm font-medium text-zinc-500 hover:text-red-600 dark:text-zinc-400"

@@ -129,7 +129,6 @@ type MaterialItem = {
   supplier_name?: string | null;
   supplier_quote_reference?: string | null;
   quantity?: number | string | null;
-  unit?: string | null;
   unit_cost?: number | string | null;
   material_cost?: number | string | null;
   profit_type?: string | null;
@@ -163,6 +162,15 @@ type ScopeCharge = {
   id: string;
   description?: string | null;
   amount?: number | string | null;
+  profit_type?: string | null;
+  profit_value?: number | string | null;
+  profit_amount?: number | string | null;
+  line_total?: number | string | null;
+  supporting_document?: {
+    id: string;
+    file_name: string;
+    signed_url?: string | null;
+  } | null;
 };
 
 type Scope = {
@@ -894,7 +902,6 @@ function ScopeCard({
                 "Supplier",
                 "Quote Ref",
                 "Qty",
-                "Unit",
                 "Unit Cost",
                 "Material Cost",
                 "Profit",
@@ -907,7 +914,6 @@ function ScopeCard({
                 item.supplier_name ?? "-",
                 item.supplier_quote_reference ?? "-",
                 String(item.quantity ?? 0),
-                item.unit ?? "-",
                 formatCurrency(item.unit_cost),
                 formatCurrency(item.material_cost),
                 formatCurrency(item.profit_amount),
@@ -956,10 +962,33 @@ function ScopeCard({
           <TabsContent className="pt-4" value="charges">
             <ReadOnlyTable
               emptyText="No additional charges in this scope."
-              headers={["Description", "Amount"]}
+              headers={[
+                "Description",
+                "Base Amount",
+                "Profit Type",
+                "Profit Value",
+                "Profit Amount",
+                "Line Total",
+                "Supporting PDF",
+              ]}
               rows={scopeCharges.map((charge) => [
                 charge.description ?? "-",
                 formatCurrency(charge.amount),
+                formatStatus(charge.profit_type),
+                charge.profit_type === "percentage"
+                  ? `${charge.profit_value ?? 0}%`
+                  : formatCurrency(charge.profit_value),
+                formatCurrency(charge.profit_amount),
+                formatCurrency(charge.line_total),
+                charge.supporting_document?.signed_url ? (
+                  <PdfLink
+                    fileName={charge.supporting_document.file_name}
+                    key="pdf"
+                    signedUrl={charge.supporting_document.signed_url}
+                  />
+                ) : (
+                  "-"
+                ),
               ])}
               title="Additional Charges"
             />

@@ -144,8 +144,26 @@ type MaterialDocumentRow = {
   signed_url?: string | null;
 };
 
+type ChargeDocumentRow = {
+  id: string;
+  scope_charge_id: string;
+  storage_bucket: string;
+  file_name: string;
+  file_path: string;
+  file_size?: number | string | null;
+  mime_type: string;
+  uploaded_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  signed_url?: string | null;
+};
+
 type MaterialWithDocument = MaterialRow & {
   supplier_quote_document?: MaterialDocumentRow | null;
+};
+
+type ChargeWithDocument = ChargeRow & {
+  supporting_document?: ChargeDocumentRow | null;
 };
 
 type FinalAdjustmentRow = FinalAdjustmentInput & {
@@ -352,7 +370,6 @@ function hasMaterialValue(item: Record<string, unknown>) {
     item.supplier_name,
     item.supplier_quote_reference,
     item.quantity,
-    item.unit,
     item.unit_cost,
     item.profit_value,
   ].some((value) => String(value ?? "").trim().length > 0);
@@ -369,9 +386,21 @@ function hasLabourValue(item: Record<string, unknown>) {
 }
 
 function hasChargeValue(item: Record<string, unknown>) {
-  return [item.description, item.amount].some(
+  return [item.description, item.amount, item.profit_value].some(
     (value) => String(value ?? "").trim().length > 0,
   );
+}
+
+function isValidDecimalInput(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return true;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0;
+  }
+
+  return /^\d+(?:\.\d*)?$/.test(String(value).trim());
 }
 
 function hasAdjustmentValue(item: Record<string, unknown>) {
@@ -599,6 +628,16 @@ export function normalizeScopesPayload(value: unknown) {
         return { error: "Each material row must include a description" };
       }
 
+      for (const [value, label] of [
+        [material.quantity, "Material quantity"],
+        [material.unit_cost, "Material unit cost"],
+        [material.profit_value, "Material profit value"],
+      ] as const) {
+        if (!isValidDecimalInput(value)) {
+          return { error: `${label} must be a valid positive number` };
+        }
+      }
+
       materialItems.push({
         id: trimText(material.id) || undefined,
         material_description: trimText(material.material_description),
@@ -607,9 +646,11 @@ export function normalizeScopesPayload(value: unknown) {
         supplier_quote_reference:
           trimText(material.supplier_quote_reference) || null,
         quantity: material.quantity as string | number | null,
-        unit: trimText(material.unit) || null,
         unit_cost: material.unit_cost as string | number | null,
-        profit_type: trimText(material.profit_type) || "none",
+        profit_type:
+          trimText(material.profit_type) === "amount"
+            ? "amount"
+            : "percentage",
         profit_value: material.profit_value as string | number | null,
       });
     }
@@ -655,10 +696,24 @@ export function normalizeScopesPayload(value: unknown) {
         return { error: "Each additional charge must include a description" };
       }
 
+      for (const [value, label] of [
+        [charge.amount, "Additional charge amount"],
+        [charge.profit_value, "Additional charge profit value"],
+      ] as const) {
+        if (!isValidDecimalInput(value)) {
+          return { error: `${label} must be a valid positive number` };
+        }
+      }
+
       scopeCharges.push({
         id: trimText(charge.id) || undefined,
         description: trimText(charge.description),
         amount: charge.amount as string | number | null,
+        profit_type:
+          trimText(charge.profit_type) === "amount"
+            ? "amount"
+            : "percentage",
+        profit_value: charge.profit_value as string | number | null,
       });
     }
 
@@ -781,7 +836,6 @@ export async function replaceQuotationScopes(
       supplier_name: item.supplier_name ?? null,
       supplier_quote_reference: item.supplier_quote_reference ?? null,
       quantity: item.quantity,
-      unit: item.unit ?? null,
       unit_cost: item.unit_cost,
       material_cost: item.material_cost,
       profit_type: item.profit_type,
@@ -834,6 +888,10 @@ export async function replaceQuotationScopes(
       scope_id: scopeRows[scopeIndex].id,
       description: charge.description,
       amount: charge.amount,
+      profit_type: charge.profit_type,
+      profit_value: charge.profit_value,
+      profit_amount: charge.profit_amount,
+      line_total: charge.line_total,
       sort_order: chargeIndex + 1,
     })),
   );
@@ -1236,6 +1294,7 @@ export async function getQuotationDetail(
     labourResult,
     chargesResult,
     documentsResult,
+    chargeDocumentsResult,
     finalAdjustmentsResult,
     notesResult,
     statusHistoryResult,
@@ -1282,6 +1341,11 @@ export async function getQuotationDetail(
       .order("created_at", { ascending: true }),
     admin
       .from("quotation_material_documents")
+      .select("*")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId),
+    admin
+      .from("quotation_scope_charge_documents")
       .select("*")
       .eq("org_id", orgId)
       .eq("quotation_id", quotationId),
@@ -1344,6 +1408,10 @@ export async function getQuotationDetail(
     return { error: documentsResult.error };
   }
 
+  if (chargeDocumentsResult.error) {
+    return { error: chargeDocumentsResult.error };
+  }
+
   if (finalAdjustmentsResult.error) {
     return { error: finalAdjustmentsResult.error };
   }
@@ -1369,8 +1437,9 @@ export async function getQuotationDetail(
   );
   const materialsByScope = new Map<string, MaterialWithDocument[]>();
   const labourByScope = new Map<string, LabourRow[]>();
-  const chargesByScope = new Map<string, ChargeRow[]>();
+  const chargesByScope = new Map<string, ChargeWithDocument[]>();
   const documentsByMaterial = new Map<string, MaterialDocumentRow>();
+  const documentsByCharge = new Map<string, ChargeDocumentRow>();
 
   for (const document of (documentsResult.data ?? []) as MaterialDocumentRow[]) {
     let signedUrl: string | null = null;
@@ -1399,6 +1468,24 @@ export async function getQuotationDetail(
     materialsByScope.set(material.scope_id, existing);
   }
 
+  for (const document of (chargeDocumentsResult.data ??
+    []) as ChargeDocumentRow[]) {
+    let signedUrl: string | null = null;
+
+    if (document.file_path) {
+      const { data: signedData } = await admin.storage
+        .from(document.storage_bucket || "quotation-documents")
+        .createSignedUrl(document.file_path, 10 * 60);
+
+      signedUrl = signedData?.signedUrl ?? null;
+    }
+
+    documentsByCharge.set(document.scope_charge_id, {
+      ...document,
+      signed_url: signedUrl,
+    });
+  }
+
   for (const labour of (labourResult.data ?? []) as LabourRow[]) {
     const existing = labourByScope.get(labour.scope_id) ?? [];
     existing.push(labour);
@@ -1407,7 +1494,11 @@ export async function getQuotationDetail(
 
   for (const charge of (chargesResult.data ?? []) as ChargeRow[]) {
     const existing = chargesByScope.get(charge.scope_id) ?? [];
-    existing.push(charge);
+    existing.push({
+      ...charge,
+      is_persisted: true,
+      supporting_document: documentsByCharge.get(charge.id) ?? null,
+    });
     chargesByScope.set(charge.scope_id, existing);
   }
 

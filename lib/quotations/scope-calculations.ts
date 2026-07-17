@@ -1,7 +1,15 @@
 export type DiscountType = "none" | "percentage" | "amount";
 export type LabourCalculationMethod = "hourly" | "crew";
-export type ProfitType = "none" | "percentage" | "amount";
+export type ProfitType = "percentage" | "amount";
 export type WorkType = "regular" | "overtime" | "weekend" | "confined_space";
+
+export type QuotationDocument = {
+  id: string;
+  file_name: string;
+  file_size?: number | string | null;
+  mime_type: string;
+  signed_url?: string | null;
+};
 
 export type MaterialItemInput = {
   id?: string;
@@ -11,17 +19,10 @@ export type MaterialItemInput = {
   supplier_name?: string | null;
   supplier_quote_reference?: string | null;
   quantity?: number | string | null;
-  unit?: string | null;
   unit_cost?: number | string | null;
   profit_type?: string | null;
   profit_value?: number | string | null;
-  supplier_quote_document?: {
-    id: string;
-    file_name: string;
-    file_size?: number | string | null;
-    mime_type: string;
-    signed_url?: string | null;
-  } | null;
+  supplier_quote_document?: QuotationDocument | null;
 };
 
 export type LabourItemInput = {
@@ -36,8 +37,12 @@ export type LabourItemInput = {
 
 export type ScopeChargeInput = {
   id?: string;
+  is_persisted?: boolean;
   description?: string | null;
   amount?: number | string | null;
+  profit_type?: string | null;
+  profit_value?: number | string | null;
+  supporting_document?: QuotationDocument | null;
 };
 
 export type ScopeInput = {
@@ -85,6 +90,10 @@ export type CalculatedLabourItem = LabourItemInput & {
 
 export type CalculatedScopeCharge = ScopeChargeInput & {
   amount: number;
+  profit_type: ProfitType;
+  profit_value: number;
+  profit_amount: number;
+  line_total: number;
 };
 
 export type CalculatedScope = Omit<
@@ -169,7 +178,7 @@ function normalizeDiscountType(value: string | null | undefined): DiscountType {
 }
 
 function normalizeProfitType(value: string | null | undefined): ProfitType {
-  return value === "percentage" || value === "amount" ? value : "none";
+  return value === "amount" ? "amount" : "percentage";
 }
 
 function normalizeWorkType(value: string | null | undefined): WorkType {
@@ -223,9 +232,7 @@ export function calculateMaterialItem(
   const profitAmount =
     profitType === "percentage"
       ? roundMoney(materialCost * (profitValue / 100))
-      : profitType === "amount"
-        ? roundMoney(profitValue)
-        : 0;
+      : roundMoney(profitValue);
 
   return {
     ...item,
@@ -294,10 +301,24 @@ export function calculateScope(scope: ScopeInput): CalculatedScope {
   const labourItems = (scope.labour_items ?? []).map((item) =>
     calculateLabourItem(item, method, regularRate, overtimeRate),
   );
-  const scopeCharges = (scope.scope_charges ?? []).map((charge) => ({
-    ...charge,
-    amount: roundMoney(toPositiveNumber(charge.amount)),
-  }));
+  const scopeCharges = (scope.scope_charges ?? []).map((charge) => {
+    const amount = roundMoney(toPositiveNumber(charge.amount));
+    const profitType = normalizeProfitType(charge.profit_type);
+    const profitValue = toPositiveNumber(charge.profit_value);
+    const profitAmount =
+      profitType === "percentage"
+        ? roundMoney(amount * (profitValue / 100))
+        : roundMoney(profitValue);
+
+    return {
+      ...charge,
+      amount,
+      profit_type: profitType,
+      profit_value: profitValue,
+      profit_amount: profitAmount,
+      line_total: roundMoney(amount + profitAmount),
+    };
+  });
   const materialTotal = roundMoney(
     materialItems.reduce((sum, item) => sum + item.material_cost, 0),
   );
@@ -308,7 +329,7 @@ export function calculateScope(scope: ScopeInput): CalculatedScope {
     labourItems.reduce((sum, item) => sum + item.total_cost, 0),
   );
   const additionalChargesTotal = roundMoney(
-    scopeCharges.reduce((sum, charge) => sum + charge.amount, 0),
+    scopeCharges.reduce((sum, charge) => sum + charge.line_total, 0),
   );
   const subtotalBeforeDiscount = roundMoney(
     materialTotal +

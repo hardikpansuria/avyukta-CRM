@@ -46,6 +46,7 @@ import {
   calculateQuotationTotals,
   type CalculatedLabourItem,
   type CalculatedMaterialItem,
+  type CalculatedScopeCharge,
   type CalculatedScope,
   type LabourItemInput,
   type MaterialItemInput,
@@ -68,10 +69,9 @@ function newMaterialItem(): MaterialItemInput {
     supplier_name: "",
     supplier_quote_reference: "",
     quantity: "",
-    unit: "",
     unit_cost: "",
-    profit_type: "none",
-    profit_value: "",
+    profit_type: "percentage",
+    profit_value: "0",
   };
 }
 
@@ -89,9 +89,12 @@ function newLabourItem(): LabourItemInput {
 
 function newScopeCharge(): ScopeChargeInput {
   return {
-    id: crypto.randomUUID(),
+    id: `new-${crypto.randomUUID()}`,
+    is_persisted: false,
     description: "",
     amount: "",
+    profit_type: "percentage",
+    profit_value: "0",
   };
 }
 
@@ -141,6 +144,7 @@ export function ScopeBuilder({
   const [workingMaterialId, setWorkingMaterialId] = useState<string | null>(
     null,
   );
+  const [workingChargeId, setWorkingChargeId] = useState<string | null>(null);
   const calculated = useMemo(() => calculateQuotationTotals(scopes), [scopes]);
 
   function updateScope(scopeIndex: number, updates: Partial<ScopeInput>) {
@@ -321,6 +325,122 @@ export function ScopeBuilder({
       setDocumentError("Unable to remove supplier quote.");
     } finally {
       setWorkingMaterialId(null);
+    }
+  }
+
+  async function uploadChargeDocument(
+    scopeIndex: number,
+    chargeIndex: number,
+    file: File,
+  ) {
+    const charge = scopes[scopeIndex].scope_charges?.[chargeIndex];
+
+    if (!charge?.id || !charge.is_persisted) {
+      setDocumentError("Save the quotation before uploading a supporting PDF.");
+      return;
+    }
+
+    if (file.type !== "application/pdf") {
+      setDocumentError("Supporting document must be a PDF.");
+      return;
+    }
+
+    if (file.size === 0) {
+      setDocumentError("Supporting PDF is empty.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setDocumentError("Supporting PDF must be 10 MB or smaller.");
+      return;
+    }
+
+    if (
+      charge.supporting_document &&
+      !window.confirm("Replace the existing supporting PDF?")
+    ) {
+      return;
+    }
+
+    setDocumentError(null);
+    setWorkingChargeId(charge.id);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+
+      const response = await fetch(
+        `/api/org/quotations/${quotationId}/scope-charges/${charge.id}/document`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            document?: NonNullable<ScopeChargeInput["supporting_document"]>;
+            error?: string;
+          }
+        | null;
+
+      if (!response.ok || !payload?.document) {
+        setDocumentError(
+          payload?.error ?? "Unable to upload supporting document.",
+        );
+        return;
+      }
+
+      updateCharge(scopeIndex, chargeIndex, {
+        is_persisted: true,
+        supporting_document: payload.document,
+      });
+    } catch {
+      setDocumentError("Unable to upload supporting document.");
+    } finally {
+      setWorkingChargeId(null);
+    }
+  }
+
+  async function removeChargeDocument(
+    scopeIndex: number,
+    chargeIndex: number,
+  ) {
+    const charge = scopes[scopeIndex].scope_charges?.[chargeIndex];
+
+    if (!charge?.id || !charge.supporting_document) {
+      return;
+    }
+
+    if (!window.confirm("Remove this supporting PDF?")) {
+      return;
+    }
+
+    setDocumentError(null);
+    setWorkingChargeId(charge.id);
+
+    try {
+      const response = await fetch(
+        `/api/org/quotations/${quotationId}/scope-charges/${charge.id}/document`,
+        { method: "DELETE" },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        setDocumentError(
+          payload?.error ?? "Unable to remove supporting document.",
+        );
+        return;
+      }
+
+      updateCharge(scopeIndex, chargeIndex, {
+        supporting_document: null,
+      });
+    } catch {
+      setDocumentError("Unable to remove supporting document.");
+    } finally {
+      setWorkingChargeId(null);
     }
   }
 
@@ -574,7 +694,11 @@ export function ScopeBuilder({
 
                     <TabsContent className="pt-4" value="charges">
                       <ChargesSection
+                        calculatedCharges={
+                          calculatedScope?.scope_charges ?? []
+                        }
                         charges={scope.scope_charges ?? []}
+                        workingChargeId={workingChargeId}
                         onAdd={() =>
                           updateScope(scopeIndex, {
                             scope_charges: [
@@ -590,8 +714,18 @@ export function ScopeBuilder({
                             ),
                           })
                         }
+                        onRemoveDocument={(chargeIndex) =>
+                          void removeChargeDocument(scopeIndex, chargeIndex)
+                        }
                         onUpdate={(chargeIndex, updates) =>
                           updateCharge(scopeIndex, chargeIndex, updates)
+                        }
+                        onUpload={(chargeIndex, file) =>
+                          void uploadChargeDocument(
+                            scopeIndex,
+                            chargeIndex,
+                            file,
+                          )
                         }
                       />
                     </TabsContent>
@@ -711,7 +845,7 @@ function MaterialSection({
       ) : (
         <>
           <div className="hidden overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 lg:block">
-            <Table className="min-w-[1540px]">
+            <Table className="min-w-[1480px]">
               <TableHeader className="bg-zinc-50 dark:bg-zinc-900/80">
                 <TableRow className="hover:bg-transparent">
                   {[
@@ -720,7 +854,6 @@ function MaterialSection({
                     "Supplier",
                     "Quote Ref",
                     "Qty",
-                    "Unit",
                     "Unit Cost",
                     "Material Cost",
                     "Profit Type",
@@ -793,22 +926,13 @@ function MaterialSection({
                           }
                         />
                       </TableCell>
-                      <TableCell className="w-24 p-2">
+                      <TableCell className="w-32 min-w-32 p-2">
                         <NumberInput
                           ariaLabel="Quantity"
+                          className="min-w-28"
                           value={item.quantity}
                           onChange={(value) =>
                             onUpdate(itemIndex, { quantity: value })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="w-24 p-2">
-                        <Input
-                          aria-label="Unit"
-                          className={inputClass}
-                          value={item.unit ?? ""}
-                          onChange={(event) =>
-                            onUpdate(itemIndex, { unit: event.target.value })
                           }
                         />
                       </TableCell>
@@ -830,11 +954,14 @@ function MaterialSection({
                         <CompactSelect
                           ariaLabel="Profit type"
                           options={[
-                            ["none", "None"],
                             ["percentage", "Percentage"],
                             ["amount", "Amount"],
                           ]}
-                          value={item.profit_type ?? "none"}
+                          value={
+                            item.profit_type === "amount"
+                              ? "amount"
+                              : "percentage"
+                          }
                           onChange={(value) =>
                             onUpdate(itemIndex, { profit_type: value })
                           }
@@ -956,15 +1083,6 @@ function MaterialSection({
                         }
                       />
                     </Field>
-                    <Field label="Unit">
-                      <Input
-                        className={inputClass}
-                        value={item.unit ?? ""}
-                        onChange={(event) =>
-                          onUpdate(itemIndex, { unit: event.target.value })
-                        }
-                      />
-                    </Field>
                     <Field label="Unit Cost">
                       <NumberInput
                         value={item.unit_cost}
@@ -976,17 +1094,26 @@ function MaterialSection({
                     <Field label="Profit Type">
                       <CompactSelect
                         options={[
-                          ["none", "None"],
                           ["percentage", "Percentage"],
                           ["amount", "Amount"],
                         ]}
-                        value={item.profit_type ?? "none"}
+                        value={
+                          item.profit_type === "amount"
+                            ? "amount"
+                            : "percentage"
+                        }
                         onChange={(value) =>
                           onUpdate(itemIndex, { profit_type: value })
                         }
                       />
                     </Field>
-                    <Field label="Profit Value">
+                    <Field
+                      label={
+                        item.profit_type === "amount"
+                          ? "Profit Amount"
+                          : "Profit %"
+                      }
+                    >
                       <NumberInput
                         value={item.profit_value}
                         onChange={(value) =>
@@ -1392,14 +1519,22 @@ function LabourMobileCard({
 
 function ChargesSection({
   charges,
+  calculatedCharges,
+  workingChargeId,
   onAdd,
   onUpdate,
   onDelete,
+  onUpload,
+  onRemoveDocument,
 }: {
   charges: ScopeChargeInput[];
+  calculatedCharges: CalculatedScopeCharge[];
+  workingChargeId: string | null;
   onAdd: () => void;
   onUpdate: (index: number, updates: Partial<ScopeChargeInput>) => void;
   onDelete: (index: number) => void;
+  onUpload: (index: number, file: File) => void;
+  onRemoveDocument: (index: number) => void;
 }) {
   return (
     <TabSection
@@ -1415,47 +1550,225 @@ function ChargesSection({
           onAction={onAdd}
         />
       ) : (
-        <div className="overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
-          <div className="hidden grid-cols-[minmax(0,1fr)_180px_48px] gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/80 md:grid">
-            <span>Description</span>
-            <span>Amount</span>
-            <span className="sr-only">Actions</span>
+        <>
+          <div className="hidden overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800 lg:block">
+            <Table className="min-w-[1180px]">
+              <TableHeader className="bg-zinc-50 dark:bg-zinc-900/80">
+                <TableRow className="hover:bg-transparent">
+                  {[
+                    "Description",
+                    "Base Amount",
+                    "Profit Type",
+                    "Profit Value",
+                    "Profit Amount",
+                    "Line Total",
+                    "Supporting PDF",
+                    "",
+                  ].map((header) => (
+                    <TableHead
+                      className="h-10 px-2 text-xs text-zinc-500 dark:text-zinc-400"
+                      key={header || "actions"}
+                    >
+                      {header}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {charges.map((charge, chargeIndex) => {
+                  const calculatedCharge = calculatedCharges[chargeIndex];
+
+                  return (
+                    <TableRow
+                      className="align-top"
+                      key={charge.id ?? chargeIndex}
+                    >
+                      <TableCell className="min-w-64 p-2">
+                        <Input
+                          aria-label="Additional charge description"
+                          className={inputClass}
+                          placeholder="e.g. Freight, crane rental, travel"
+                          value={charge.description ?? ""}
+                          onChange={(event) =>
+                            onUpdate(chargeIndex, {
+                              description: event.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-36 p-2">
+                        <NumberInput
+                          ariaLabel="Additional charge amount"
+                          value={charge.amount}
+                          onChange={(value) =>
+                            onUpdate(chargeIndex, { amount: value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-40 p-2">
+                        <CompactSelect
+                          ariaLabel="Additional charge profit type"
+                          options={[
+                            ["percentage", "Percentage"],
+                            ["amount", "Amount"],
+                          ]}
+                          value={
+                            charge.profit_type === "amount"
+                              ? "amount"
+                              : "percentage"
+                          }
+                          onChange={(value) =>
+                            onUpdate(chargeIndex, { profit_type: value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-36 p-2">
+                        <NumberInput
+                          ariaLabel={
+                            charge.profit_type === "amount"
+                              ? "Additional charge profit amount"
+                              : "Additional charge profit percentage"
+                          }
+                          value={charge.profit_value}
+                          onChange={(value) =>
+                            onUpdate(chargeIndex, { profit_value: value })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="w-36 p-2">
+                        <CalculatedValue
+                          value={formatCurrency(
+                            calculatedCharge?.profit_amount,
+                          )}
+                        />
+                      </TableCell>
+                      <TableCell className="w-36 p-2">
+                        <CalculatedValue
+                          strong
+                          value={formatCurrency(calculatedCharge?.line_total)}
+                        />
+                      </TableCell>
+                      <TableCell className="w-60 p-2">
+                        <ChargeDocumentCell
+                          charge={charge}
+                          isWorking={workingChargeId === charge.id}
+                          onRemove={() => onRemoveDocument(chargeIndex)}
+                          onUpload={(file) => onUpload(chargeIndex, file)}
+                        />
+                      </TableCell>
+                      <TableCell className="w-12 p-2">
+                        <ConfirmDeleteButton
+                          description="This additional charge and its supporting PDF will be removed from the scope."
+                          label="Delete charge"
+                          onConfirm={() => onDelete(chargeIndex)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {charges.map((charge, chargeIndex) => (
-              <div
-                className="grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_180px_48px] md:items-center"
-                key={charge.id ?? chargeIndex}
-              >
-                <Field mobileOnlyLabel="Description">
-                  <Input
-                    className={inputClass}
-                    placeholder="e.g. Freight, crane rental, travel"
-                    value={charge.description ?? ""}
-                    onChange={(event) =>
-                      onUpdate(chargeIndex, {
-                        description: event.target.value,
-                      })
-                    }
-                  />
-                </Field>
-                <Field mobileOnlyLabel="Amount">
-                  <NumberInput
-                    value={charge.amount}
-                    onChange={(value) =>
-                      onUpdate(chargeIndex, { amount: value })
-                    }
-                  />
-                </Field>
-                <ConfirmDeleteButton
-                  description="This additional charge will be removed from the scope."
-                  label="Delete charge"
-                  onConfirm={() => onDelete(chargeIndex)}
-                />
-              </div>
-            ))}
+
+          <div className="space-y-3 lg:hidden">
+            {charges.map((charge, chargeIndex) => {
+              const calculatedCharge = calculatedCharges[chargeIndex];
+
+              return (
+                <div
+                  className="rounded-md border border-zinc-200 p-4 dark:border-zinc-800"
+                  key={charge.id ?? chargeIndex}
+                >
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                      Additional Charge {chargeIndex + 1}
+                    </p>
+                    <ConfirmDeleteButton
+                      description="This additional charge and its supporting PDF will be removed from the scope."
+                      label="Delete charge"
+                      onConfirm={() => onDelete(chargeIndex)}
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <Field label="Description">
+                        <Input
+                          className={inputClass}
+                          placeholder="e.g. Freight, crane rental, travel"
+                          value={charge.description ?? ""}
+                          onChange={(event) =>
+                            onUpdate(chargeIndex, {
+                              description: event.target.value,
+                            })
+                          }
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Base Amount">
+                      <NumberInput
+                        value={charge.amount}
+                        onChange={(value) =>
+                          onUpdate(chargeIndex, { amount: value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Profit Type">
+                      <CompactSelect
+                        options={[
+                          ["percentage", "Percentage"],
+                          ["amount", "Amount"],
+                        ]}
+                        value={
+                          charge.profit_type === "amount"
+                            ? "amount"
+                            : "percentage"
+                        }
+                        onChange={(value) =>
+                          onUpdate(chargeIndex, { profit_type: value })
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={
+                        charge.profit_type === "amount"
+                          ? "Profit Amount"
+                          : "Profit %"
+                      }
+                    >
+                      <NumberInput
+                        value={charge.profit_value}
+                        onChange={(value) =>
+                          onUpdate(chargeIndex, { profit_value: value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Calculated Profit">
+                      <CalculatedValue
+                        value={formatCurrency(calculatedCharge?.profit_amount)}
+                      />
+                    </Field>
+                    <Field label="Line Total">
+                      <CalculatedValue
+                        strong
+                        value={formatCurrency(calculatedCharge?.line_total)}
+                      />
+                    </Field>
+                    <div className="sm:col-span-2">
+                      <Field label="Supporting PDF">
+                        <ChargeDocumentCell
+                          charge={charge}
+                          isWorking={workingChargeId === charge.id}
+                          onRemove={() => onRemoveDocument(chargeIndex)}
+                          onUpload={(file) => onUpload(chargeIndex, file)}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        </>
       )}
     </TabSection>
   );
@@ -1643,20 +1956,27 @@ function NumberInput({
   value,
   onChange,
   ariaLabel,
+  className,
 }: {
   value: number | string | null | undefined;
   onChange: (value: string) => void;
   ariaLabel?: string;
+  className?: string;
 }) {
   return (
     <Input
       aria-label={ariaLabel}
-      className={inputClass}
-      min="0"
-      step="0.01"
-      type="number"
+      className={cn(inputClass, className)}
+      inputMode="decimal"
+      type="text"
       value={String(value ?? "")}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => {
+        const nextValue = event.target.value.trim();
+
+        if (nextValue === "" || /^\d+(?:\.\d*)?$/.test(nextValue)) {
+          onChange(nextValue);
+        }
+      }}
     />
   );
 }
@@ -1812,6 +2132,98 @@ function SupplierQuoteCell({
             onClick={onRemove}
           >
             Remove PDF
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ChargeDocumentCell({
+  charge,
+  isWorking,
+  onUpload,
+  onRemove,
+}: {
+  charge: ScopeChargeInput;
+  isWorking: boolean;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const document = charge.supporting_document;
+
+  if (!charge.is_persisted) {
+    return (
+      <div>
+        <div className="flex min-h-9 items-center gap-2 rounded-md border border-dashed border-zinc-300 px-3 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          <FileTextIcon className="size-3.5" />
+          Available after save
+        </div>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Optional supporting PDF
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0">
+      {document ? (
+        <p className="mb-2 max-w-52 truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">
+          {document.file_name}
+        </p>
+      ) : (
+        <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Optional supporting PDF
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {document?.signed_url ? (
+          <Button
+            className="h-8 rounded-md"
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => window.open(document.signed_url ?? "", "_blank")}
+          >
+            <ExternalLinkIcon data-icon="inline-start" />
+            View
+          </Button>
+        ) : null}
+        <label
+          className={cn(
+            buttonVariants({ size: "sm", variant: "outline" }),
+            "h-8 cursor-pointer rounded-md",
+            isWorking && "pointer-events-none opacity-50",
+          )}
+        >
+          <UploadIcon className="size-4" />
+          {isWorking ? "Uploading..." : document ? "Replace" : "Upload PDF"}
+          <input
+            accept=".pdf,application/pdf"
+            className="sr-only"
+            disabled={isWorking}
+            type="file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+
+              if (file) {
+                onUpload(file);
+              }
+            }}
+          />
+        </label>
+        {document ? (
+          <Button
+            className="h-8 rounded-md"
+            disabled={isWorking}
+            size="sm"
+            type="button"
+            variant="destructive"
+            onClick={onRemove}
+          >
+            Remove
           </Button>
         ) : null}
       </div>
