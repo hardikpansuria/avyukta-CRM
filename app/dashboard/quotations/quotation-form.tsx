@@ -4,8 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-import type { ScopeInput } from "@/lib/quotations/scope-calculations";
+import type {
+  FinalAdjustmentInput,
+  ScopeInput,
+} from "@/lib/quotations/scope-calculations";
 
+import {
+  defaultNoteSections,
+  FinalSections,
+  type NoteSectionInput,
+} from "./final-sections";
 import { ScopeBuilder } from "./scope-builder";
 
 type Profile = {
@@ -53,6 +61,9 @@ type Quotation = {
   prepared_by_profile?: Profile | null;
   sales_rep_id?: string | null;
   status?: string | null;
+  final_discount_type?: string | null;
+  final_discount_value?: number | string | null;
+  tax_rate?: number | string | null;
   customer?: CustomerSummary | null;
 };
 
@@ -63,11 +74,12 @@ const cardClass =
   "rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950";
 const statuses = [
   ["draft", "Draft"],
+  ["pending_approval", "Pending Approval"],
   ["sent", "Sent"],
-  ["approved", "Approved"],
+  ["accepted", "Accepted"],
   ["rejected", "Rejected"],
   ["expired", "Expired"],
-  ["converted", "Converted"],
+  ["converted_to_work_order", "Converted to Work Order"],
 ];
 
 function today() {
@@ -121,6 +133,15 @@ export function QuotationForm({
   const [salesRepId, setSalesRepId] = useState("");
   const [status, setStatus] = useState("draft");
   const [scopes, setScopes] = useState<ScopeInput[]>([]);
+  const [finalDiscountType, setFinalDiscountType] = useState("none");
+  const [finalDiscountValue, setFinalDiscountValue] = useState("");
+  const [finalAdjustments, setFinalAdjustments] = useState<
+    FinalAdjustmentInput[]
+  >([]);
+  const [noteSections, setNoteSections] =
+    useState<NoteSectionInput[]>(defaultNoteSections);
+  const [taxRate, setTaxRate] = useState<number | string | null>(0);
+  const [taxWarning, setTaxWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(mode === "edit");
   const [isSaving, setIsSaving] = useState(false);
@@ -203,6 +224,9 @@ export function QuotationForm({
               quotation?: Quotation;
               contacts?: QuotationContact[];
               scopes?: ScopeInput[];
+              final_adjustments?: FinalAdjustmentInput[];
+              note_sections?: NoteSectionInput[];
+              tax_warning?: string | null;
               error?: string;
             }
           | null;
@@ -225,12 +249,29 @@ export function QuotationForm({
         setPreparedBy(profileName(quotation.prepared_by_profile));
         setSalesRepId(quotation.sales_rep_id ?? "");
         setStatus(quotation.status ?? "draft");
+        setFinalDiscountType(quotation.final_discount_type ?? "none");
+        setFinalDiscountValue(String(quotation.final_discount_value ?? ""));
+        setTaxRate(quotation.tax_rate ?? 0);
+        setTaxWarning(payload.tax_warning ?? null);
         setSelectedContactIds(
           (payload.contacts ?? [])
             .map((contact) => contact.customer_contact_id)
             .filter((id): id is string => Boolean(id)),
         );
         setScopes(payload.scopes ?? []);
+        setFinalAdjustments(payload.final_adjustments ?? []);
+        setNoteSections(
+          defaultNoteSections.map((section) => {
+            const saved = (payload.note_sections ?? []).find(
+              (note) => note.section_type === section.section_type,
+            );
+
+            return {
+              ...section,
+              body_text: saved?.body_text ?? "",
+            };
+          }),
+        );
       } catch {
         setError("Unable to load quotation.");
       } finally {
@@ -329,7 +370,15 @@ export function QuotationForm({
             sales_rep_id: salesRepId,
             status,
             contact_ids: selectedContactIds,
-            ...(mode === "edit" ? { scopes } : {}),
+            ...(mode === "edit"
+              ? {
+                  scopes,
+                  final_discount_type: finalDiscountType,
+                  final_discount_value: finalDiscountValue,
+                  final_adjustments: finalAdjustments,
+                  note_sections: noteSections,
+                }
+              : {}),
           }),
         },
       );
@@ -535,7 +584,26 @@ export function QuotationForm({
         </section>
 
         {mode === "edit" ? (
-          <ScopeBuilder scopes={scopes} onChange={setScopes} />
+          <>
+            <ScopeBuilder
+              quotationId={quotationId ?? ""}
+              scopes={scopes}
+              onChange={setScopes}
+            />
+            <FinalSections
+              finalAdjustments={finalAdjustments}
+              finalDiscountType={finalDiscountType}
+              finalDiscountValue={finalDiscountValue}
+              noteSections={noteSections}
+              scopes={scopes}
+              taxRate={taxRate}
+              taxWarning={taxWarning}
+              onFinalAdjustmentsChange={setFinalAdjustments}
+              onFinalDiscountTypeChange={setFinalDiscountType}
+              onFinalDiscountValueChange={setFinalDiscountValue}
+              onNoteSectionsChange={setNoteSections}
+            />
+          </>
         ) : null}
       </div>
 

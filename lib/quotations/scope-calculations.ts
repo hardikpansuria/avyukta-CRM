@@ -5,6 +5,7 @@ export type WorkType = "regular" | "overtime" | "weekend" | "confined_space";
 
 export type MaterialItemInput = {
   id?: string;
+  is_persisted?: boolean;
   material_description?: string | null;
   material_category?: string | null;
   supplier_name?: string | null;
@@ -14,6 +15,13 @@ export type MaterialItemInput = {
   unit_cost?: number | string | null;
   profit_type?: string | null;
   profit_value?: number | string | null;
+  supplier_quote_document?: {
+    id: string;
+    file_name: string;
+    file_size?: number | string | null;
+    mime_type: string;
+    signed_url?: string | null;
+  } | null;
 };
 
 export type LabourItemInput = {
@@ -44,6 +52,14 @@ export type ScopeInput = {
   material_items?: MaterialItemInput[];
   labour_items?: LabourItemInput[];
   scope_charges?: ScopeChargeInput[];
+};
+
+export type FinalAdjustmentInput = {
+  id?: string;
+  adjustment_type?: string | null;
+  description?: string | null;
+  calculation_type?: string | null;
+  value?: number | string | null;
 };
 
 export type CalculatedMaterialItem = MaterialItemInput & {
@@ -111,6 +127,18 @@ export type QuotationTotals = {
   grand_total_before_tax: number;
 };
 
+export type FinalTotals = QuotationTotals & {
+  final_discount_type: DiscountType;
+  final_discount_value: number;
+  final_discount_amount: number;
+  final_additional_charges_total: number;
+  taxable_subtotal: number;
+  tax_rate: number;
+  tax_amount: number;
+  grand_total_after_tax: number;
+  final_adjustments: Array<FinalAdjustmentInput & { calculated_amount: number }>;
+};
+
 export const emptyQuotationTotals: QuotationTotals = {
   material_total: 0,
   material_profit_total: 0,
@@ -172,6 +200,16 @@ function calculateDiscount(
   }
 
   return 0;
+}
+
+function calculateAmount(
+  base: number,
+  calculationType: string | null | undefined,
+  value: number,
+) {
+  return calculationType === "percentage"
+    ? roundMoney(base * (value / 100))
+    : roundMoney(value);
 }
 
 export function calculateMaterialItem(
@@ -342,4 +380,73 @@ export function calculateQuotationTotals(
   );
 
   return { scopes: calculatedScopes, totals };
+}
+
+export function calculateFinalTotals({
+  scopeTotals,
+  finalDiscountType,
+  finalDiscountValue,
+  finalAdjustments,
+  taxRate,
+}: {
+  scopeTotals: QuotationTotals;
+  finalDiscountType?: string | null;
+  finalDiscountValue?: number | string | null;
+  finalAdjustments?: FinalAdjustmentInput[];
+  taxRate?: number | string | null;
+}): FinalTotals {
+  const normalizedDiscountType = normalizeDiscountType(finalDiscountType);
+  const normalizedDiscountValue = toPositiveNumber(finalDiscountValue);
+  const finalDiscountAmount = calculateDiscount(
+    scopeTotals.grand_total_before_tax,
+    normalizedDiscountType,
+    normalizedDiscountValue,
+  );
+  const calculatedAdjustments = (finalAdjustments ?? []).map((adjustment) => {
+    const value = toPositiveNumber(adjustment.value);
+    const calculationType =
+      adjustment.calculation_type === "percentage" ? "percentage" : "amount";
+
+    return {
+      ...adjustment,
+      adjustment_type: "additional_charge",
+      calculation_type: calculationType,
+      value,
+      calculated_amount: calculateAmount(
+        scopeTotals.grand_total_before_tax,
+        calculationType,
+        value,
+      ),
+    };
+  });
+  const finalAdditionalChargesTotal = roundMoney(
+    calculatedAdjustments.reduce(
+      (sum, adjustment) => sum + adjustment.calculated_amount,
+      0,
+    ),
+  );
+  const taxableSubtotal = roundMoney(
+    Math.max(
+      0,
+      scopeTotals.grand_total_before_tax -
+        finalDiscountAmount +
+        finalAdditionalChargesTotal,
+    ),
+  );
+  const normalizedTaxRate = toPositiveNumber(taxRate);
+  const taxAmount = roundMoney(taxableSubtotal * (normalizedTaxRate / 100));
+
+  return {
+    ...scopeTotals,
+    final_discount_type: normalizedDiscountType,
+    final_discount_value: normalizedDiscountValue,
+    final_discount_amount: finalDiscountAmount,
+    final_additional_charges_total: finalAdditionalChargesTotal,
+    taxable_subtotal: taxableSubtotal,
+    tax_rate: normalizedTaxRate,
+    tax_amount: taxAmount,
+    grand_total_before_tax: taxableSubtotal,
+    grand_total_after_tax: roundMoney(taxableSubtotal + taxAmount),
+    final_adjustments: calculatedAdjustments,
+  };
 }

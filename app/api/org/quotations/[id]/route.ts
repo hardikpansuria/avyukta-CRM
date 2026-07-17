@@ -1,20 +1,27 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   allowedQuotationRoles,
   buildQuotationContactRows,
+  calculateFinalQuotationTotals,
   getOptionalDate,
   getOptionalStatus,
   getOptionalString,
   getQuotationDetail,
   normalizeContactIds,
+  normalizeFinalAdjustmentsPayload,
+  normalizeNoteSectionsPayload,
   normalizeScopesPayload,
+  replaceFinalAdjustments,
+  replaceNoteSections,
   replaceQuotationScopes,
   validateCustomerContacts,
   validateSalesRep,
 } from "@/lib/quotations/api";
+import type { FinalAdjustmentInput } from "@/lib/quotations/scope-calculations";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -78,8 +85,20 @@ export async function PATCH(
   const status = getOptionalStatus(input.status);
   const contactIds = normalizeContactIds(input.contact_ids);
   const scopes = normalizeScopesPayload(input.scopes);
+  const finalAdjustments = normalizeFinalAdjustmentsPayload(
+    input.final_adjustments,
+  );
+  const noteSections = normalizeNoteSectionsPayload(input.note_sections);
 
-  for (const result of [quoteDate, expiryDate, status, contactIds, scopes]) {
+  for (const result of [
+    quoteDate,
+    expiryDate,
+    status,
+    contactIds,
+    scopes,
+    finalAdjustments,
+    noteSections,
+  ]) {
     if (result.error) {
       return jsonError(result.error, 400);
     }
@@ -88,7 +107,7 @@ export async function PATCH(
   const admin = createAdminClient();
   const { data: existingQuotation, error: existingError } = await admin
     .from("quotations")
-    .select("id, customer_id")
+    .select("*")
     .eq("id", id)
     .eq("org_id", session.org_id)
     .maybeSingle();
@@ -138,8 +157,23 @@ export async function PATCH(
     return jsonError("Selected contacts must belong to the customer", 400);
   }
 
-  const updates: Record<string, string | number | null> = {
+  const updates: Record<string, string | number | boolean | null> = {
     updated_by: session.user.id,
+  };
+  let scopeTotals = {
+    material_total: Number(existingQuotation.material_total ?? 0),
+    material_profit_total: Number(existingQuotation.material_profit_total ?? 0),
+    labour_total: Number(existingQuotation.labour_total ?? 0),
+    scope_additional_charges_total: Number(
+      existingQuotation.scope_additional_charges_total ?? 0,
+    ),
+    scopes_subtotal: Number(existingQuotation.scopes_subtotal ?? 0),
+    scopes_discount_total: Number(existingQuotation.scopes_discount_total ?? 0),
+    grand_total_before_tax: Number(
+      existingQuotation.scopes_subtotal ??
+        existingQuotation.grand_total_before_tax ??
+        0,
+    ),
   };
 
   if (input.quote_date !== undefined) {
@@ -194,7 +228,82 @@ export async function PATCH(
     updates.scopes_subtotal = scopeResult.totals.scopes_subtotal;
     updates.scopes_discount_total = scopeResult.totals.scopes_discount_total;
     updates.grand_total_before_tax = scopeResult.totals.grand_total_before_tax;
+    scopeTotals = scopeResult.totals;
   }
+
+  const finalDiscountType =
+    input.final_discount_type !== undefined
+      ? getOptionalString(input.final_discount_type) ?? "none"
+      : ((existingQuotation.final_discount_type as string | null) ?? "none");
+  const finalDiscountValue =
+    input.final_discount_value !== undefined
+      ? (input.final_discount_value as string | number | null)
+      : ((existingQuotation.final_discount_value as string | number | null) ??
+        0);
+  let adjustmentsForCalculation: FinalAdjustmentInput[] =
+    finalAdjustments.value ?? [];
+
+  if (finalAdjustments.value !== undefined) {
+    const adjustmentResult = await replaceFinalAdjustments(
+      admin,
+      session.org_id,
+      id,
+      finalAdjustments.value,
+      scopeTotals.grand_total_before_tax,
+    );
+
+    if (adjustmentResult.error) {
+      return jsonError("Unable to save final adjustments", 500);
+    }
+  } else {
+    const { data: existingAdjustments, error: adjustmentsError } = await admin
+      .from("quotation_final_adjustments")
+      .select("description, calculation_type, value")
+      .eq("org_id", session.org_id)
+      .eq("quotation_id", id);
+
+    if (adjustmentsError) {
+      return jsonError("Unable to fetch final adjustments", 500);
+    }
+
+    adjustmentsForCalculation = (existingAdjustments ??
+      []) as FinalAdjustmentInput[];
+  }
+
+  if (noteSections.value !== undefined) {
+    const notesResult = await replaceNoteSections(
+      admin,
+      session.org_id,
+      id,
+      noteSections.value,
+    );
+
+    if (notesResult.error) {
+      return jsonError("Unable to save note sections", 500);
+    }
+  }
+
+  const finalTotalsResult = await calculateFinalQuotationTotals(
+    admin,
+    session.org_id,
+    id,
+    customerId,
+    scopeTotals,
+    finalDiscountType,
+    finalDiscountValue,
+    adjustmentsForCalculation,
+  );
+  updates.final_discount_type = finalTotalsResult.totals.final_discount_type;
+  updates.final_discount_value = finalTotalsResult.totals.final_discount_value;
+  updates.final_discount_amount = finalTotalsResult.totals.final_discount_amount;
+  updates.final_additional_charges_total =
+    finalTotalsResult.totals.final_additional_charges_total;
+  updates.grand_total_before_tax = finalTotalsResult.totals.grand_total_before_tax;
+  updates.is_tax_exempt = finalTotalsResult.taxInfo.taxExempt;
+  updates.tax_name = finalTotalsResult.taxInfo.taxName;
+  updates.tax_rate = finalTotalsResult.totals.tax_rate;
+  updates.tax_amount = finalTotalsResult.totals.tax_amount;
+  updates.grand_total_after_tax = finalTotalsResult.totals.grand_total_after_tax;
 
   const { data: quotation, error: updateError } = await admin
     .from("quotations")
@@ -206,6 +315,25 @@ export async function PATCH(
 
   if (updateError || !quotation) {
     return jsonError("Unable to update quotation", 500);
+  }
+
+  if (
+    input.status !== undefined &&
+    status.value &&
+    status.value !== existingQuotation.status
+  ) {
+    if (status.value === "sent") {
+      await logCustomerActivity(admin, {
+        org_id: session.org_id,
+        customer_id: customerId,
+        activity_type: "quote_sent",
+        description: `Quotation ${quotation.quotation_number} sent`,
+        actor_id: session.user.id,
+        linked_record_type: "quotation",
+        linked_record_id: id,
+        linked_record_number: quotation.quotation_number,
+      });
+    }
   }
 
   if (contactIds.value !== undefined) {

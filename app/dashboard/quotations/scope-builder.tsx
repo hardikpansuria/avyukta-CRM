@@ -21,7 +21,8 @@ const cardClass =
 
 function newMaterialItem(): MaterialItemInput {
   return {
-    id: crypto.randomUUID(),
+    id: `new-${crypto.randomUUID()}`,
+    is_persisted: false,
     material_description: "",
     material_category: "",
     supplier_name: "",
@@ -96,14 +97,20 @@ function formatLabel(value: string | null | undefined) {
 }
 
 export function ScopeBuilder({
+  quotationId,
   scopes,
   onChange,
 }: {
+  quotationId: string;
   scopes: ScopeInput[];
   onChange: (scopes: ScopeInput[]) => void;
 }) {
   const [collapsedScopeIds, setCollapsedScopeIds] = useState<Set<string>>(
     new Set(),
+  );
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [workingMaterialId, setWorkingMaterialId] = useState<string | null>(
+    null,
   );
   const calculated = useMemo(() => calculateQuotationTotals(scopes), [scopes]);
 
@@ -171,9 +178,123 @@ export function ScopeBuilder({
     });
   }
 
+  async function uploadSupplierQuote(
+    scopeIndex: number,
+    itemIndex: number,
+    file: File,
+  ) {
+    const item = scopes[scopeIndex].material_items?.[itemIndex];
+
+    if (!item?.id || !item.is_persisted) {
+      setDocumentError("Save the quotation before uploading a supplier PDF.");
+      return;
+    }
+
+    if (file.type !== "application/pdf") {
+      setDocumentError("Supplier quote must be a PDF.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setDocumentError("Supplier quote PDF must be 10 MB or smaller.");
+      return;
+    }
+
+    if (
+      item.supplier_quote_document &&
+      !window.confirm("Replace the existing supplier quote PDF?")
+    ) {
+      return;
+    }
+
+    setDocumentError(null);
+    setWorkingMaterialId(item.id);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+
+      const response = await fetch(
+        `/api/org/quotations/${quotationId}/materials/${item.id}/supplier-quote`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            document?: NonNullable<
+              MaterialItemInput["supplier_quote_document"]
+            >;
+            error?: string;
+          }
+        | null;
+
+      if (!response.ok || !payload?.document) {
+        setDocumentError(payload?.error ?? "Unable to upload supplier quote.");
+        return;
+      }
+
+      updateMaterial(scopeIndex, itemIndex, {
+        is_persisted: true,
+        supplier_quote_document: payload.document,
+      });
+    } catch {
+      setDocumentError("Unable to upload supplier quote.");
+    } finally {
+      setWorkingMaterialId(null);
+    }
+  }
+
+  async function removeSupplierQuote(scopeIndex: number, itemIndex: number) {
+    const item = scopes[scopeIndex].material_items?.[itemIndex];
+
+    if (!item?.id || !item.supplier_quote_document) {
+      return;
+    }
+
+    if (!window.confirm("Remove this supplier quote PDF?")) {
+      return;
+    }
+
+    setDocumentError(null);
+    setWorkingMaterialId(item.id);
+
+    try {
+      const response = await fetch(
+        `/api/org/quotations/${quotationId}/materials/${item.id}/supplier-quote`,
+        {
+          method: "DELETE",
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        setDocumentError(payload?.error ?? "Unable to remove supplier quote.");
+        return;
+      }
+
+      updateMaterial(scopeIndex, itemIndex, {
+        supplier_quote_document: null,
+      });
+    } catch {
+      setDocumentError("Unable to remove supplier quote.");
+    } finally {
+      setWorkingMaterialId(null);
+    }
+  }
+
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-4">
+        {documentError ? (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+            {documentError}
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
@@ -319,7 +440,7 @@ export function ScopeBuilder({
                     }
                   >
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[1200px] text-left text-sm">
+                      <table className="w-full min-w-[1450px] text-left text-sm">
                         <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
                           <tr>
                             <th className="px-3 py-2">Description</th>
@@ -469,8 +590,26 @@ export function ScopeBuilder({
                                 <td className="px-3 py-2 font-semibold">
                                   {formatCurrency(calculatedItem?.line_total)}
                                 </td>
-                                <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">
-                                  Coming in Phase 3
+                                <td className="px-3 py-2">
+                                  <SupplierQuoteCell
+                                    isWorking={
+                                      workingMaterialId === item.id
+                                    }
+                                    item={item}
+                                    onRemove={() =>
+                                      void removeSupplierQuote(
+                                        scopeIndex,
+                                        itemIndex,
+                                      )
+                                    }
+                                    onUpload={(file) =>
+                                      void uploadSupplierQuote(
+                                        scopeIndex,
+                                        itemIndex,
+                                        file,
+                                      )
+                                    }
+                                  />
                                 </td>
                                 <td className="px-3 py-2">
                                   <button
@@ -919,6 +1058,76 @@ function NumberCell({
       value={String(value ?? "")}
       onChange={(event) => onChange(event.target.value)}
     />
+  );
+}
+
+function SupplierQuoteCell({
+  item,
+  isWorking,
+  onUpload,
+  onRemove,
+}: {
+  item: MaterialItemInput;
+  isWorking: boolean;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const document = item.supplier_quote_document;
+
+  if (!item.is_persisted) {
+    return (
+      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        Save quotation first
+      </span>
+    );
+  }
+
+  return (
+    <div className="min-w-52">
+      {document ? (
+        <p className="mb-2 truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">
+          {document.file_name}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {document?.signed_url ? (
+          <button
+            className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            type="button"
+            onClick={() => window.open(document.signed_url ?? "", "_blank")}
+          >
+            View
+          </button>
+        ) : null}
+        <label className="cursor-pointer rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900">
+          {isWorking ? "Uploading..." : document ? "Replace" : "Upload PDF"}
+          <input
+            accept="application/pdf"
+            className="sr-only"
+            disabled={isWorking}
+            type="file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+
+              if (file) {
+                onUpload(file);
+              }
+            }}
+          />
+        </label>
+        {document ? (
+          <button
+            className="rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/60 dark:text-red-200 dark:hover:bg-red-950/40"
+            disabled={isWorking}
+            type="button"
+            onClick={onRemove}
+          >
+            {isWorking ? "Removing..." : "Remove"}
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

@@ -30,11 +30,12 @@ type Quotation = {
 
 const statuses = [
   ["draft", "Draft"],
+  ["pending_approval", "Pending Approval"],
   ["sent", "Sent"],
-  ["approved", "Approved"],
+  ["accepted", "Accepted"],
   ["rejected", "Rejected"],
   ["expired", "Expired"],
-  ["converted", "Converted"],
+  ["converted_to_work_order", "Converted to Work Order"],
 ];
 
 function formatStatus(value: string | null | undefined) {

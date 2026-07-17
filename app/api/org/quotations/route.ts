@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   allowedQuotationRoles,
@@ -183,6 +184,17 @@ export async function POST(request: Request) {
       return jsonError("Unable to save quotation contacts", 500);
     }
   }
+
+  await logCustomerActivity(admin, {
+    org_id: session.org_id,
+    customer_id: customerId,
+    activity_type: "quote_created",
+    description: `Quotation ${quotation.quotation_number} created`,
+    actor_id: session.user.id,
+    linked_record_type: "quotation",
+    linked_record_id: quotationId,
+    linked_record_number: quotation.quotation_number,
+  });
 
   return NextResponse.json(
     {

@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
+  calculateFinalTotals,
   calculateQuotationTotals,
   toPositiveNumber,
+  type FinalAdjustmentInput,
   type LabourItemInput,
   type MaterialItemInput,
   type ScopeChargeInput,
@@ -62,7 +64,15 @@ type QuotationRow = {
   scope_additional_charges_total?: number | string | null;
   scopes_subtotal?: number | string | null;
   scopes_discount_total?: number | string | null;
+  final_discount_type?: string | null;
+  final_discount_value?: number | string | null;
+  final_discount_amount?: number | string | null;
+  final_additional_charges_total?: number | string | null;
   grand_total_before_tax?: number | string | null;
+  is_tax_exempt?: boolean | null;
+  tax_name?: string | null;
+  tax_rate?: number | string | null;
+  tax_amount?: number | string | null;
   grand_total_after_tax?: number | string | null;
   updated_at?: string | null;
   created_at?: string | null;
@@ -92,6 +102,7 @@ type ScopeRow = ScopeInput & {
 
 type MaterialRow = MaterialItemInput & {
   id: string;
+  quotation_id?: string;
   scope_id: string;
   material_cost?: number | string | null;
   profit_amount?: number | string | null;
@@ -119,13 +130,58 @@ type ChargeRow = ScopeChargeInput & {
   sort_order?: number | null;
 };
 
+type MaterialDocumentRow = {
+  id: string;
+  material_item_id: string;
+  storage_bucket: string;
+  file_name: string;
+  file_path: string;
+  file_size?: number | string | null;
+  mime_type: string;
+  uploaded_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  signed_url?: string | null;
+};
+
+type MaterialWithDocument = MaterialRow & {
+  supplier_quote_document?: MaterialDocumentRow | null;
+};
+
+type FinalAdjustmentRow = FinalAdjustmentInput & {
+  id: string;
+  calculated_amount?: number | string | null;
+  sort_order?: number | null;
+};
+
+type NoteSectionInput = {
+  section_type?: string | null;
+  title?: string | null;
+  body_text?: string | null;
+};
+
+type NoteSectionRow = NoteSectionInput & {
+  id: string;
+  body_html?: string | null;
+  visible_to_customer?: boolean | null;
+};
+
+type CustomerTaxInfo = {
+  taxExempt: boolean;
+  taxName: string | null;
+  taxRate: number;
+  provinceCode: string | null;
+  warning: string | null;
+};
+
 export const quotationStatuses = new Set([
   "draft",
+  "pending_approval",
   "sent",
-  "approved",
+  "accepted",
   "rejected",
   "expired",
-  "converted",
+  "converted_to_work_order",
 ]);
 
 export const allowedQuotationRoles = new Set(["admin", "sales", "accountant"]);
@@ -318,6 +374,195 @@ function hasChargeValue(item: Record<string, unknown>) {
   );
 }
 
+function hasAdjustmentValue(item: Record<string, unknown>) {
+  return [item.description, item.value].some(
+    (value) => String(value ?? "").trim().length > 0,
+  );
+}
+
+export function normalizeFinalAdjustmentsPayload(value: unknown) {
+  if (value === undefined) {
+    return { value: undefined };
+  }
+
+  if (!Array.isArray(value)) {
+    return { error: "Final adjustments are invalid" };
+  }
+
+  const adjustments: FinalAdjustmentInput[] = [];
+
+  for (const rawAdjustment of value) {
+    if (!rawAdjustment || typeof rawAdjustment !== "object") {
+      return { error: "Each final adjustment must be an object" };
+    }
+
+    const adjustment = rawAdjustment as Record<string, unknown>;
+
+    if (!hasAdjustmentValue(adjustment)) {
+      continue;
+    }
+
+    if (!trimText(adjustment.description)) {
+      return { error: "Each final adjustment must include a description" };
+    }
+
+    adjustments.push({
+      id: trimText(adjustment.id) || undefined,
+      adjustment_type: "additional_charge",
+      description: trimText(adjustment.description),
+      calculation_type:
+        trimText(adjustment.calculation_type) === "percentage"
+          ? "percentage"
+          : "amount",
+      value: adjustment.value as string | number | null,
+    });
+  }
+
+  return { value: adjustments };
+}
+
+const noteSectionTitles = new Map([
+  ["scope_of_work", "Scope of Work"],
+  ["exclusions", "Exclusions"],
+  ["assumptions", "Assumptions"],
+  ["warranty", "Warranty"],
+  ["delivery_time", "Delivery Time"],
+  ["payment_terms", "Payment Terms"],
+  ["quotation_validity", "Quotation Validity"],
+  ["customer_notes", "Customer Notes"],
+  ["internal_notes", "Internal Notes"],
+]);
+
+export function normalizeNoteSectionsPayload(value: unknown) {
+  if (value === undefined) {
+    return { value: undefined };
+  }
+
+  if (!Array.isArray(value)) {
+    return { error: "Note sections are invalid" };
+  }
+
+  const sections: NoteSectionInput[] = [];
+
+  for (const rawSection of value) {
+    if (!rawSection || typeof rawSection !== "object") {
+      return { error: "Each note section must be an object" };
+    }
+
+    const section = rawSection as Record<string, unknown>;
+    const sectionType = trimText(section.section_type);
+
+    if (!noteSectionTitles.has(sectionType)) {
+      return { error: "Note section type is invalid" };
+    }
+
+    sections.push({
+      section_type: sectionType,
+      title:
+        trimText(section.title) ||
+        noteSectionTitles.get(sectionType) ||
+        "Notes",
+      body_text: trimText(section.body_text),
+    });
+  }
+
+  return { value: sections };
+}
+
+function normalizeProvinceCode(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toUpperCase();
+  const provinceMap = new Map([
+    ["ALBERTA", "AB"],
+    ["BRITISH COLUMBIA", "BC"],
+    ["MANITOBA", "MB"],
+    ["NEW BRUNSWICK", "NB"],
+    ["NEWFOUNDLAND AND LABRADOR", "NL"],
+    ["NOVA SCOTIA", "NS"],
+    ["ONTARIO", "ON"],
+    ["PRINCE EDWARD ISLAND", "PE"],
+    ["QUEBEC", "QC"],
+    ["SASKATCHEWAN", "SK"],
+    ["NORTHWEST TERRITORIES", "NT"],
+    ["NUNAVUT", "NU"],
+    ["YUKON", "YT"],
+  ]);
+
+  if (normalized.length === 2) {
+    return normalized;
+  }
+
+  return provinceMap.get(normalized) ?? null;
+}
+
+async function getCustomerTaxInfo(
+  admin: SupabaseClient,
+  orgId: string,
+  customerId: string,
+): Promise<CustomerTaxInfo> {
+  const { data: customer } = await admin
+    .from("customers")
+    .select("tax_exempt")
+    .eq("id", customerId)
+    .eq("org_id", orgId)
+    .maybeSingle();
+  const { data: addresses } = await admin
+    .from("customer_addresses")
+    .select("address_type, province_state")
+    .eq("org_id", orgId)
+    .eq("customer_id", customerId)
+    .neq("status", "deleted");
+  const addressRows = (addresses ?? []) as Array<{
+    address_type: string;
+    province_state?: string | null;
+  }>;
+  const billing = addressRows.find(
+    (address) => address.address_type === "billing",
+  );
+  const headOffice = addressRows.find(
+    (address) => address.address_type === "head_office",
+  );
+  const provinceCode = normalizeProvinceCode(
+    billing?.province_state ?? headOffice?.province_state ?? null,
+  );
+
+  if (customer?.tax_exempt === true) {
+    return {
+      taxExempt: true,
+      taxName: null,
+      taxRate: 0,
+      provinceCode,
+      warning: null,
+    };
+  }
+
+  if (!provinceCode) {
+    return {
+      taxExempt: false,
+      taxName: null,
+      taxRate: 0,
+      provinceCode: null,
+      warning: "Tax could not be auto-determined. Please verify customer address.",
+    };
+  }
+
+  const { data: taxRate } = await admin
+    .from("tax_rates")
+    .select("tax_name, combined_rate")
+    .eq("province_code", provinceCode)
+    .eq("status", "active")
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return {
+    taxExempt: false,
+    taxName: (taxRate?.tax_name as string | null | undefined) ?? null,
+    taxRate: toPositiveNumber(taxRate?.combined_rate as number | string | null),
+    provinceCode,
+    warning: taxRate ? null : "Tax could not be auto-determined. Please verify customer address.",
+  };
+}
+
 export function normalizeScopesPayload(value: unknown) {
   if (value === undefined) {
     return { value: undefined };
@@ -355,6 +600,7 @@ export function normalizeScopesPayload(value: unknown) {
       }
 
       materialItems.push({
+        id: trimText(material.id) || undefined,
         material_description: trimText(material.material_description),
         material_category: trimText(material.material_category) || null,
         supplier_name: trimText(material.supplier_name) || null,
@@ -384,6 +630,7 @@ export function normalizeScopesPayload(value: unknown) {
       }
 
       labourItems.push({
+        id: trimText(labour.id) || undefined,
         labour_description: trimText(labour.labour_description),
         total_hours: labour.total_hours as string | number | null,
         number_of_workers: labour.number_of_workers as string | number | null,
@@ -409,12 +656,14 @@ export function normalizeScopesPayload(value: unknown) {
       }
 
       scopeCharges.push({
+        id: trimText(charge.id) || undefined,
         description: trimText(charge.description),
         amount: charge.amount as string | number | null,
       });
     }
 
     scopes.push({
+      id: trimText(scope.id) || undefined,
       scope_title: trimText(scope.scope_title) || "Scope of Work",
       scope_description: trimText(scope.scope_description) || null,
       labour_calculation_method:
@@ -438,9 +687,68 @@ export async function replaceQuotationScopes(
   quotationId: string,
   scopes: ScopeInput[],
 ) {
+  const [
+    existingScopesResult,
+    existingMaterialsResult,
+    existingLabourResult,
+    existingChargesResult,
+  ] = await Promise.all([
+    admin
+      .from("quotation_scopes")
+      .select("id")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId),
+    admin
+      .from("quotation_material_items")
+      .select("id, scope_id")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId),
+    admin
+      .from("quotation_labour_items")
+      .select("id, scope_id")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId),
+    admin
+      .from("quotation_scope_charges")
+      .select("id, scope_id")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId),
+  ]);
+
+  for (const result of [
+    existingScopesResult,
+    existingMaterialsResult,
+    existingLabourResult,
+    existingChargesResult,
+  ]) {
+    if (result.error) {
+      return { error: result.error };
+    }
+  }
+
+  const existingScopeIds = new Set(
+    ((existingScopesResult.data ?? []) as Array<{ id: string }>).map(
+      (row) => row.id,
+    ),
+  );
+  const existingMaterialIds = new Set(
+    ((existingMaterialsResult.data ?? []) as Array<{ id: string }>).map(
+      (row) => row.id,
+    ),
+  );
+  const existingLabourIds = new Set(
+    ((existingLabourResult.data ?? []) as Array<{ id: string }>).map(
+      (row) => row.id,
+    ),
+  );
+  const existingChargeIds = new Set(
+    ((existingChargesResult.data ?? []) as Array<{ id: string }>).map(
+      (row) => row.id,
+    ),
+  );
   const { scopes: calculatedScopes, totals } = calculateQuotationTotals(scopes);
   const scopeRows = calculatedScopes.map((scope, index) => ({
-    id: crypto.randomUUID(),
+    id: scope.id && existingScopeIds.has(scope.id) ? scope.id : crypto.randomUUID(),
     org_id: orgId,
     quotation_id: quotationId,
     scope_title: scope.scope_title,
@@ -461,6 +769,10 @@ export async function replaceQuotationScopes(
   }));
   const materialRows = calculatedScopes.flatMap((scope, scopeIndex) =>
     scope.material_items.map((item, itemIndex) => ({
+      id:
+        item.id && existingMaterialIds.has(item.id)
+          ? item.id
+          : crypto.randomUUID(),
       org_id: orgId,
       quotation_id: quotationId,
       scope_id: scopeRows[scopeIndex].id,
@@ -484,6 +796,10 @@ export async function replaceQuotationScopes(
       const isCrew = scope.labour_calculation_method === "crew";
 
       return {
+        id:
+          item.id && existingLabourIds.has(item.id)
+            ? item.id
+            : crypto.randomUUID(),
         org_id: orgId,
         quotation_id: quotationId,
         scope_id: scopeRows[scopeIndex].id,
@@ -509,6 +825,10 @@ export async function replaceQuotationScopes(
   );
   const chargeRows = calculatedScopes.flatMap((scope, scopeIndex) =>
     scope.scope_charges.map((charge, chargeIndex) => ({
+      id:
+        charge.id && existingChargeIds.has(charge.id)
+          ? charge.id
+          : crypto.randomUUID(),
       org_id: orgId,
       quotation_id: quotationId,
       scope_id: scopeRows[scopeIndex].id,
@@ -517,49 +837,83 @@ export async function replaceQuotationScopes(
       sort_order: chargeIndex + 1,
     })),
   );
+  const nextScopeIds = new Set(scopeRows.map((row) => row.id));
+  const nextMaterialIds = new Set(materialRows.map((row) => row.id));
+  const nextLabourIds = new Set(labourRows.map((row) => row.id));
+  const nextChargeIds = new Set(chargeRows.map((row) => row.id));
+  const scopeIdsToDelete = Array.from(existingScopeIds).filter(
+    (id) => !nextScopeIds.has(id),
+  );
+  const materialIdsToDelete = Array.from(existingMaterialIds).filter(
+    (id) => !nextMaterialIds.has(id),
+  );
+  const labourIdsToDelete = Array.from(existingLabourIds).filter(
+    (id) => !nextLabourIds.has(id),
+  );
+  const chargeIdsToDelete = Array.from(existingChargeIds).filter(
+    (id) => !nextChargeIds.has(id),
+  );
 
-  const deleteMaterial = await admin
-    .from("quotation_material_items")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("quotation_id", quotationId);
+  const deleteMaterial =
+    materialIdsToDelete.length > 0
+      ? await admin
+          .from("quotation_material_items")
+          .delete()
+          .eq("org_id", orgId)
+          .eq("quotation_id", quotationId)
+          .in("id", materialIdsToDelete)
+      : { error: null };
 
   if (deleteMaterial.error) {
     return { error: deleteMaterial.error };
   }
 
-  const deleteLabour = await admin
-    .from("quotation_labour_items")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("quotation_id", quotationId);
+  const deleteLabour =
+    labourIdsToDelete.length > 0
+      ? await admin
+          .from("quotation_labour_items")
+          .delete()
+          .eq("org_id", orgId)
+          .eq("quotation_id", quotationId)
+          .in("id", labourIdsToDelete)
+      : { error: null };
 
   if (deleteLabour.error) {
     return { error: deleteLabour.error };
   }
 
-  const deleteCharges = await admin
-    .from("quotation_scope_charges")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("quotation_id", quotationId);
+  const deleteCharges =
+    chargeIdsToDelete.length > 0
+      ? await admin
+          .from("quotation_scope_charges")
+          .delete()
+          .eq("org_id", orgId)
+          .eq("quotation_id", quotationId)
+          .in("id", chargeIdsToDelete)
+      : { error: null };
 
   if (deleteCharges.error) {
     return { error: deleteCharges.error };
   }
 
-  const deleteScopes = await admin
-    .from("quotation_scopes")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("quotation_id", quotationId);
+  const deleteScopes =
+    scopeIdsToDelete.length > 0
+      ? await admin
+          .from("quotation_scopes")
+          .delete()
+          .eq("org_id", orgId)
+          .eq("quotation_id", quotationId)
+          .in("id", scopeIdsToDelete)
+      : { error: null };
 
   if (deleteScopes.error) {
     return { error: deleteScopes.error };
   }
 
   if (scopeRows.length > 0) {
-    const { error } = await admin.from("quotation_scopes").insert(scopeRows);
+    const { error } = await admin
+      .from("quotation_scopes")
+      .upsert(scopeRows, { onConflict: "id" });
 
     if (error) {
       return { error };
@@ -569,7 +923,7 @@ export async function replaceQuotationScopes(
   if (materialRows.length > 0) {
     const { error } = await admin
       .from("quotation_material_items")
-      .insert(materialRows);
+      .upsert(materialRows, { onConflict: "id" });
 
     if (error) {
       return { error };
@@ -579,7 +933,7 @@ export async function replaceQuotationScopes(
   if (labourRows.length > 0) {
     const { error } = await admin
       .from("quotation_labour_items")
-      .insert(labourRows);
+      .upsert(labourRows, { onConflict: "id" });
 
     if (error) {
       return { error };
@@ -589,7 +943,7 @@ export async function replaceQuotationScopes(
   if (chargeRows.length > 0) {
     const { error } = await admin
       .from("quotation_scope_charges")
-      .insert(chargeRows);
+      .upsert(chargeRows, { onConflict: "id" });
 
     if (error) {
       return { error };
@@ -597,6 +951,121 @@ export async function replaceQuotationScopes(
   }
 
   return { totals, scopes: calculatedScopes };
+}
+
+export async function replaceFinalAdjustments(
+  admin: SupabaseClient,
+  orgId: string,
+  quotationId: string,
+  adjustments: FinalAdjustmentInput[],
+  scopesSubtotal: number,
+) {
+  const calculated = calculateFinalTotals({
+    scopeTotals: {
+      material_total: 0,
+      material_profit_total: 0,
+      labour_total: 0,
+      scope_additional_charges_total: 0,
+      scopes_subtotal: scopesSubtotal,
+      scopes_discount_total: 0,
+      grand_total_before_tax: scopesSubtotal,
+    },
+    finalAdjustments: adjustments,
+  }).final_adjustments;
+  const { error: deleteError } = await admin
+    .from("quotation_final_adjustments")
+    .delete()
+    .eq("org_id", orgId)
+    .eq("quotation_id", quotationId);
+
+  if (deleteError) {
+    return { error: deleteError };
+  }
+
+  if (calculated.length === 0) {
+    return { adjustments: calculated };
+  }
+
+  const rows = calculated.map((adjustment, index) => ({
+    org_id: orgId,
+    quotation_id: quotationId,
+    adjustment_type: "additional_charge",
+    description: adjustment.description,
+    calculation_type: adjustment.calculation_type,
+    value: adjustment.value,
+    calculated_amount: adjustment.calculated_amount,
+    sort_order: index + 1,
+  }));
+  const { error } = await admin
+    .from("quotation_final_adjustments")
+    .insert(rows);
+
+  return error ? { error } : { adjustments: calculated };
+}
+
+export async function replaceNoteSections(
+  admin: SupabaseClient,
+  orgId: string,
+  quotationId: string,
+  sections: NoteSectionInput[],
+) {
+  const { error: deleteError } = await admin
+    .from("quotation_note_sections")
+    .delete()
+    .eq("org_id", orgId)
+    .eq("quotation_id", quotationId);
+
+  if (deleteError) {
+    return { error: deleteError };
+  }
+
+  const rows = sections.map((section) => ({
+    org_id: orgId,
+    quotation_id: quotationId,
+    section_type: section.section_type,
+    title: section.title,
+    body_text: section.body_text ?? "",
+    body_html: section.body_text ?? "",
+    visible_to_customer: section.section_type !== "internal_notes",
+  }));
+
+  if (rows.length === 0) {
+    return { sections };
+  }
+
+  const { error } = await admin.from("quotation_note_sections").insert(rows);
+
+  return error ? { error } : { sections };
+}
+
+export async function calculateFinalQuotationTotals(
+  admin: SupabaseClient,
+  orgId: string,
+  quotationId: string,
+  customerId: string,
+  scopeTotals: {
+    material_total: number;
+    material_profit_total: number;
+    labour_total: number;
+    scope_additional_charges_total: number;
+    scopes_subtotal: number;
+    scopes_discount_total: number;
+    grand_total_before_tax: number;
+  },
+  finalDiscountType: string | null | undefined,
+  finalDiscountValue: number | string | null | undefined,
+  finalAdjustments: FinalAdjustmentInput[],
+) {
+  const taxInfo = await getCustomerTaxInfo(admin, orgId, customerId);
+  const totals = calculateFinalTotals({
+    scopeTotals,
+    finalDiscountType,
+    finalDiscountValue,
+    finalAdjustments,
+    taxRate: taxInfo.taxRate,
+  });
+
+  return { totals, taxInfo, quotationId };
 }
 
 function uniqueStrings(values: Array<string | null | undefined>) {
@@ -766,6 +1235,11 @@ export async function getQuotationDetail(
     materialsResult,
     labourResult,
     chargesResult,
+    documentsResult,
+    finalAdjustmentsResult,
+    notesResult,
+    statusHistoryResult,
+    revisionsResult,
   ] = await Promise.all([
     admin
       .from("quotation_contacts")
@@ -806,6 +1280,36 @@ export async function getQuotationDetail(
       .eq("quotation_id", quotationId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
+    admin
+      .from("quotation_material_documents")
+      .select("*")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId),
+    admin
+      .from("quotation_final_adjustments")
+      .select("*")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    admin
+      .from("quotation_note_sections")
+      .select("*")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId)
+      .order("section_type", { ascending: true }),
+    admin
+      .from("quotation_status_history")
+      .select("*")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("quotation_revisions")
+      .select("*")
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (contactsResult.error) {
@@ -836,15 +1340,62 @@ export async function getQuotationDetail(
     return { error: chargesResult.error };
   }
 
+  if (documentsResult.error) {
+    return { error: documentsResult.error };
+  }
+
+  if (finalAdjustmentsResult.error) {
+    return { error: finalAdjustmentsResult.error };
+  }
+
+  if (notesResult.error) {
+    return { error: notesResult.error };
+  }
+
+  if (statusHistoryResult.error) {
+    return { error: statusHistoryResult.error };
+  }
+
+  if (revisionsResult.error) {
+    return { error: revisionsResult.error };
+  }
+
   const customersById = customersResult.customersById ?? new Map();
   const profilesById = profilesResult.profilesById ?? new Map();
-  const materialsByScope = new Map<string, MaterialRow[]>();
+  const taxInfo = await getCustomerTaxInfo(
+    admin,
+    orgId,
+    quotationRow.customer_id,
+  );
+  const materialsByScope = new Map<string, MaterialWithDocument[]>();
   const labourByScope = new Map<string, LabourRow[]>();
   const chargesByScope = new Map<string, ChargeRow[]>();
+  const documentsByMaterial = new Map<string, MaterialDocumentRow>();
+
+  for (const document of (documentsResult.data ?? []) as MaterialDocumentRow[]) {
+    let signedUrl: string | null = null;
+
+    if (document.file_path) {
+      const { data: signedData } = await admin.storage
+        .from(document.storage_bucket || "quotation-documents")
+        .createSignedUrl(document.file_path, 10 * 60);
+
+      signedUrl = signedData?.signedUrl ?? null;
+    }
+
+    documentsByMaterial.set(document.material_item_id, {
+      ...document,
+      signed_url: signedUrl,
+    });
+  }
 
   for (const material of (materialsResult.data ?? []) as MaterialRow[]) {
     const existing = materialsByScope.get(material.scope_id) ?? [];
-    existing.push(material);
+    existing.push({
+      ...material,
+      is_persisted: true,
+      supplier_quote_document: documentsByMaterial.get(material.id) ?? null,
+    });
     materialsByScope.set(material.scope_id, existing);
   }
 
@@ -882,5 +1433,11 @@ export async function getQuotationDetail(
       labour_items: labourByScope.get(scope.id) ?? [],
       scope_charges: chargesByScope.get(scope.id) ?? [],
     })),
+    final_adjustments:
+      (finalAdjustmentsResult.data ?? []) as FinalAdjustmentRow[],
+    note_sections: (notesResult.data ?? []) as NoteSectionRow[],
+    status_history: statusHistoryResult.data ?? [],
+    revisions: revisionsResult.data ?? [],
+    tax_warning: taxInfo.warning,
   };
 }
