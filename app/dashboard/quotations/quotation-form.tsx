@@ -243,8 +243,6 @@ export function QuotationForm({
 
   useEffect(() => {
     if (!selectedCustomerId) {
-      setContacts([]);
-      setSelectedContactIds([]);
       return;
     }
 
@@ -455,6 +453,7 @@ export function QuotationForm({
                 value={selectedCustomerId}
                 onChange={(event) => {
                   setSelectedCustomerId(event.target.value);
+                  setContacts([]);
                   setSelectedContactIds([]);
                 }}
               >
