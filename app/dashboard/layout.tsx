@@ -12,15 +12,18 @@ const roleLinks = {
   admin: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/customers", label: "Customers" },
+    { href: "/dashboard/quotations", label: "Quotations" },
     { href: "/dashboard/employees", label: "Employees" },
   ],
   accountant: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/customers", label: "Customers" },
+    { href: "/dashboard/quotations", label: "Quotations" },
   ],
   sales: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/customers", label: "Customers" },
+    { href: "/dashboard/quotations", label: "Quotations" },
   ],
 };
 
