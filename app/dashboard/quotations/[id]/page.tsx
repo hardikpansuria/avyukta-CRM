@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import {
   ChevronRightIcon,
   DownloadIcon,
+  FileTextIcon,
   PrinterIcon,
 } from "lucide-react";
 
@@ -122,6 +123,15 @@ type Revision = {
   created_at?: string | null;
 };
 
+type GeneratedCustomerDocument = {
+  id: string;
+  revision_number?: number | string | null;
+  file_name?: string | null;
+  generated_at?: string | null;
+  signed_url?: string | null;
+  generated_by_profile?: Profile | null;
+};
+
 type MaterialItem = {
   id: string;
   material_description?: string | null;
@@ -217,6 +227,10 @@ export default function QuotationDetailPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [hasCustomerQuotation, setHasCustomerQuotation] = useState(false);
+  const [generatedCustomerDocuments, setGeneratedCustomerDocuments] = useState<
+    GeneratedCustomerDocument[]
+  >([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -241,6 +255,37 @@ export default function QuotationDetailPage() {
 
         setDetail(payload);
         setStatusValue(payload.quotation.status ?? "draft");
+
+        const [customerQuotationResponse, generatedResponse] =
+          await Promise.all([
+            fetch(
+              `/api/org/quotations/${quotationId}/customer-quotation`,
+              {
+                cache: "no-store",
+                signal: controller.signal,
+              },
+            ),
+            fetch(
+              `/api/org/quotations/${quotationId}/customer-quotation/generated-documents`,
+              {
+                cache: "no-store",
+                signal: controller.signal,
+              },
+            ),
+          ]);
+
+        if (customerQuotationResponse.ok) {
+          const customerQuotationPayload =
+            (await customerQuotationResponse.json()) as { exists?: boolean };
+          setHasCustomerQuotation(Boolean(customerQuotationPayload.exists));
+        }
+
+        if (generatedResponse.ok) {
+          const generatedPayload = (await generatedResponse.json()) as {
+            documents?: GeneratedCustomerDocument[];
+          };
+          setGeneratedCustomerDocuments(generatedPayload.documents ?? []);
+        }
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
           setError("Unable to load quotation.");
@@ -378,6 +423,20 @@ export default function QuotationDetailPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            className="h-10 rounded-md"
+            nativeButton={false}
+            render={
+              <Link
+                href={`/dashboard/quotations/${quotation.id}/customer-quotation`}
+              />
+            }
+          >
+            <FileTextIcon className="size-4" />
+            {hasCustomerQuotation
+              ? "Edit Customer Quotation"
+              : "Prepare Customer Quotation"}
+          </Button>
           <Button
             className="h-10 rounded-md"
             type="button"
@@ -650,6 +709,99 @@ export default function QuotationDetailPage() {
 
       <section className="mt-6">
         <div className={cardClass}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+                Customer Quotation Documents
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                Customer-ready PDFs generated from the separate sales draft.
+              </p>
+            </div>
+            <Button
+              className="rounded-md"
+              nativeButton={false}
+              render={
+                <Link
+                  href={`/dashboard/quotations/${quotation.id}/customer-quotation`}
+                />
+              }
+            >
+              <FileTextIcon className="size-4" />
+              {hasCustomerQuotation ? "Edit Draft" : "Prepare Quotation"}
+            </Button>
+          </div>
+          {generatedCustomerDocuments.length === 0 ? (
+            <p className="mt-5 rounded-md border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+              No customer quotation PDFs generated yet.
+            </p>
+          ) : (
+            <div className="mt-5 divide-y divide-zinc-200 dark:divide-zinc-800">
+              {generatedCustomerDocuments.map((document) => {
+                const signedUrl = document.signed_url;
+
+                return (
+                  <div
+                    className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                    key={document.id}
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                        Revision {document.revision_number ?? 0}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        {formatDateTime(document.generated_at)} ·{" "}
+                        {profileName(document.generated_by_profile)}
+                      </p>
+                    </div>
+                    {signedUrl ? (
+                      <div className="flex gap-2">
+                        <Button
+                          className="rounded-md"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            window.open(
+                              signedUrl,
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
+                        >
+                          View PDF
+                        </Button>
+                        <Button
+                          className="rounded-md"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            const printWindow = window.open(
+                              signedUrl,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                            printWindow?.addEventListener("load", () =>
+                              printWindow.print(),
+                            );
+                          }}
+                        >
+                          <PrinterIcon className="size-4" />
+                          Print
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <div className={cardClass}>
           <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
             Notes and Terms
           </h2>
@@ -679,6 +831,19 @@ export default function QuotationDetailPage() {
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 px-6 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:left-64">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-end gap-3">
+          <Button
+            className="h-10 rounded-md"
+            nativeButton={false}
+            render={
+              <Link
+                href={`/dashboard/quotations/${quotation.id}/customer-quotation`}
+              />
+            }
+            variant="outline"
+          >
+            <FileTextIcon className="size-4" />
+            Customer Quotation
+          </Button>
           <Button
             className="h-10 rounded-md"
             type="button"
