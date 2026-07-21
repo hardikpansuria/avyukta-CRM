@@ -10,6 +10,7 @@ import {
   type CustomerQuotationPdfData,
 } from "@/lib/quotations/customer-quotation-pdf";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getQuotationLock, lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -51,6 +52,8 @@ export async function POST(
 
   const { id } = await context.params;
   const admin = createAdminClient();
+  const { data: lock } = await getQuotationLock(admin, session.org_id, id);
+  if (lock?.is_locked) return jsonError(lockedRevisionMessage, 409);
   const result = await getCustomerQuotationData(admin, session.org_id, id);
 
   if (result.notFound) return jsonError("Quotation not found", 404);
@@ -165,6 +168,11 @@ export async function POST(
   const { data: signedData } = await admin.storage
     .from(bucketName)
     .createSignedUrl(filePath, 10 * 60);
+
+  await logRevisionAudit(admin, { ...lock, id, org_id: session.org_id }, session.user.id, "customer_pdf_generated", {
+    generated_document_id: generatedDocumentId,
+    file_name: fileName,
+  });
 
   return NextResponse.json({
     document: {

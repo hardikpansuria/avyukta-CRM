@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import { QuotationForm } from "../../quotation-form";
 
@@ -29,6 +30,15 @@ export default async function EditQuotationPage({
   }
 
   const { id } = await params;
+  const admin = createAdminClient();
+  const { data: quotation } = await admin
+    .from("quotations")
+    .select("is_locked")
+    .eq("id", id)
+    .eq("org_id", session.org_id)
+    .maybeSingle();
+
+  if (quotation?.is_locked) redirect(`/dashboard/quotations/${id}`);
 
   return (
     <QuotationForm

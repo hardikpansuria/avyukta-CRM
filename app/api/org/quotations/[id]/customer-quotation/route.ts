@@ -7,6 +7,7 @@ import {
   type CustomerQuotationDraftInput,
 } from "@/lib/quotations/customer-quotation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getQuotationLock, lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -108,6 +109,8 @@ export async function POST(
 
   const { id } = await context.params;
   const admin = createAdminClient();
+  const { data: lock } = await getQuotationLock(admin, session.org_id, id);
+  if (lock?.is_locked) return jsonError(lockedRevisionMessage, 409);
   const sourceResult = await getCustomerQuotationData(
     admin,
     session.org_id,
@@ -176,6 +179,7 @@ export async function POST(
   }
 
   const saved = await getCustomerQuotationData(admin, session.org_id, id);
+  await logRevisionAudit(admin, { ...lock, id, org_id: session.org_id }, session.user.id, "revision_modified", { area: "customer_quotation" });
   return NextResponse.json(saved.value, { status: 201 });
 }
 
@@ -192,6 +196,8 @@ export async function PATCH(
 
   const { id } = await context.params;
   const admin = createAdminClient();
+  const { data: lock } = await getQuotationLock(admin, session.org_id, id);
+  if (lock?.is_locked) return jsonError(lockedRevisionMessage, 409);
   const sourceResult = await getCustomerQuotationData(
     admin,
     session.org_id,
@@ -252,5 +258,6 @@ export async function PATCH(
   }
 
   const saved = await getCustomerQuotationData(admin, session.org_id, id);
+  await logRevisionAudit(admin, { ...lock, id, org_id: session.org_id }, session.user.id, "revision_modified", { area: "customer_quotation" });
   return NextResponse.json(saved.value);
 }

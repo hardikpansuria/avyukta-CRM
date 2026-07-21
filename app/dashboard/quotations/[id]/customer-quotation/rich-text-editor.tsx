@@ -20,9 +20,11 @@ import { cn } from "@/lib/utils";
 export function RichTextEditor({
   value,
   onChange,
+  readOnly = false,
 }: {
   value: string;
   onChange: (html: string, text: string) => void;
+  readOnly?: boolean;
 }) {
   const editor = useEditor({
     extensions: [
@@ -50,6 +52,10 @@ export function RichTextEditor({
     }
   }, [editor, value]);
 
+  useEffect(() => {
+    editor?.setEditable(!readOnly);
+  }, [editor, readOnly]);
+
   if (!editor) {
     return (
       <div className="min-h-40 animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-900" />
@@ -66,6 +72,7 @@ export function RichTextEditor({
       aria-label={label}
       className={cn("size-8 rounded-md", active && "bg-zinc-200 dark:bg-zinc-800")}
       size="icon-sm"
+      disabled={readOnly}
       title={label}
       type="button"
       variant="ghost"
@@ -77,7 +84,7 @@ export function RichTextEditor({
 
   return (
     <div className="overflow-hidden rounded-md border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-      <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/70">
+      {!readOnly ? <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/70">
         {toolbarButton(
           "Bold",
           editor.isActive("bold"),
@@ -122,7 +129,7 @@ export function RichTextEditor({
           () => editor.chain().focus().toggleOrderedList().run(),
           <ListOrderedIcon className="size-4" />,
         )}
-      </div>
+      </div> : null}
       <EditorContent editor={editor} />
     </div>
   );

@@ -954,6 +954,20 @@ export async function replaceQuotationScopes(
     return { error: deleteCharges.error };
   }
 
+  const deleteCustomerDocumentItems =
+    scopeIdsToDelete.length > 0
+      ? await admin
+          .from("quotation_customer_document_items")
+          .delete()
+          .eq("org_id", orgId)
+          .eq("quotation_id", quotationId)
+          .in("scope_id", scopeIdsToDelete)
+      : { error: null };
+
+  if (deleteCustomerDocumentItems.error) {
+    return { error: deleteCustomerDocumentItems.error };
+  }
+
   const deleteScopes =
     scopeIdsToDelete.length > 0
       ? await admin

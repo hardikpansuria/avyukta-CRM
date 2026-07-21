@@ -22,6 +22,11 @@ import {
   validateSalesRep,
 } from "@/lib/quotations/api";
 import type { FinalAdjustmentInput } from "@/lib/quotations/scope-calculations";
+import {
+  lockedRevisionMessage,
+  logRevisionAudit,
+  synchronizeCustomerQuotation,
+} from "@/lib/quotations/revisions";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -49,6 +54,34 @@ export async function GET(
     return jsonError("Quotation not found", 404);
   }
 
+  const seriesId = (result.quotation as Record<string, unknown>).quotation_series_id as string | null;
+  const { data: seriesRevisions } = seriesId
+    ? await admin
+        .from("quotations")
+        .select("id,quotation_number,revision_number,revision_purpose,revision_source_id,revision_created_by,revision_created_at,status,is_locked,created_at,updated_at,customer_id")
+        .eq("org_id", session.org_id)
+        .eq("quotation_series_id", seriesId)
+        .order("revision_number", { ascending: true })
+    : { data: [] };
+  const revisionCreatorIds = Array.from(new Set((seriesRevisions ?? []).map((row) => row.revision_created_by as string).filter(Boolean)));
+  const { data: revisionProfiles } = revisionCreatorIds.length
+    ? await admin.from("profiles").select("id,full_name,email").in("id", revisionCreatorIds)
+    : { data: [] };
+  const revisionProfilesById = new Map((revisionProfiles ?? []).map((profile) => [profile.id, profile]));
+  const { data: auditRows } = session.role === "admin" && seriesId
+    ? await admin
+        .from("quotation_revision_audit")
+        .select("*")
+        .eq("org_id", session.org_id)
+        .eq("quotation_series_id", seriesId)
+        .order("created_at", { ascending: false })
+    : { data: [] };
+  const auditActorIds = Array.from(new Set((auditRows ?? []).map((row) => row.actor_id as string).filter(Boolean)));
+  const { data: auditProfiles } = auditActorIds.length
+    ? await admin.from("profiles").select("id,full_name,email").in("id", auditActorIds)
+    : { data: [] };
+  const auditProfilesById = new Map((auditProfiles ?? []).map((profile) => [profile.id, profile]));
+
   return NextResponse.json({
     quotation: result.quotation,
     contacts: result.contacts ?? [],
@@ -57,6 +90,14 @@ export async function GET(
     note_sections: result.note_sections ?? [],
     status_history: result.status_history ?? [],
     revisions: result.revisions ?? [],
+    series_revisions: (seriesRevisions ?? []).map((revision) => ({
+      ...revision,
+      created_by_profile: revisionProfilesById.get(revision.revision_created_by as string) ?? null,
+    })),
+    revision_audit: (auditRows ?? []).map((event) => ({
+      ...event,
+      actor_profile: auditProfilesById.get(event.actor_id as string) ?? null,
+    })),
     tax_warning: result.tax_warning ?? null,
   });
 }
@@ -123,6 +164,10 @@ export async function PATCH(
 
   if (!existingQuotation) {
     return jsonError("Quotation not found", 404);
+  }
+
+  if (existingQuotation.is_locked === true) {
+    return jsonError(lockedRevisionMessage, 409);
   }
 
   const customerId = existingQuotation.customer_id as string;
@@ -310,6 +355,27 @@ export async function PATCH(
   updates.tax_amount = finalTotalsResult.totals.tax_amount;
   updates.grand_total_after_tax = finalTotalsResult.totals.grand_total_after_tax;
 
+  if (contactIds.value !== undefined) {
+    const { error: deleteError } = await admin
+      .from("quotation_contacts")
+      .delete()
+      .eq("org_id", session.org_id)
+      .eq("quotation_id", id);
+
+    if (deleteError) return jsonError("Unable to update quotation contacts", 500);
+    const contactRows = buildQuotationContactRows(session.org_id, id, contactsResult.contacts ?? []);
+    if (contactRows.length > 0) {
+      const { error: insertError } = await admin.from("quotation_contacts").insert(contactRows);
+      if (insertError) return jsonError("Unable to update quotation contacts", 500);
+    }
+  }
+
+  const syncResult = await synchronizeCustomerQuotation(admin, session.org_id, id);
+  if (syncResult.error) {
+    console.error("Unable to synchronize customer quotation", syncResult.error);
+    return jsonError("Unable to synchronize the customer quotation draft", 500);
+  }
+
   const { data: quotation, error: updateError } = await admin
     .from("quotations")
     .update(updates)
@@ -321,6 +387,15 @@ export async function PATCH(
   if (updateError || !quotation) {
     return jsonError("Unable to update quotation", 500);
   }
+
+  const areas = [
+    scopes.value !== undefined && "scope/material/labour/scope_charge",
+    finalAdjustments.value !== undefined && "final_adjustment",
+    noteSections.value !== undefined && "notes",
+    contactIds.value !== undefined && "contacts",
+    "quotation",
+  ].filter(Boolean);
+  await logRevisionAudit(admin, quotation, session.user.id, "revision_modified", { area: areas.join(",") });
 
   if (
     input.status !== undefined &&
@@ -339,34 +414,10 @@ export async function PATCH(
         linked_record_number: quotation.quotation_number,
       });
     }
-  }
-
-  if (contactIds.value !== undefined) {
-    const { error: deleteError } = await admin
-      .from("quotation_contacts")
-      .delete()
-      .eq("org_id", session.org_id)
-      .eq("quotation_id", id);
-
-    if (deleteError) {
-      return jsonError("Unable to update quotation contacts", 500);
-    }
-
-    const contactRows = buildQuotationContactRows(
-      session.org_id,
-      id,
-      contactsResult.contacts ?? [],
-    );
-
-    if (contactRows.length > 0) {
-      const { error: insertError } = await admin
-        .from("quotation_contacts")
-        .insert(contactRows);
-
-      if (insertError) {
-        return jsonError("Unable to update quotation contacts", 500);
-      }
-    }
+    await logRevisionAudit(admin, quotation, session.user.id, "status_changed", {
+      previous_status: existingQuotation.status,
+      new_status: status.value,
+    });
   }
 
   return NextResponse.json({

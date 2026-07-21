@@ -214,7 +214,7 @@ function decimalInput(value: string) {
   return value === "" || /^\d+(?:\.\d*)?$/.test(value);
 }
 
-export function CustomerQuotationWizard() {
+export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boolean }) {
   const params = useParams<{ id: string }>();
   const quotationId = params.id;
   const [activeStep, setActiveStep] = useState(0);
@@ -472,14 +472,14 @@ export function CustomerQuotationWizard() {
               Customer Quotation
             </h1>
             <Badge variant="outline">
-              {exists ? "Draft saved" : "New draft"}
+              {readOnly ? "Locked revision" : exists ? "Draft saved" : "New draft"}
             </Badge>
           </div>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Prepare the customer-facing scope, pricing, and commercial terms.
           </p>
         </div>
-        <Button
+        {!readOnly ? <Button
           className="rounded-md"
           disabled={isSaving}
           type="button"
@@ -488,7 +488,7 @@ export function CustomerQuotationWizard() {
         >
           <SaveIcon className="size-4" />
           {isSaving ? "Saving..." : "Save Draft"}
-        </Button>
+        </Button> : null}
       </div>
 
       <nav
@@ -542,6 +542,7 @@ export function CustomerQuotationWizard() {
       ) : null}
 
       <main className="mt-6">
+        <fieldset disabled={readOnly}>
         {activeStep === 0 ? (
           <StepCard
             description="Organization-wide quotation branding is reused for every customer document."
@@ -715,6 +716,7 @@ export function CustomerQuotationWizard() {
                     </Label>
                     <div className="mt-2">
                       <RichTextEditor
+                        readOnly={readOnly}
                         value={item.description_html}
                         onChange={(html, plainText) =>
                           updateItem(index, {
@@ -897,6 +899,7 @@ export function CustomerQuotationWizard() {
             ) : null}
           </div>
         ) : null}
+        </fieldset>
       </main>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:left-64">
@@ -912,7 +915,7 @@ export function CustomerQuotationWizard() {
             Back
           </Button>
           <div className="flex items-center gap-2">
-            <Button
+            {!readOnly ? <Button
               className="hidden rounded-md sm:inline-flex"
               disabled={isSaving}
               type="button"
@@ -921,7 +924,7 @@ export function CustomerQuotationWizard() {
             >
               <SaveIcon className="size-4" />
               Save Draft
-            </Button>
+            </Button> : null}
             {activeStep < steps.length - 1 ? (
               <Button
                 className="rounded-md"
@@ -933,7 +936,7 @@ export function CustomerQuotationWizard() {
                 Next
                 <ArrowRightIcon className="size-4" />
               </Button>
-            ) : (
+            ) : !readOnly ? (
               <Button
                 className="rounded-md"
                 disabled={isGenerating || isSaving}
@@ -943,7 +946,7 @@ export function CustomerQuotationWizard() {
                 <FileDownIcon className="size-4" />
                 Generate PDF
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

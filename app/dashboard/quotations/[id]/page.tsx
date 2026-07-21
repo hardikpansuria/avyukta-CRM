@@ -8,10 +8,15 @@ import {
   ChevronRightIcon,
   DownloadIcon,
   FileTextIcon,
+  GitCompareIcon,
+  LockIcon,
   PrinterIcon,
 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -55,6 +60,8 @@ type Quotation = {
   customer_rfq_number?: string | null;
   revision_number?: number | string | null;
   status?: string | null;
+  is_locked?: boolean | null;
+  quotation_series_id?: string | null;
   grand_total?: number | string | null;
   material_total?: number | string | null;
   material_profit_total?: number | string | null;
@@ -89,7 +96,30 @@ type QuotationDetail = {
   note_sections: NoteSection[];
   status_history: StatusHistory[];
   revisions: Revision[];
+  series_revisions?: SeriesRevision[];
+  revision_audit?: AuditEvent[];
   tax_warning?: string | null;
+};
+
+type SeriesRevision = {
+  id: string;
+  revision_number?: number | string | null;
+  revision_purpose?: string | null;
+  revision_created_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  status?: string | null;
+  is_locked?: boolean | null;
+  created_by_profile?: Profile | null;
+};
+
+type AuditEvent = {
+  id: string;
+  revision_number?: number | string | null;
+  event_type?: string | null;
+  created_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+  actor_profile?: Profile | null;
 };
 
 type FinalAdjustment = {
@@ -231,6 +261,8 @@ export default function QuotationDetailPage() {
   const [generatedCustomerDocuments, setGeneratedCustomerDocuments] = useState<
     GeneratedCustomerDocument[]
   >([]);
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [revisionPurpose, setRevisionPurpose] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -334,7 +366,8 @@ export default function QuotationDetailPage() {
   const finalAdjustments = detail.final_adjustments ?? [];
   const noteSections = detail.note_sections ?? [];
   const statusHistory = detail.status_history ?? [];
-  const revisions = detail.revisions ?? [];
+  const revisions = detail.series_revisions ?? [];
+  const auditHistory = detail.revision_audit ?? [];
   const printableDetail = detail;
 
   async function updateStatus() {
@@ -365,25 +398,30 @@ export default function QuotationDetailPage() {
   }
 
   async function createRevision() {
+    if (!revisionPurpose.trim()) {
+      setError("Purpose of revision is required.");
+      return;
+    }
     setError(null);
     setIsWorking(true);
 
     try {
-      const response = await fetch(`/api/org/quotations/${quotationId}/revision`, {
+      const response = await fetch(`/api/org/quotations/${quotationId}/revisions`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ purpose: revisionPurpose.trim() }),
       });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string }
+        | { quotation_id?: string; error?: string }
         | null;
 
       if (!response.ok) {
-        setError(payload?.error ?? "Unable to create revision snapshot.");
+        setError(payload?.error ?? "Unable to create revision.");
         return;
       }
-
-      setRefreshKey((key) => key + 1);
+      if (payload?.quotation_id) window.location.assign(`/dashboard/quotations/${payload.quotation_id}`);
     } catch {
-      setError("Unable to create revision snapshot.");
+      setError("Unable to create revision.");
     } finally {
       setIsWorking(false);
     }
@@ -415,7 +453,7 @@ export default function QuotationDetailPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-            {quotation.quotation_number ?? "Pending Quotation"}
+            Quotation {quotation.quotation_number ?? "Pending"} · Revision {quotation.revision_number ?? 0}
           </h1>
           <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
             {quotation.customer?.company_name ?? "-"} ·{" "}
@@ -433,11 +471,15 @@ export default function QuotationDetailPage() {
             }
           >
             <FileTextIcon className="size-4" />
-            {hasCustomerQuotation
+            {quotation.is_locked
+              ? "View Customer Quotation"
+              : hasCustomerQuotation
               ? "Edit Customer Quotation"
               : "Prepare Customer Quotation"}
           </Button>
-          <Button
+          {quotation.status === "sent" ? <Button className="h-10 rounded-md" type="button" variant="outline" onClick={() => setRevisionDialogOpen(true)}>Create Revision</Button> : null}
+          <Button className="h-10 rounded-md" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} />} variant="outline"><GitCompareIcon className="size-4" />Compare Revisions</Button>
+          {!quotation.is_locked ? <Button
             className="h-10 rounded-md"
             type="button"
             variant="outline"
@@ -445,7 +487,7 @@ export default function QuotationDetailPage() {
           >
             <PrinterIcon className="size-4" />
             Print
-          </Button>
+          </Button> : null}
           <Button
             className="h-10 rounded-md"
             disabled={isDownloading}
@@ -496,7 +538,7 @@ export default function QuotationDetailPage() {
                 : ""}
             </p>
           </div>
-          <QuotationStatusBadge className="h-7 px-3 text-sm" status={quotation.status} />
+          <div className="flex items-center gap-2"><Badge variant="outline">Revision {quotation.revision_number ?? 0}</Badge><QuotationStatusBadge className="h-7 px-3 text-sm" status={quotation.status} />{quotation.is_locked ? <Badge variant="secondary"><LockIcon className="size-3" />Locked</Badge> : null}</div>
         </div>
       </section>
 
@@ -695,17 +737,10 @@ export default function QuotationDetailPage() {
           }))}
           title="Status History"
         />
-        <TimelineCard
-          emptyText="No revision snapshots yet."
-          items={revisions.map((item) => ({
-            id: item.id,
-            title: `Revision ${item.revision_number ?? 0}`,
-            meta: formatDateTime(item.created_at),
-            body: item.quotation_number ?? undefined,
-          }))}
-          title="Revision History"
-        />
+        <div className={cardClass}><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Revision History</h2><Button size="sm" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} />} variant="outline">Compare</Button></div><div className="mt-4 space-y-2">{revisions.map((item) => <Link className="block rounded-md border border-zinc-200 p-3 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900" href={`/dashboard/quotations/${item.id}`} key={item.id}><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Rev {item.revision_number ?? 0}</span><span className="text-xs text-zinc-500">{item.is_locked ? "Locked" : "Editable"}</span></div><p className="mt-1 text-sm text-zinc-600">{Number(item.revision_number ?? 0) === 0 ? "Original Quotation" : `Purpose: ${item.revision_purpose || "—"}`}</p><p className="mt-1 text-xs text-zinc-500">{formatStatus(item.status)} · {formatDateTime(item.revision_created_at ?? item.created_at)} · {profileName(item.created_by_profile)}</p></Link>)}{revisions.length === 0 ? <p className="text-sm text-zinc-500">No revision history.</p> : null}</div></div>
       </section>
+
+      {auditHistory.length ? <section className="mt-6"><TimelineCard emptyText="No audit activity." items={auditHistory.map((event) => ({ id: event.id, title: `${formatStatus(event.event_type)} · Rev ${event.revision_number ?? 0}`, meta: `${formatDateTime(event.created_at)} · ${profileName(event.actor_profile)}`, body: event.metadata ? JSON.stringify(event.metadata) : undefined }))} title="Audit History" /></section> : null}
 
       <section className="mt-6">
         <div className={cardClass}>
@@ -863,7 +898,7 @@ export default function QuotationDetailPage() {
             <DownloadIcon className="size-4" />
             {isDownloading ? "Preparing PDF..." : "Download PDF"}
           </Button>
-          <Select
+          {!quotation.is_locked ? <><Select
             value={statusValue}
             onValueChange={(value) => setStatusValue(String(value ?? "draft"))}
           >
@@ -886,23 +921,15 @@ export default function QuotationDetailPage() {
             onClick={() => void updateStatus()}
           >
             Change Status
-          </Button>
-          <Button
-            className="h-10 rounded-md"
-            disabled={isWorking}
-            type="button"
-            variant="outline"
-            onClick={() => void createRevision()}
-          >
-            Create Revision Snapshot
-          </Button>
-          <Button
+          </Button></> : null}
+          {quotation.status === "sent" ? <Button className="h-10 rounded-md" type="button" variant="outline" onClick={() => setRevisionDialogOpen(true)}>Create Revision</Button> : null}
+          {!quotation.is_locked ? <Button
             className="h-10 rounded-md font-semibold"
             nativeButton={false}
             render={<Link href={`/dashboard/quotations/${quotation.id}/edit`} />}
           >
             Edit
-          </Button>
+          </Button> : null}
           <Button
             className="h-10 rounded-md"
             nativeButton={false}
@@ -913,6 +940,10 @@ export default function QuotationDetailPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
+        <DialogContent className="rounded-lg"><DialogHeader><DialogTitle>Create New Revision</DialogTitle><DialogDescription>Quotation {quotation.quotation_number ?? "—"} · Current Revision {quotation.revision_number ?? 0}</DialogDescription></DialogHeader><div><label className="text-sm font-medium" htmlFor="revision-purpose">Purpose of Revision</label><Textarea className="mt-2 min-h-28" id="revision-purpose" placeholder="Customer requested additional work\nMaterial specification updated\nQuantity revised\nPrice adjustment\nDrawing revision\nScope of work modified" required value={revisionPurpose} onChange={(event) => setRevisionPurpose(event.target.value)} /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button><Button disabled={isWorking || !revisionPurpose.trim()} type="button" onClick={() => void createRevision()}>{isWorking ? "Creating..." : "Create Revision"}</Button></DialogFooter></DialogContent>
+      </Dialog>
     </div>
   );
 }

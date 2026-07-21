@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
 
 const bucketName = "quotation-documents";
 const maxPdfBytes = 10 * 1024 * 1024;
@@ -36,7 +37,7 @@ async function verifyQuotationCharge(
   const admin = createAdminClient();
   const { data: quotation, error: quotationError } = await admin
     .from("quotations")
-    .select("id")
+    .select("id,is_locked,quotation_series_id,revision_number,org_id")
     .eq("id", quotationId)
     .eq("org_id", orgId)
     .maybeSingle();
@@ -47,6 +48,9 @@ async function verifyQuotationCharge(
 
   if (!quotation) {
     return { admin, error: "Quotation not found", status: 404 };
+  }
+  if (quotation.is_locked) {
+    return { admin, error: lockedRevisionMessage, status: 409 };
   }
 
   const { data: charge, error: chargeError } = await admin
@@ -87,6 +91,7 @@ async function verifyQuotationCharge(
 
   return {
     admin,
+    quotation,
     charge: charge as { id: string; scope_id: string },
   };
 }
@@ -199,6 +204,7 @@ export async function POST(
   const { data: signedData } = await validation.admin.storage
     .from(bucketName)
     .createSignedUrl(filePath, 10 * 60);
+  await logRevisionAudit(validation.admin, validation.quotation!, session.user.id, "revision_modified", { area: "scope_charge_attachment" });
 
   return NextResponse.json({
     document: {
@@ -267,6 +273,8 @@ export async function DELETE(
   if (deleteError) {
     return jsonError("Unable to delete supporting document metadata", 500);
   }
+
+  await logRevisionAudit(validation.admin, validation.quotation!, session.user.id, "revision_modified", { area: "scope_charge_attachment" });
 
   return NextResponse.json({ message: "Supporting document removed" });
 }

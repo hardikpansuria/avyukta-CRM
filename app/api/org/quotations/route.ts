@@ -128,10 +128,13 @@ export async function POST(request: Request) {
     return jsonError("Selected contacts must belong to the customer", 400);
   }
 
+  const quotationId = crypto.randomUUID();
   const { data: quotation, error: quotationError } = await admin
     .from("quotations")
     .insert({
+      id: quotationId,
       org_id: session.org_id,
+      quotation_series_id: quotationId,
       customer_id: customerId,
       quote_date: quoteDate.value ?? null,
       expiry_date: expiryDate.value ?? null,
@@ -150,7 +153,6 @@ export async function POST(request: Request) {
     return jsonError("Unable to create quotation", 500);
   }
 
-  const quotationId = quotation.id as string;
   const contactRows = buildQuotationContactRows(
     session.org_id,
     quotationId,

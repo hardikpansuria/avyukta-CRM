@@ -21,7 +21,7 @@ export async function GET(
   const admin = createAdminClient();
   const { data: quotation, error: quotationError } = await admin
     .from("quotations")
-    .select("id")
+    .select("id,quotation_series_id")
     .eq("id", id)
     .eq("org_id", session.org_id)
     .maybeSingle();
@@ -29,11 +29,15 @@ export async function GET(
   if (quotationError) return jsonError("Unable to validate quotation", 500);
   if (!quotation) return jsonError("Quotation not found", 404);
 
+  const { data: seriesRows } = quotation.quotation_series_id
+    ? await admin.from("quotations").select("id").eq("org_id", session.org_id).eq("quotation_series_id", quotation.quotation_series_id)
+    : { data: [{ id }] };
+  const quotationIds = (seriesRows ?? [{ id }]).map((row) => row.id);
   const { data: documents, error: documentsError } = await admin
     .from("quotation_generated_documents")
     .select("*")
     .eq("org_id", session.org_id)
-    .eq("quotation_id", id)
+    .in("quotation_id", quotationIds)
     .order("generated_at", { ascending: false });
 
   if (documentsError) {
