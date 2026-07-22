@@ -49,6 +49,7 @@ export type ScopeInput = {
   id?: string;
   scope_title?: string | null;
   scope_description?: string | null;
+  quantity?: number | string | null;
   labour_calculation_method?: string | null;
   regular_hourly_rate?: number | string | null;
   overtime_hourly_rate?: number | string | null;
@@ -109,6 +110,7 @@ export type CalculatedScope = Omit<
   | "discount_value"
 > & {
   scope_title: string;
+  quantity: number;
   labour_calculation_method: LabourCalculationMethod;
   regular_hourly_rate: number;
   overtime_hourly_rate: number;
@@ -294,6 +296,7 @@ export function calculateLabourItem(
 }
 
 export function calculateScope(scope: ScopeInput): CalculatedScope {
+  const quantity = toPositiveNumber(scope.quantity) || 1;
   const method = normalizeLabourMethod(scope.labour_calculation_method);
   const regularRate = toPositiveNumber(scope.regular_hourly_rate);
   const overtimeRate = toPositiveNumber(scope.overtime_hourly_rate);
@@ -348,6 +351,7 @@ export function calculateScope(scope: ScopeInput): CalculatedScope {
   return {
     ...scope,
     scope_title: scope.scope_title?.trim() || "Scope of Work",
+    quantity,
     labour_calculation_method: method,
     regular_hourly_rate: regularRate,
     overtime_hourly_rate: overtimeRate,

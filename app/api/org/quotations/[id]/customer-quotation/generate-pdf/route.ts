@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import {
-  calculateCustomerQuotationItems,
   getCustomerQuotationData,
 } from "@/lib/quotations/customer-quotation";
 import {
@@ -11,6 +10,7 @@ import {
 } from "@/lib/quotations/customer-quotation-pdf";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getQuotationLock, lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
+import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -54,6 +54,15 @@ export async function POST(
   const admin = createAdminClient();
   const { data: lock } = await getQuotationLock(admin, session.org_id, id);
   if (lock?.is_locked) return jsonError(lockedRevisionMessage, 409);
+  const syncResult = await syncCustomerQuotationPricing({
+    orgId: session.org_id,
+    quotationId: id,
+    actorId: session.user.id,
+    adminClient: admin,
+  });
+  if (syncResult.error) {
+    return jsonError("Unable to synchronize customer quotation pricing", 500);
+  }
   const result = await getCustomerQuotationData(admin, session.org_id, id);
 
   if (result.notFound) return jsonError("Quotation not found", 404);
@@ -67,7 +76,6 @@ export async function POST(
 
   const document = result.value.document as Record<string, unknown>;
   const customerDocumentId = String(document.id);
-  const calculated = calculateCustomerQuotationItems(result.value.items);
   const generatedDocumentId = crypto.randomUUID();
   const revisionNumber = Number(document.revision_number_snapshot ?? 0);
   const quotationNumber = safeFilePart(document.quotation_number_snapshot);
@@ -79,10 +87,9 @@ export async function POST(
     logo_data_url: logo,
     document: {
       ...document,
-      subtotal: calculated.subtotal,
-      total: calculated.total,
+      ...result.value.pricing_summary,
     },
-    items: calculated.items,
+    items: result.value.items,
   };
 
   let pdfBuffer: Buffer;
@@ -128,31 +135,10 @@ export async function POST(
     return jsonError("Unable to save generated document history", 500);
   }
 
-  await Promise.all(
-    calculated.items.map((item, index) => {
-      const savedItem = result.value!.items[index] as Record<string, unknown>;
-      return admin
-        .from("quotation_customer_document_items")
-        .update({
-          imported_scope_amount: item.imported_scope_amount,
-          estimation_quantity: item.estimation_quantity,
-          quantity: item.quantity,
-          price_each: item.price_each,
-          price_ext: item.price_ext,
-        })
-        .eq("id", savedItem.id)
-        .eq("org_id", session.org_id)
-        .eq("quotation_id", id)
-        .eq("customer_document_id", customerDocumentId);
-    }),
-  );
-
   const { error: documentUpdateError } = await admin
     .from("quotation_customer_documents")
     .update({
       document_status: "generated",
-      subtotal: calculated.subtotal,
-      total: calculated.total,
       generated_pdf_storage_path: filePath,
       generated_at: generatedAt,
       updated_by: session.user.id,

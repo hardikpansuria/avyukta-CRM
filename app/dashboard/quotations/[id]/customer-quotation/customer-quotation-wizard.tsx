@@ -6,23 +6,14 @@ import {
   CheckIcon,
   ExternalLinkIcon,
   FileDownIcon,
-  ImportIcon,
   SaveIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -52,6 +43,12 @@ type CustomerDocument = {
   prepared_by_id?: string | null;
   prepared_by_name_snapshot: string;
   subtotal: number;
+  discount_amount: number;
+  final_additional_charges_total: number;
+  grand_total_before_tax: number;
+  tax_name: string;
+  tax_rate: number;
+  tax_amount: number;
   total: number;
 };
 
@@ -80,12 +77,6 @@ type Organization = {
   has_logo: boolean;
 };
 
-type SourceScope = {
-  id: string;
-  scope_title: string;
-  internal_scope_total: number;
-};
-
 type GeneratedDocument = {
   id: string;
   revision_number?: number | string | null;
@@ -105,6 +96,7 @@ type ApiPayload = {
   items: Array<Record<string, unknown>>;
   organization: Organization;
   source_scopes: Array<Record<string, unknown>>;
+  pricing_summary: Record<string, unknown>;
   error?: string;
 };
 
@@ -158,6 +150,14 @@ function hydrateDocument(value: Record<string, unknown>): CustomerDocument {
       value.prepared_by_name_snapshot,
     ),
     subtotal: numberValue(value.subtotal),
+    discount_amount: numberValue(value.discount_amount),
+    final_additional_charges_total: numberValue(
+      value.final_additional_charges_total,
+    ),
+    grand_total_before_tax: numberValue(value.grand_total_before_tax),
+    tax_name: stringValue(value.tax_name ?? value.tax_name_snapshot),
+    tax_rate: numberValue(value.tax_rate ?? value.tax_rate_snapshot),
+    tax_amount: numberValue(value.tax_amount),
     total: numberValue(value.total),
   };
 }
@@ -179,41 +179,6 @@ function hydrateItems(values: Array<Record<string, unknown>>): CustomerItem[] {
   }));
 }
 
-function calculateItems(items: CustomerItem[]) {
-  const calculated = items.map((item) => {
-    const estimationQuantity =
-      item.estimation_quantity > 0 ? item.estimation_quantity : 1;
-    const quantity = item.quantity > 0 ? item.quantity : 1;
-    const priceEach =
-      Math.round(
-        (item.imported_scope_amount / estimationQuantity + Number.EPSILON) *
-          100,
-      ) / 100;
-    const priceExt =
-      Math.round((priceEach * quantity + Number.EPSILON) * 100) / 100;
-
-    return {
-      ...item,
-      estimation_quantity: estimationQuantity,
-      quantity,
-      price_each: priceEach,
-      price_ext: priceExt,
-    };
-  });
-  const total =
-    Math.round(
-      (calculated.reduce((sum, item) => sum + item.price_ext, 0) +
-        Number.EPSILON) *
-        100,
-    ) / 100;
-
-  return { items: calculated, total };
-}
-
-function decimalInput(value: string) {
-  return value === "" || /^\d+(?:\.\d*)?$/.test(value);
-}
-
 export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boolean }) {
   const params = useParams<{ id: string }>();
   const quotationId = params.id;
@@ -222,7 +187,6 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
   const [document, setDocument] = useState<CustomerDocument | null>(null);
   const [items, setItems] = useState<CustomerItem[]>([]);
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [sourceScopes, setSourceScopes] = useState<SourceScope[]>([]);
   const [generatedDocuments, setGeneratedDocuments] = useState<
     GeneratedDocument[]
   >([]);
@@ -231,9 +195,6 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [importIndex, setImportIndex] = useState<number | null>(null);
-  const [estimatedQuantity, setEstimatedQuantity] = useState("1");
-  const calculated = useMemo(() => calculateItems(items), [items]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -268,16 +229,11 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         }
 
         setExists(payload.exists);
-        setDocument(hydrateDocument(payload.document));
+        setDocument(
+          hydrateDocument({ ...payload.document, ...payload.pricing_summary }),
+        );
         setItems(hydrateItems(payload.items ?? []));
         setOrganization(payload.organization);
-        setSourceScopes(
-          (payload.source_scopes ?? []).map((scope) => ({
-            id: stringValue(scope.id),
-            scope_title: stringValue(scope.scope_title),
-            internal_scope_total: numberValue(scope.internal_scope_total),
-          })),
-        );
         setGeneratedDocuments(historyPayload?.documents ?? []);
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
@@ -319,18 +275,19 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
       delivery_text: document.delivery_text,
       terms_text: document.terms_text,
       fob_text: document.fob_text,
-      items: calculated.items,
+      items: items.map((item) => ({
+        id: item.id,
+        scope_id: item.scope_id,
+        scope_title_snapshot: item.scope_title_snapshot,
+        description_html: item.description_html,
+        description_text: item.description_text,
+      })),
     };
   }
 
   async function saveDraft(showSuccess = true) {
     const payload = draftPayload();
     if (!payload) return false;
-
-    if (calculated.items.some((item) => item.quantity <= 0)) {
-      setError("Every customer quotation quantity must be greater than zero.");
-      return false;
-    }
 
     setIsSaving(true);
     setError(null);
@@ -355,7 +312,9 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
       }
 
       setExists(true);
-      setDocument(hydrateDocument(saved.document));
+      setDocument(
+        hydrateDocument({ ...saved.document, ...saved.pricing_summary }),
+      );
       setItems(hydrateItems(saved.items ?? []));
       if (showSuccess) setSuccess("Customer quotation draft saved.");
       return true;
@@ -402,26 +361,6 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
     }
   }
 
-  function confirmImport() {
-    if (importIndex === null) return;
-    const quantity = Number.parseFloat(estimatedQuantity);
-    const source = sourceScopes.find(
-      (scope) => scope.id === items[importIndex]?.scope_id,
-    );
-
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setError("Estimated quantity must be greater than zero.");
-      return;
-    }
-
-    updateItem(importIndex, {
-      imported_scope_amount: source?.internal_scope_total ?? 0,
-      estimation_quantity: quantity,
-    });
-    setImportIndex(null);
-    setEstimatedQuantity("1");
-  }
-
   if (isLoading) {
     return (
       <div className="mx-auto max-w-7xl space-y-5">
@@ -440,21 +379,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
     );
   }
 
-  const currentImportItem =
-    importIndex === null ? null : calculated.items[importIndex];
-  const currentImportSource = currentImportItem
-    ? sourceScopes.find((scope) => scope.id === currentImportItem.scope_id)
-    : null;
-  const importQuantity = numberValue(estimatedQuantity, 0);
-  const importPriceEach =
-    importQuantity > 0
-      ? (currentImportSource?.internal_scope_total ?? 0) / importQuantity
-      : 0;
-  const previewDocument = {
-    ...document,
-    subtotal: calculated.total,
-    total: calculated.total,
-  };
+  const previewDocument = document;
 
   return (
     <div className="mx-auto max-w-7xl pb-24">
@@ -675,16 +600,34 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
 
         {activeStep === 3 ? (
           <StepCard
-            description="Each internal scope becomes one customer-facing line. Internal cost details remain private."
+            description="Each internal scope becomes one synchronized customer-facing line. Internal cost details remain private."
             title="Scope & Pricing"
           >
             <div className="space-y-5">
-              {calculated.items.map((item, index) => (
+              <div className="flex flex-col gap-3 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100 sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  Pricing is synchronized from the internal quotation. Edit the
+                  Quotation Form to change quantity or pricing.
+                </p>
+                {!readOnly ? (
+                  <Button
+                    nativeButton={false}
+                    render={
+                      <Link href={`/dashboard/quotations/${quotationId}/edit`} />
+                    }
+                    size="sm"
+                    variant="outline"
+                  >
+                    Edit Quotation Form
+                  </Button>
+                ) : null}
+              </div>
+              {items.map((item, index) => (
                 <section
                   className="rounded-md border border-zinc-200 p-4 dark:border-zinc-800"
                   key={item.id ?? item.scope_id}
                 >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
                     <div>
                       <p className="text-xs font-medium uppercase text-zinc-500">
                         Scope {index + 1}
@@ -693,21 +636,6 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                         {item.scope_title_snapshot}
                       </h3>
                     </div>
-                    <Button
-                      className="rounded-md"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setImportIndex(index);
-                        setEstimatedQuantity(
-                          String(item.estimation_quantity || 1),
-                        );
-                      }}
-                    >
-                      <ImportIcon className="size-4" />
-                      Import Value
-                    </Button>
                   </div>
 
                   <div className="mt-4">
@@ -728,19 +656,10 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                    <DecimalField
+                  <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                    <ReadOnlyField
                       label="Qty."
-                      value={item.quantity}
-                      onChange={(value) => updateItem(index, { quantity: value })}
-                    />
-                    <ReadOnlyField
-                      label="Imported Scope Amount"
-                      value={money(item.imported_scope_amount)}
-                    />
-                    <ReadOnlyField
-                      label="Estimated Quantity"
-                      value={String(item.estimation_quantity)}
+                      value={String(item.quantity)}
                     />
                     <ReadOnlyField
                       label="Price Each"
@@ -753,14 +672,16 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                   </div>
                 </section>
               ))}
-              <div className="flex justify-end">
-                <div className="w-full max-w-sm rounded-md border-2 border-zinc-300 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900">
-                  <p className="text-xs font-medium text-zinc-500">
-                    Customer Quotation Total
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">
-                    {money(calculated.total)}
-                  </p>
+              <div className="ml-auto grid w-full max-w-lg gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+                <PricingSummaryLine label="Scope Subtotal" value={document.subtotal} />
+                <PricingSummaryLine label="Final Discount" value={-document.discount_amount} />
+                {document.final_additional_charges_total > 0 ? (
+                  <PricingSummaryLine label="Final Additional Charges" value={document.final_additional_charges_total} />
+                ) : null}
+                <PricingSummaryLine label="Grand Total Before Tax" value={document.grand_total_before_tax} />
+                <PricingSummaryLine label={`${document.tax_name || "Tax"} (${document.tax_rate}%)`} value={document.tax_amount} />
+                <div className="mt-1 border-t border-zinc-300 pt-2 dark:border-zinc-700">
+                  <PricingSummaryLine strong label="Final Grand Total" value={document.total} />
                 </div>
               </div>
             </div>
@@ -817,7 +738,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">
-                    Final total: {money(calculated.total)}
+                    Final total: {money(document.total)}
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     Terms and Conditions begin on a separate page.
@@ -839,7 +760,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                 data={{
                   organization,
                   document: previewDocument,
-                  items: calculated.items,
+                  items,
                 }}
               />
             </div>
@@ -951,71 +872,6 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         </div>
       </div>
 
-      <Dialog
-        open={importIndex !== null}
-        onOpenChange={(open) => {
-          if (!open) setImportIndex(null);
-        }}
-      >
-        <DialogContent className="rounded-lg">
-          <DialogHeader>
-            <DialogTitle>Import Value</DialogTitle>
-            <DialogDescription>
-              {currentImportSource?.scope_title || "Scope of Work"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5">
-            <div className="rounded-md bg-zinc-50 p-4 dark:bg-zinc-900">
-              <p className="text-xs text-zinc-500">
-                Current Internal Scope Total
-              </p>
-              <p className="mt-1 text-xl font-semibold">
-                {money(currentImportSource?.internal_scope_total)}
-              </p>
-            </div>
-            <p className="text-sm text-zinc-600 dark:text-zinc-300">
-              This estimate, including labour and material, was calculated for
-              how many units?
-            </p>
-            <div>
-              <Label htmlFor="estimated-quantity">Estimated Quantity</Label>
-              <Input
-                className={cn(inputClass, "mt-2")}
-                id="estimated-quantity"
-                inputMode="decimal"
-                type="text"
-                value={estimatedQuantity}
-                onChange={(event) => {
-                  if (decimalInput(event.target.value)) {
-                    setEstimatedQuantity(event.target.value);
-                  }
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-              <span>Price Each</span>
-              <strong>{money(importPriceEach)}</strong>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              className="rounded-md"
-              type="button"
-              variant="outline"
-              onClick={() => setImportIndex(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="rounded-md"
-              type="button"
-              onClick={confirmImport}
-            >
-              Import
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -1073,43 +929,6 @@ function TextField({
   );
 }
 
-function DecimalField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const [displayValue, setDisplayValue] = useState(String(value));
-
-  return (
-    <div>
-      <Label>{label}</Label>
-      <Input
-        className={cn(inputClass, "mt-2 min-w-28")}
-        inputMode="decimal"
-        type="text"
-        value={displayValue}
-        onBlur={() => {
-          const parsed = numberValue(displayValue, 1);
-          const normalized = parsed > 0 ? parsed : 1;
-          setDisplayValue(String(normalized));
-          onChange(normalized);
-        }}
-        onChange={(event) => {
-          if (decimalInput(event.target.value)) {
-            setDisplayValue(event.target.value);
-            const parsed = Number.parseFloat(event.target.value);
-            if (Number.isFinite(parsed) && parsed > 0) onChange(parsed);
-          }
-        }}
-      />
-    </div>
-  );
-}
-
 function TextareaField({
   label,
   value,
@@ -1138,6 +957,23 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
       <div className="mt-2 min-h-10 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
         {value}
       </div>
+    </div>
+  );
+}
+
+function PricingSummaryLine({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+}) {
+  return (
+    <div className={`flex items-center justify-between gap-4 ${strong ? "font-semibold" : ""}`}>
+      <span>{label}</span>
+      <span className="tabular-nums">{money(value)}</span>
     </div>
   );
 }

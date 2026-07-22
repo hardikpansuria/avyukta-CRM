@@ -103,6 +103,7 @@ function newScope(index: number): ScopeInput {
     id: crypto.randomUUID(),
     scope_title: `Scope of Work ${index + 1}`,
     scope_description: "",
+    quantity: "1",
     labour_calculation_method: "hourly",
     regular_hourly_rate: "",
     overtime_hourly_rate: "",
@@ -556,17 +557,32 @@ export function ScopeBuilder({
               ) : (
                 <div className="space-y-5 p-4 sm:p-5">
                   <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Scope Title">
-                      <Input
-                        className={inputClass}
-                        value={scope.scope_title ?? ""}
-                        onChange={(event) =>
-                          updateScope(scopeIndex, {
-                            scope_title: event.target.value,
-                          })
-                        }
-                      />
-                    </Field>
+                    <div className="space-y-4">
+                      <Field label="Scope Title">
+                        <Input
+                          className={inputClass}
+                          value={scope.scope_title ?? ""}
+                          onChange={(event) =>
+                            updateScope(scopeIndex, {
+                              scope_title: event.target.value,
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="Quantity">
+                        <NumberInput
+                          className="max-w-48"
+                          required
+                          value={scope.quantity ?? 1}
+                          onChange={(value) =>
+                            updateScope(scopeIndex, { quantity: value })
+                          }
+                        />
+                        <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                          Number of units included in this scope estimate
+                        </p>
+                      </Field>
+                    </div>
                     <div className="md:row-span-2">
                       <Field label="Scope Description">
                         <Textarea
@@ -733,6 +749,7 @@ export function ScopeBuilder({
                     <TabsContent className="pt-4" value="summary">
                       <ScopeSummary
                         calculatedScope={calculatedScope}
+                        quantity={scope.quantity}
                         discountType={scope.discount_type ?? "none"}
                         discountValue={scope.discount_value}
                         onDiscountTypeChange={(value) =>
@@ -1776,12 +1793,14 @@ function ChargesSection({
 
 function ScopeSummary({
   calculatedScope,
+  quantity,
   discountType,
   discountValue,
   onDiscountTypeChange,
   onDiscountValueChange,
 }: {
   calculatedScope: CalculatedScope | undefined;
+  quantity: number | string | null | undefined;
   discountType: string;
   discountValue: number | string | null | undefined;
   onDiscountTypeChange: (value: string) => void;
@@ -1824,6 +1843,13 @@ function ScopeSummary({
           <SummaryTile
             label="Discount"
             value={`-${formatCurrency(calculatedScope?.discount_amount)}`}
+          />
+          <SummaryTile
+            label="Calculated Unit Price"
+            value={formatCurrency(
+              Number(calculatedScope?.scope_total_after_discount ?? 0) /
+                (Number(quantity) > 0 ? Number(quantity) : 1),
+            )}
           />
         </div>
         <div className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-950">
@@ -1957,17 +1983,20 @@ function NumberInput({
   onChange,
   ariaLabel,
   className,
+  required = false,
 }: {
   value: number | string | null | undefined;
   onChange: (value: string) => void;
   ariaLabel?: string;
   className?: string;
+  required?: boolean;
 }) {
   return (
     <Input
       aria-label={ariaLabel}
       className={cn(inputClass, className)}
       inputMode="decimal"
+      required={required}
       type="text"
       value={String(value ?? "")}
       onChange={(event) => {

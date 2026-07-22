@@ -44,6 +44,7 @@ export type PrintableQuotationDetail = {
   scopes?: Array<{
     scope_title?: string | null;
     scope_description?: string | null;
+    quantity?: number | string | null;
     labour_calculation_method?: string | null;
     regular_hourly_rate?: number | string | null;
     overtime_hourly_rate?: number | string | null;
@@ -237,6 +238,8 @@ function buildPrintHtml(detail: PrintableQuotationDetail) {
               : ""
           }
           <div class="rates">
+            <div><span>Scope Quantity</span><b>${escapeHtml(scope.quantity ?? 1)}</b></div>
+            <div><span>Calculated Unit Price</span><b>${escapeHtml(money(Number(scope.scope_total_after_discount ?? 0) / (Number(scope.quantity ?? 1) || 1)))}</b></div>
             <div><span>Labour Method</span><b>${escapeHtml(titleCase(scope.labour_calculation_method))}</b></div>
             <div><span>Regular Rate</span><b>${escapeHtml(money(scope.regular_hourly_rate))}</b></div>
             <div><span>Overtime Rate</span><b>${escapeHtml(money(scope.overtime_hourly_rate))}</b></div>
@@ -263,6 +266,7 @@ function buildPrintHtml(detail: PrintableQuotationDetail) {
             <span>Charges <b>${escapeHtml(money(scope.additional_charges_total))}</b></span>
             <span>Subtotal <b>${escapeHtml(money(scope.scope_subtotal_before_discount))}</b></span>
             <span>Discount <b>-${escapeHtml(money(scope.discount_amount))}</b></span>
+            <span>Unit Price <b>${escapeHtml(money(Number(scope.scope_total_after_discount ?? 0) / (Number(scope.quantity ?? 1) || 1)))}</b></span>
             <span class="grand">Scope Total <b>${escapeHtml(money(scope.scope_total_after_discount))}</b></span>
           </div>
         </section>`;

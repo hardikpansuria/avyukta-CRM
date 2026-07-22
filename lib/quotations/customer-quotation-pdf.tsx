@@ -50,6 +50,12 @@ export type CustomerQuotationPdfData = {
     fob_text?: string | null;
     prepared_by_name_snapshot?: string | null;
     subtotal?: number | string | null;
+    discount_amount?: number | string | null;
+    final_additional_charges_total?: number | string | null;
+    grand_total_before_tax?: number | string | null;
+    tax_name?: string | null;
+    tax_rate?: number | string | null;
+    tax_amount?: number | string | null;
     total?: number | string | null;
   };
   items: Array<{
@@ -243,11 +249,23 @@ const styles = StyleSheet.create({
   },
   totalBox: {
     width: 180,
-    flexDirection: "row",
-    justifyContent: "space-between",
     borderTopWidth: 2,
     borderTopColor: "#18181b",
     paddingTop: 7,
+    fontSize: 9,
+  },
+  summaryLine: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 3,
+  },
+  summaryTotal: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderTopWidth: 0.5,
+    borderTopColor: "#a1a1aa",
+    paddingTop: 4,
+    marginTop: 2,
     fontFamily: "Helvetica-Bold",
     fontSize: 11,
   },
@@ -732,8 +750,34 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
 
         <View style={styles.totalRow} wrap={false}>
           <View style={styles.totalBox}>
-            <Text>Total</Text>
-            <Text>{money(document.total)}</Text>
+            <View style={styles.summaryLine}>
+              <Text>Subtotal</Text>
+              <Text>{money(document.subtotal)}</Text>
+            </View>
+            <View style={styles.summaryLine}>
+              <Text>Discount</Text>
+              <Text>{money(-Number(document.discount_amount ?? 0))}</Text>
+            </View>
+            {Number(document.final_additional_charges_total ?? 0) > 0 ? (
+              <View style={styles.summaryLine}>
+                <Text>Final Additional Charges</Text>
+                <Text>{money(document.final_additional_charges_total)}</Text>
+              </View>
+            ) : null}
+            <View style={styles.summaryLine}>
+              <Text>Grand Total Before Tax</Text>
+              <Text>{money(document.grand_total_before_tax)}</Text>
+            </View>
+            <View style={styles.summaryLine}>
+              <Text>
+                {document.tax_name || "Tax"} ({String(document.tax_rate ?? 0)}%)
+              </Text>
+              <Text>{money(document.tax_amount)}</Text>
+            </View>
+            <View style={styles.summaryTotal}>
+              <Text>Grand Total</Text>
+              <Text>{money(document.total)}</Text>
+            </View>
           </View>
         </View>
 

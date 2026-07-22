@@ -217,6 +217,7 @@ type Scope = {
   id: string;
   scope_title?: string | null;
   scope_description?: string | null;
+  quantity?: number | string | null;
   labour_calculation_method?: string | null;
   regular_hourly_rate?: number | string | null;
   overtime_hourly_rate?: number | string | null;
@@ -247,12 +248,33 @@ function profileName(profile: Profile | null | undefined) {
   return profile.full_name || profile.email || "-";
 }
 
+function statusChangeWarning(status: string) {
+  switch (status) {
+    case "sent":
+      return "This quotation revision will become read-only after it is sent. Further changes will require creating a new revision.";
+    case "accepted":
+      return "This quotation will be marked as accepted.";
+    case "rejected":
+      return "This quotation will be marked as rejected.";
+    case "expired":
+      return "This quotation will be marked as expired.";
+    case "converted_to_work_order":
+      return "This quotation will be marked as converted to a work order.";
+    default:
+      return "The quotation status will be updated after confirmation.";
+  }
+}
+
 export default function QuotationDetailPage() {
   const params = useParams<{ id: string }>();
   const quotationId = params.id;
   const [detail, setDetail] = useState<QuotationDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusValue, setStatusValue] = useState("");
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -336,6 +358,13 @@ export default function QuotationDetailPage() {
     };
   }, [quotationId, refreshKey]);
 
+  useEffect(() => {
+    if (!successMessage) return;
+
+    const timeoutId = window.setTimeout(() => setSuccessMessage(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [successMessage]);
+
   if (isLoading) {
     return (
       <div className="mx-auto max-w-6xl rounded-lg border border-zinc-200 bg-white p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
@@ -371,30 +400,57 @@ export default function QuotationDetailPage() {
   const printableDetail = detail;
 
   async function updateStatus() {
+    if (!pendingStatus || isChangingStatus) return;
+    const confirmedStatus = pendingStatus;
     setError(null);
-    setIsWorking(true);
+    setSuccessMessage(null);
+    setIsChangingStatus(true);
 
     try {
       const response = await fetch(`/api/org/quotations/${quotationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: statusValue }),
+        body: JSON.stringify({ status: confirmedStatus }),
       });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string }
+        | { quotation?: Quotation; error?: string }
         | null;
 
-      if (!response.ok) {
+      if (!response.ok || !payload?.quotation) {
         setError(payload?.error ?? "Unable to update status.");
+        setPendingStatus(null);
+        setStatusDialogOpen(false);
         return;
       }
 
+      const savedStatus = payload.quotation.status ?? confirmedStatus;
+      setStatusValue(savedStatus);
+      setPendingStatus(null);
+      setStatusDialogOpen(false);
+      setSuccessMessage(
+        `Quotation status changed to ${formatStatus(savedStatus)}.`,
+      );
       setRefreshKey((key) => key + 1);
     } catch {
       setError("Unable to update status.");
+      setPendingStatus(null);
+      setStatusDialogOpen(false);
     } finally {
-      setIsWorking(false);
+      setIsChangingStatus(false);
     }
+  }
+
+  function selectPendingStatus(value: unknown) {
+    const nextStatus = String(value ?? "");
+    if (!nextStatus || nextStatus === statusValue) return;
+    setPendingStatus(nextStatus);
+    setStatusDialogOpen(true);
+  }
+
+  function cancelStatusChange() {
+    if (isChangingStatus) return;
+    setPendingStatus(null);
+    setStatusDialogOpen(false);
   }
 
   async function createRevision() {
@@ -519,6 +575,16 @@ export default function QuotationDetailPage() {
       {error ? (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
           {error}
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div
+          aria-live="polite"
+          className="fixed right-4 top-4 z-[70] max-w-sm rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg dark:border-emerald-900/60 dark:bg-emerald-950 dark:text-emerald-200"
+          role="status"
+        >
+          {successMessage}
         </div>
       ) : null}
 
@@ -899,8 +965,9 @@ export default function QuotationDetailPage() {
             {isDownloading ? "Preparing PDF..." : "Download PDF"}
           </Button>
           {!quotation.is_locked ? <><Select
+            disabled={isChangingStatus}
             value={statusValue}
-            onValueChange={(value) => setStatusValue(String(value ?? "draft"))}
+            onValueChange={selectPendingStatus}
           >
             <SelectTrigger className="h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 sm:w-56">
               <SelectValue placeholder="Change status" />
@@ -912,16 +979,7 @@ export default function QuotationDetailPage() {
                 </SelectItem>
               ))}
             </SelectContent>
-          </Select>
-          <Button
-            className="h-10 rounded-md"
-            disabled={isWorking}
-            type="button"
-            variant="outline"
-            onClick={() => void updateStatus()}
-          >
-            Change Status
-          </Button></> : null}
+          </Select></> : null}
           {quotation.status === "sent" ? <Button className="h-10 rounded-md" type="button" variant="outline" onClick={() => setRevisionDialogOpen(true)}>Create Revision</Button> : null}
           {!quotation.is_locked ? <Button
             className="h-10 rounded-md font-semibold"
@@ -943,6 +1001,45 @@ export default function QuotationDetailPage() {
 
       <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
         <DialogContent className="rounded-lg"><DialogHeader><DialogTitle>Create New Revision</DialogTitle><DialogDescription>Quotation {quotation.quotation_number ?? "—"} · Current Revision {quotation.revision_number ?? 0}</DialogDescription></DialogHeader><div><label className="text-sm font-medium" htmlFor="revision-purpose">Purpose of Revision</label><Textarea className="mt-2 min-h-28" id="revision-purpose" placeholder="Customer requested additional work\nMaterial specification updated\nQuantity revised\nPrice adjustment\nDrawing revision\nScope of work modified" required value={revisionPurpose} onChange={(event) => setRevisionPurpose(event.target.value)} /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button><Button disabled={isWorking || !revisionPurpose.trim()} type="button" onClick={() => void createRevision()}>{isWorking ? "Creating..." : "Create Revision"}</Button></DialogFooter></DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={statusDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) cancelStatusChange();
+        }}
+      >
+        <DialogContent className="rounded-lg" showCloseButton={!isChangingStatus}>
+          <DialogHeader>
+            <DialogTitle>Confirm Status Change</DialogTitle>
+            <DialogDescription>
+              Change quotation status from &quot;{formatStatus(statusValue)}&quot; to
+              &quot;{formatStatus(pendingStatus)}&quot;?
+            </DialogDescription>
+          </DialogHeader>
+          {pendingStatus ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+              {statusChangeWarning(pendingStatus)}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              disabled={isChangingStatus}
+              type="button"
+              variant="outline"
+              onClick={cancelStatusChange}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isChangingStatus || !pendingStatus}
+              type="button"
+              onClick={() => void updateStatus()}
+            >
+              {isChangingStatus ? "Changing Status..." : "Yes, Change Status"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );
@@ -1043,7 +1140,15 @@ function ScopeCard({
           </div>
         ) : null}
 
-        <div className="mb-5 grid gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:grid-cols-3">
+        <div className="mb-5 grid gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 sm:grid-cols-2 lg:grid-cols-5">
+          <ScopeMetric label="Scope Quantity" value={String(scope.quantity ?? 1)} />
+          <ScopeMetric
+            label="Calculated Unit Price"
+            value={formatCurrency(
+              Number(scope.scope_total_after_discount ?? 0) /
+                (Number(scope.quantity ?? 1) || 1),
+            )}
+          />
           <ScopeMetric
             label="Labour Method"
             value={formatStatus(scope.labour_calculation_method)}
@@ -1215,6 +1320,13 @@ function ScopeCard({
               <ScopeSummaryTile
                 label="Discount"
                 value={`-${formatCurrency(scope.discount_amount)}`}
+              />
+              <ScopeSummaryTile
+                label="Calculated Unit Price"
+                value={formatCurrency(
+                  Number(scope.scope_total_after_discount ?? 0) /
+                    (Number(scope.quantity ?? 1) || 1),
+                )}
               />
               <div className="border-t border-zinc-200 pt-4 dark:border-zinc-700 sm:col-span-2">
                 <SummaryLine

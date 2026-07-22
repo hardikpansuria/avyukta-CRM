@@ -91,6 +91,7 @@ type ScopeRow = ScopeInput & {
   id: string;
   quotation_id: string;
   sort_order?: number | null;
+  quantity?: number | string | null;
   material_total?: number | string | null;
   material_profit_total?: number | string | null;
   labour_total?: number | string | null;
@@ -612,6 +613,11 @@ export function normalizeScopesPayload(value: unknown) {
     const materialItems: MaterialItemInput[] = [];
     const labourItems: LabourItemInput[] = [];
     const scopeCharges: ScopeChargeInput[] = [];
+    const scopeQuantity = scope.quantity === undefined ? 1 : Number(scope.quantity);
+
+    if (!Number.isFinite(scopeQuantity) || scopeQuantity <= 0) {
+      return { error: "Scope quantity must be greater than zero" };
+    }
 
     for (const rawMaterial of getArray(scope.material_items)) {
       if (!rawMaterial || typeof rawMaterial !== "object") {
@@ -721,6 +727,7 @@ export function normalizeScopesPayload(value: unknown) {
       id: trimText(scope.id) || undefined,
       scope_title: trimText(scope.scope_title) || "Scope of Work",
       scope_description: trimText(scope.scope_description) || null,
+      quantity: scopeQuantity,
       labour_calculation_method:
         trimText(scope.labour_calculation_method) || "hourly",
       regular_hourly_rate: scope.regular_hourly_rate as string | number | null,
@@ -808,6 +815,7 @@ export async function replaceQuotationScopes(
     quotation_id: quotationId,
     scope_title: scope.scope_title,
     scope_description: scope.scope_description ?? null,
+    quantity: scope.quantity,
     sort_order: index + 1,
     labour_calculation_method: scope.labour_calculation_method,
     regular_hourly_rate: scope.regular_hourly_rate,

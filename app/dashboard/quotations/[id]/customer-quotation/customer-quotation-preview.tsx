@@ -143,9 +143,29 @@ export function CustomerQuotationPreview({
           ))}
         </div>
 
-        <div className="ml-auto mt-4 flex w-64 justify-between border-t-2 border-zinc-950 pt-2 text-sm font-bold">
-          <span>Total</span>
-          <span>{money(document.total)}</span>
+        <div className="ml-auto mt-4 w-72 space-y-1 border-t-2 border-zinc-950 pt-2 text-xs">
+          <SummaryLine label="Subtotal" value={document.subtotal} />
+          <SummaryLine
+            label="Discount"
+            value={-Number(document.discount_amount ?? 0)}
+          />
+          {Number(document.final_additional_charges_total ?? 0) > 0 ? (
+            <SummaryLine
+              label="Final Additional Charges"
+              value={document.final_additional_charges_total}
+            />
+          ) : null}
+          <SummaryLine
+            label="Grand Total Before Tax"
+            value={document.grand_total_before_tax}
+          />
+          <SummaryLine
+            label={`${String(document.tax_name || "Tax")} (${String(document.tax_rate ?? 0)}%)`}
+            value={document.tax_amount}
+          />
+          <div className="border-t border-zinc-400 pt-1 font-bold">
+            <SummaryLine label="Grand Total" value={document.total} />
+          </div>
         </div>
 
         <div className="mt-8 space-y-3 text-xs leading-5">
@@ -195,6 +215,15 @@ export function CustomerQuotationPreview({
           {footer}
         </footer>
       </section>
+    </div>
+  );
+}
+
+function SummaryLine({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span>{label}</span>
+      <span>{money(value)}</span>
     </div>
   );
 }

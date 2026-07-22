@@ -58,7 +58,18 @@ export type CustomerQuotationData = {
     id: unknown;
     scope_title: unknown;
     internal_scope_total: unknown;
+    internal_scope_quantity: unknown;
   }>;
+  pricing_summary: {
+    subtotal: number | string | null;
+    discount_amount: number | string | null;
+    final_additional_charges_total: number | string | null;
+    grand_total_before_tax: number | string | null;
+    tax_name: string | null;
+    tax_rate: number | string | null;
+    tax_amount: number | string | null;
+    total: number | string | null;
+  };
 };
 
 const allowedRichTextTags = [
@@ -97,6 +108,15 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function positiveNumber(value: unknown, fallback = 0) {
   const parsed =
     typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
@@ -116,46 +136,6 @@ function roundMoney(value: number) {
 function dateOnly(value: unknown) {
   const normalized = text(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
-}
-
-export function calculateCustomerQuotationItems(
-  items: CustomerQuotationItemInput[],
-) {
-  const calculatedItems = items.map((item, index) => {
-    const importedScopeAmount = roundMoney(
-      nonNegativeNumber(item.imported_scope_amount),
-    );
-    const estimationQuantity = positiveNumber(item.estimation_quantity, 1);
-    const quantity = positiveNumber(item.quantity, 1);
-    const priceEach = roundMoney(importedScopeAmount / estimationQuantity);
-    const priceExt = roundMoney(priceEach * quantity);
-    const descriptionHtml = sanitizeCustomerQuotationHtml(
-      item.description_html,
-    );
-
-    return {
-      id: text(item.id) || undefined,
-      scope_id: text(item.scope_id) || null,
-      sort_order: index + 1,
-      scope_title_snapshot:
-        text(item.scope_title_snapshot) || `Scope of Work ${index + 1}`,
-      description_html: descriptionHtml,
-      description_text:
-        richTextToPlainText(descriptionHtml) ||
-        text(item.description_text) ||
-        null,
-      imported_scope_amount: importedScopeAmount,
-      estimation_quantity: estimationQuantity,
-      quantity,
-      price_each: priceEach,
-      price_ext: priceExt,
-    };
-  });
-  const total = roundMoney(
-    calculatedItems.reduce((sum, item) => sum + item.price_ext, 0),
-  );
-
-  return { items: calculatedItems, subtotal: total, total };
 }
 
 async function getSourceContext(
@@ -228,7 +208,7 @@ async function getSourceContext(
       : Promise.resolve({ data: null, error: null }),
     admin
       .from("quotation_scopes")
-      .select("id,scope_title,scope_total_after_discount,sort_order")
+      .select("id,scope_title,scope_total_after_discount,quantity,sort_order")
       .eq("org_id", orgId)
       .eq("quotation_id", quotationId)
       .order("sort_order", { ascending: true }),
@@ -298,6 +278,12 @@ function defaultTerms(source: SourceContext) {
 }
 
 function defaultDocument(source: SourceContext) {
+  const subtotal = roundMoney(
+    source.scopes.reduce(
+      (sum, scope) => sum + pricingFromScope(scope).price_ext,
+      0,
+    ),
+  );
   return {
     document_status: "draft",
     quotation_date:
@@ -320,27 +306,46 @@ function defaultDocument(source: SourceContext) {
       text(source.preparedBy?.full_name) ||
       text(source.preparedBy?.email) ||
       "",
-    subtotal: 0,
-    total: 0,
+    subtotal,
+    discount_amount: Number(source.quotation.final_discount_amount ?? 0),
+    tax_name_snapshot: source.quotation.tax_name ?? null,
+    tax_rate_snapshot: Number(source.quotation.tax_rate ?? 0),
+    tax_amount: Number(source.quotation.tax_amount ?? 0),
+    total: Number(source.quotation.grand_total_after_tax ?? 0),
+    pricing_synced_at: null,
     generated_pdf_storage_path: null,
     generated_at: null,
   };
 }
 
+function pricingFromScope(scope: Record<string, unknown>) {
+  const importedScopeAmount = roundMoney(
+    nonNegativeNumber(scope.scope_total_after_discount),
+  );
+  const quantity = positiveNumber(scope.quantity, 1);
+  const priceEach = roundMoney(importedScopeAmount / quantity);
+
+  return {
+    imported_scope_amount: importedScopeAmount,
+    estimation_quantity: quantity,
+    quantity,
+    price_each: priceEach,
+    price_ext: roundMoney(priceEach * quantity),
+  };
+}
+
 function defaultItems(source: SourceContext) {
-  return source.scopes.map((scope, index) => ({
-    scope_id: text(scope.id),
-    sort_order: index + 1,
-    scope_title_snapshot:
-      text(scope.scope_title) || `Scope of Work ${index + 1}`,
-    description_html: "",
-    description_text: null,
-    imported_scope_amount: 0,
-    estimation_quantity: 1,
-    quantity: 1,
-    price_each: 0,
-    price_ext: 0,
-  }));
+  return source.scopes.map((scope, index) => {
+    const title = text(scope.scope_title) || `Scope of Work ${index + 1}`;
+    return {
+      scope_id: text(scope.id),
+      sort_order: index + 1,
+      scope_title_snapshot: title,
+      description_html: `<p>${escapeHtml(title)}</p>`,
+      description_text: title,
+      ...pricingFromScope(scope),
+    };
+  });
 }
 
 function reconcileItems(
@@ -360,6 +365,11 @@ function reconcileItems(
           scope_id: defaultItem.scope_id,
           sort_order: defaultItem.sort_order,
           scope_title_snapshot: defaultItem.scope_title_snapshot,
+          imported_scope_amount: defaultItem.imported_scope_amount,
+          estimation_quantity: defaultItem.estimation_quantity,
+          quantity: defaultItem.quantity,
+          price_each: defaultItem.price_each,
+          price_ext: defaultItem.price_ext,
         }
       : defaultItem;
   });
@@ -380,6 +390,12 @@ export async function getCustomerQuotationData(
   if (sourceResult.notFound || !sourceResult.value) return { notFound: true };
 
   const source = sourceResult.value;
+  const sourceSubtotal = roundMoney(
+    source.scopes.reduce(
+      (sum, scope) => sum + pricingFromScope(scope).price_ext,
+      0,
+    ),
+  );
   const { data: document, error: documentError } = await admin
     .from("quotation_customer_documents")
     .select("*")
@@ -407,10 +423,13 @@ export async function getCustomerQuotationData(
     value: {
       exists: Boolean(document),
       document: document ?? defaultDocument(source),
-      items: reconcileItems(
-        source,
-        (savedItems ?? []) as Array<Record<string, unknown>>,
-      ),
+      items:
+        source.quotation.is_locked === true && document
+          ? ((savedItems ?? []) as Array<Record<string, unknown>>)
+          : reconcileItems(
+              source,
+              (savedItems ?? []) as Array<Record<string, unknown>>,
+            ),
       organization: {
         company_name:
           text(source.organization.quotation_company_name) ||
@@ -429,7 +448,31 @@ export async function getCustomerQuotationData(
         id: scope.id,
         scope_title: scope.scope_title,
         internal_scope_total: scope.scope_total_after_discount,
+        internal_scope_quantity: scope.quantity,
       })),
+      pricing_summary: {
+        subtotal: Number(document?.subtotal ?? sourceSubtotal),
+        discount_amount: Number(
+          document?.discount_amount ?? source.quotation.final_discount_amount ?? 0,
+        ),
+        final_additional_charges_total: Number(
+          source.quotation.final_additional_charges_total ?? 0,
+        ),
+        grand_total_before_tax: Number(
+          source.quotation.grand_total_before_tax ?? 0,
+        ),
+        tax_name:
+          text(document?.tax_name_snapshot ?? source.quotation.tax_name) || null,
+        tax_rate: Number(
+          document?.tax_rate_snapshot ?? source.quotation.tax_rate ?? 0,
+        ),
+        tax_amount: Number(
+          document?.tax_amount ?? source.quotation.tax_amount ?? 0,
+        ),
+        total: Number(
+          document?.total ?? source.quotation.grand_total_after_tax ?? 0,
+        ),
+      },
     },
   };
 }
@@ -450,17 +493,19 @@ export function normalizeCustomerQuotationDraft(
     return { error: "Customer quotation items are required" };
   }
 
-  for (const item of input.items) {
-    if (positiveNumber(item.estimation_quantity) <= 0) {
-      return { error: "Estimated quantity must be greater than zero" };
-    }
-
-    if (positiveNumber(item.quantity) <= 0) {
-      return { error: "Customer quotation quantity must be greater than zero" };
-    }
-  }
-
-  const calculated = calculateCustomerQuotationItems(input.items);
+  const items = input.items.map((item, index) => {
+    const descriptionHtml = sanitizeCustomerQuotationHtml(item.description_html);
+    return {
+      id: text(item.id) || undefined,
+      scope_id: text(item.scope_id) || null,
+      sort_order: index + 1,
+      scope_title_snapshot:
+        text(item.scope_title_snapshot) || `Scope of Work ${index + 1}`,
+      description_html: descriptionHtml,
+      description_text:
+        richTextToPlainText(descriptionHtml) || text(item.description_text) || null,
+    };
+  });
 
   return {
     value: {
@@ -477,9 +522,7 @@ export function normalizeCustomerQuotationDraft(
       delivery_text: text(input.delivery_text),
       terms_text: text(input.terms_text),
       fob_text: text(input.fob_text),
-      items: calculated.items,
-      subtotal: calculated.subtotal,
-      total: calculated.total,
+      items,
     },
   };
 }

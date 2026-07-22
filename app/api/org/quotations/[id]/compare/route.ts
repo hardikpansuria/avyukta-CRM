@@ -40,7 +40,12 @@ function compareRows(section: string, aRows: Row[], bRows: Row[], titleField: st
 }
 
 function flatten(detail: Awaited<ReturnType<typeof getQuotationDetail>>) {
-  const scopes = (detail.scopes ?? []) as Row[];
+  const scopes: Row[] = ((detail.scopes ?? []) as Row[]).map((scope) => ({
+    ...scope,
+    calculated_unit_price:
+      Number(scope.scope_total_after_discount ?? 0) /
+      (Number(scope.quantity ?? 1) || 1),
+  }));
   const withScope = (scope: Row, rows: Row[]) => rows.map((row) => ({
     ...row,
     _scope_key: `${String(scope.scope_title ?? "").trim().toLowerCase()}|${String(scope.sort_order ?? "")}`,
@@ -77,7 +82,7 @@ export async function GET(request: Request, context: RouteContext<"/api/org/quot
   const aq = a.quotation as Row; const bq = b.quotation as Row;
   const changes: Change[] = [
     ...["project_name","project_location","customer_rfq_number","status","material_total","material_profit_total","labour_total","scope_additional_charges_total","scopes_discount_total","final_discount_amount","final_additional_charges_total","tax_rate","tax_amount","grand_total_after_tax"].map((field) => compareValue("Quotation", field.replaceAll("_", " "), aq[field], bq[field])),
-    ...compareRows("Scope of Work", fa.scopes, fb.scopes, "scope_title", ["scope_title","scope_description","discount_type","discount_value","scope_total_after_discount"]),
+    ...compareRows("Scope of Work", fa.scopes, fb.scopes, "scope_title", ["scope_title","scope_description","quantity","calculated_unit_price","discount_type","discount_value","scope_total_after_discount"]),
     ...compareRows("Materials", fa.materials, fb.materials, "material_description", ["material_description","quantity","unit_cost","material_cost","profit_type","profit_value","line_total"]),
     ...compareRows("Labour", fa.labour, fb.labour, "labour_description", ["labour_description","total_hours","number_of_workers","number_of_days","hours_per_day","regular_rate","overtime_rate","total_cost"]),
     ...compareRows("Additional Charges", fa.charges, fb.charges, "description", ["description","amount","profit_type","profit_value","line_total"]),

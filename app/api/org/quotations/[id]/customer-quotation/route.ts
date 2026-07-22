@@ -8,6 +8,7 @@ import {
 } from "@/lib/quotations/customer-quotation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getQuotationLock, lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
+import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -34,7 +35,7 @@ function itemsBelongToQuotation(
   );
 }
 
-async function saveItems({
+async function saveDescriptions({
   admin,
   orgId,
   quotationId,
@@ -47,33 +48,20 @@ async function saveItems({
   customerDocumentId: string;
   items: Array<Record<string, unknown>>;
 }) {
-  const { error: deleteError } = await admin
-    .from("quotation_customer_document_items")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("quotation_id", quotationId)
-    .eq("customer_document_id", customerDocumentId);
-
-  if (deleteError) return { error: deleteError };
-  if (items.length === 0) return { error: null };
-
-  return admin.from("quotation_customer_document_items").insert(
-    items.map((item) => ({
-      org_id: orgId,
-      quotation_id: quotationId,
-      customer_document_id: customerDocumentId,
-      scope_id: item.scope_id,
-      sort_order: item.sort_order,
-      scope_title_snapshot: item.scope_title_snapshot,
-      description_html: item.description_html,
-      description_text: item.description_text,
-      imported_scope_amount: item.imported_scope_amount,
-      estimation_quantity: item.estimation_quantity,
-      quantity: item.quantity,
-      price_each: item.price_each,
-      price_ext: item.price_ext,
-    })),
-  );
+  for (const item of items) {
+    const { error } = await admin
+      .from("quotation_customer_document_items")
+      .update({
+        description_html: item.description_html,
+        description_text: item.description_text,
+      })
+      .eq("org_id", orgId)
+      .eq("quotation_id", quotationId)
+      .eq("customer_document_id", customerDocumentId)
+      .eq("scope_id", item.scope_id);
+    if (error) return { error };
+  }
+  return { error: null };
 }
 
 export async function GET(
@@ -86,6 +74,18 @@ export async function GET(
 
   const { id } = await context.params;
   const admin = createAdminClient();
+  const { data: lock } = await getQuotationLock(admin, session.org_id, id);
+  if (lock && !lock.is_locked) {
+    const syncResult = await syncCustomerQuotationPricing({
+      orgId: session.org_id,
+      quotationId: id,
+      actorId: session.user.id,
+      adminClient: admin,
+    });
+    if (syncResult.error) {
+      return jsonError("Unable to synchronize customer quotation pricing", 500);
+    }
+  }
   const result = await getCustomerQuotationData(admin, session.org_id, id);
 
   if (result.notFound) return jsonError("Quotation not found", 404);
@@ -136,6 +136,7 @@ export async function POST(
   }
 
   const fallback = sourceResult.value.document as Record<string, unknown>;
+  const pricingSummary = sourceResult.value.pricing_summary;
   const { items, ...draft } = normalized.value;
   if (
     !itemsBelongToQuotation(items, sourceResult.value.source_scopes)
@@ -154,6 +155,13 @@ export async function POST(
       revision_number_snapshot: fallback.revision_number_snapshot,
       prepared_by_id: fallback.prepared_by_id,
       prepared_by_name_snapshot: fallback.prepared_by_name_snapshot,
+      subtotal: Number(pricingSummary.subtotal ?? 0),
+      discount_amount: Number(pricingSummary.discount_amount ?? 0),
+      tax_name_snapshot: pricingSummary.tax_name,
+      tax_rate_snapshot: Number(pricingSummary.tax_rate ?? 0),
+      tax_amount: Number(pricingSummary.tax_amount ?? 0),
+      total: Number(pricingSummary.total ?? 0),
+      pricing_synced_at: new Date().toISOString(),
       generated_pdf_storage_path: null,
       generated_at: null,
       created_by: session.user.id,
@@ -166,7 +174,17 @@ export async function POST(
     return jsonError("Unable to create customer quotation draft", 500);
   }
 
-  const itemsResult = await saveItems({
+  const syncResult = await syncCustomerQuotationPricing({
+    orgId: session.org_id,
+    quotationId: id,
+    actorId: session.user.id,
+    adminClient: admin,
+  });
+  if (syncResult.error) {
+    return jsonError("Unable to synchronize customer quotation pricing", 500);
+  }
+
+  const itemsResult = await saveDescriptions({
     admin,
     orgId: session.org_id,
     quotationId: id,
@@ -245,7 +263,7 @@ export async function PATCH(
     return jsonError("Unable to update customer quotation draft", 500);
   }
 
-  const itemsResult = await saveItems({
+  const itemsResult = await saveDescriptions({
     admin,
     orgId: session.org_id,
     quotationId: id,
@@ -255,6 +273,16 @@ export async function PATCH(
 
   if (itemsResult.error) {
     return jsonError("Unable to save customer quotation items", 500);
+  }
+
+  const syncResult = await syncCustomerQuotationPricing({
+    orgId: session.org_id,
+    quotationId: id,
+    actorId: session.user.id,
+    adminClient: admin,
+  });
+  if (syncResult.error) {
+    return jsonError("Unable to synchronize customer quotation pricing", 500);
   }
 
   const saved = await getCustomerQuotationData(admin, session.org_id, id);

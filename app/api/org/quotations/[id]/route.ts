@@ -25,8 +25,8 @@ import type { FinalAdjustmentInput } from "@/lib/quotations/scope-calculations";
 import {
   lockedRevisionMessage,
   logRevisionAudit,
-  synchronizeCustomerQuotation,
 } from "@/lib/quotations/revisions";
+import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -370,22 +370,47 @@ export async function PATCH(
     }
   }
 
-  const syncResult = await synchronizeCustomerQuotation(admin, session.org_id, id);
-  if (syncResult.error) {
-    console.error("Unable to synchronize customer quotation", syncResult.error);
-    return jsonError("Unable to synchronize the customer quotation draft", 500);
-  }
+  const locksAfterUpdate =
+    updates.status === "sent" && existingQuotation.status !== "sent";
+  const preSyncUpdates = { ...updates };
+  if (locksAfterUpdate) delete preSyncUpdates.status;
 
-  const { data: quotation, error: updateError } = await admin
+  const { data: updatedQuotation, error: updateError } = await admin
     .from("quotations")
-    .update(updates)
+    .update(preSyncUpdates)
     .eq("id", id)
     .eq("org_id", session.org_id)
     .select("*")
     .single();
 
-  if (updateError || !quotation) {
+  if (updateError || !updatedQuotation) {
     return jsonError("Unable to update quotation", 500);
+  }
+
+  const syncResult = await syncCustomerQuotationPricing({
+    orgId: session.org_id,
+    quotationId: id,
+    actorId: session.user.id,
+    adminClient: admin,
+  });
+  if (syncResult.error) {
+    console.error("Unable to synchronize customer quotation", syncResult.error);
+    return jsonError("Unable to synchronize the customer quotation draft", 500);
+  }
+
+  let quotation = updatedQuotation;
+  if (locksAfterUpdate) {
+    const { data: lockedQuotation, error: lockError } = await admin
+      .from("quotations")
+      .update({ status: "sent", updated_by: session.user.id })
+      .eq("id", id)
+      .eq("org_id", session.org_id)
+      .select("*")
+      .single();
+    if (lockError || !lockedQuotation) {
+      return jsonError("Unable to send quotation", 500);
+    }
+    quotation = lockedQuotation;
   }
 
   const areas = [

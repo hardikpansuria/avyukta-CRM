@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
+
 export const lockedRevisionMessage =
   "This quotation revision is locked because it has already been sent.";
 
@@ -11,15 +13,6 @@ function withoutSystemFields(row: Row, additional: string[] = []) {
     delete copy[key];
   }
   return copy;
-}
-
-function escapeHtml(value: unknown) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 export async function getQuotationLock(
@@ -54,124 +47,6 @@ export async function logRevisionAudit(
 
   if (error) console.error("Unable to write quotation revision audit", error);
   return { error };
-}
-
-export async function synchronizeCustomerQuotation(
-  admin: SupabaseClient,
-  orgId: string,
-  quotationId: string,
-) {
-  const [{ data: quotation, error: quotationError }, { data: document, error: documentError }] =
-    await Promise.all([
-      admin
-        .from("quotations")
-        .select("id,is_locked")
-        .eq("id", quotationId)
-        .eq("org_id", orgId)
-        .maybeSingle(),
-      admin
-        .from("quotation_customer_documents")
-        .select("id,document_status")
-        .eq("quotation_id", quotationId)
-        .eq("org_id", orgId)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-
-  if (quotationError || documentError) return { error: quotationError ?? documentError };
-  if (!quotation || quotation.is_locked || !document) return { skipped: true };
-
-  const [{ data: scopes, error: scopesError }, { data: items, error: itemsError }] =
-    await Promise.all([
-      admin
-        .from("quotation_scopes")
-        .select("id,scope_title,scope_total_after_discount,sort_order")
-        .eq("quotation_id", quotationId)
-        .eq("org_id", orgId)
-        .order("sort_order", { ascending: true }),
-      admin
-        .from("quotation_customer_document_items")
-        .select("*")
-        .eq("customer_document_id", document.id)
-        .eq("quotation_id", quotationId)
-        .eq("org_id", orgId),
-    ]);
-
-  if (scopesError || itemsError) return { error: scopesError ?? itemsError };
-  const itemsByScope = new Map((items ?? []).map((item) => [item.scope_id as string, item]));
-  const nextScopeIds = new Set((scopes ?? []).map((scope) => scope.id as string));
-  const removedIds = (items ?? [])
-    .filter((item) => !nextScopeIds.has(item.scope_id as string))
-    .map((item) => item.id as string);
-
-  if (removedIds.length) {
-    const { error } = await admin
-      .from("quotation_customer_document_items")
-      .delete()
-      .eq("org_id", orgId)
-      .eq("quotation_id", quotationId)
-      .in("id", removedIds);
-    if (error) return { error };
-  }
-
-  for (const [index, scope] of (scopes ?? []).entries()) {
-    const current = itemsByScope.get(scope.id as string);
-    const amount = Number(scope.scope_total_after_discount ?? 0);
-    const estimationQuantity = Number(current?.estimation_quantity ?? 0);
-    const quantity = Number(current?.quantity ?? 1) || 1;
-    const priceEach = estimationQuantity > 0 ? amount / estimationQuantity : 0;
-    const values = {
-      scope_title_snapshot: scope.scope_title,
-      imported_scope_amount: amount,
-      sort_order: index + 1,
-      price_each: priceEach,
-      price_ext: priceEach * quantity,
-    };
-
-    const result = current
-      ? await admin
-          .from("quotation_customer_document_items")
-          .update(values)
-          .eq("id", current.id)
-          .eq("org_id", orgId)
-          .eq("quotation_id", quotationId)
-      : await admin.from("quotation_customer_document_items").insert({
-          id: crypto.randomUUID(),
-          org_id: orgId,
-          quotation_id: quotationId,
-          customer_document_id: document.id,
-          scope_id: scope.id,
-          ...values,
-          description_html: escapeHtml(scope.scope_title),
-          description_text: String(scope.scope_title ?? ""),
-          estimation_quantity: null,
-          quantity: 1,
-        });
-    if (result.error) return { error: result.error };
-  }
-
-  const { data: totals, error: totalsError } = await admin
-    .from("quotation_customer_document_items")
-    .select("price_ext")
-    .eq("customer_document_id", document.id)
-    .eq("org_id", orgId);
-  if (totalsError) return { error: totalsError };
-  const total = (totals ?? []).reduce((sum, item) => sum + Number(item.price_ext ?? 0), 0);
-  const { error } = await admin
-    .from("quotation_customer_documents")
-    .update({
-      document_status: "draft",
-      subtotal: total,
-      total,
-      generated_pdf_storage_path: null,
-      generated_at: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", document.id)
-    .eq("org_id", orgId)
-    .eq("quotation_id", quotationId);
-  return error ? { error } : { synchronized: true };
 }
 
 async function fetchRows(admin: SupabaseClient, table: string, orgId: string, quotationId: string) {
@@ -242,7 +117,13 @@ export async function cloneQuotationRevisionData(
     const scopes = data.get("quotation_scopes")!.map((row) => {
       const id = crypto.randomUUID();
       scopeMap.set(String(row.id), id);
-      return { ...withoutSystemFields(row), id, org_id: orgId, quotation_id: newQuotationId };
+      return {
+        ...withoutSystemFields(row),
+        id,
+        org_id: orgId,
+        quotation_id: newQuotationId,
+        quantity: Number(row.quantity ?? 1),
+      };
     });
     await insertRows("quotation_scopes", scopes);
 
@@ -324,19 +205,22 @@ export async function cloneQuotationRevisionData(
         created_by: actorId, updated_by: actorId,
       }]);
       const sourceItems = data.get("quotation_customer_document_items")!.filter((row) => row.customer_document_id === sourceDocument.id);
-      const scopeTotals = new Map(scopes.map((scope) => [scope.id as string, Number((scope as Row).scope_total_after_discount ?? 0)]));
       await insertRows("quotation_customer_document_items", sourceItems.map((row) => {
         const scopeId = scopeMap.get(String(row.scope_id));
-        const amount = scopeId ? (scopeTotals.get(scopeId) ?? 0) : 0;
-        const estimation = Number(row.estimation_quantity ?? 0);
-        const quantity = Number(row.quantity ?? 1) || 1;
-        const priceEach = estimation > 0 ? amount / estimation : 0;
         return {
           ...withoutSystemFields(row), id: crypto.randomUUID(), org_id: orgId, quotation_id: newQuotationId,
           customer_document_id: customerDocumentId, scope_id: scopeId,
-          imported_scope_amount: amount, price_each: priceEach, price_ext: priceEach * quantity,
+          imported_scope_amount: 0, estimation_quantity: 1, quantity: 1,
+          price_each: 0, price_ext: 0,
         };
       }));
+      const syncResult = await syncCustomerQuotationPricing({
+        orgId,
+        quotationId: newQuotationId,
+        actorId,
+        adminClient: admin,
+      });
+      if (syncResult.error) throw syncResult.error;
     }
   } catch (error) {
     await Promise.all(uploaded.map((file) => admin.storage.from(file.bucket).remove([file.path])));
