@@ -48,6 +48,25 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+@media print {
+  aside,
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  main,
+  .md\:pl-64 {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

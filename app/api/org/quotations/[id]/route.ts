@@ -445,8 +445,39 @@ export async function PATCH(
     });
   }
 
+  let operationalJob: {
+    id: string;
+    job_number?: string | null;
+    job_status?: string | null;
+  } | null = null;
+  const jobWasCreated =
+    existingQuotation.status === "sent" && status.value === "accepted";
+
+  if (jobWasCreated && quotation.quotation_series_id) {
+    const { data: job, error: jobError } = await admin
+      .from("jobs")
+      .select("id,job_number,job_status")
+      .eq("org_id", session.org_id)
+      .eq("quotation_series_id", quotation.quotation_series_id)
+      .maybeSingle();
+
+    if (jobError) {
+      console.error("Quotation accepted but job confirmation lookup failed", {
+        code: jobError.code,
+        message: jobError.message,
+      });
+    } else {
+      operationalJob = job;
+    }
+  }
+
   return NextResponse.json({
     quotation,
-    message: "Quotation updated",
+    message:
+      jobWasCreated && operationalJob
+        ? "Quotation accepted and Job on the Go created"
+        : "Quotation updated",
+    job_created: jobWasCreated && Boolean(operationalJob),
+    job: operationalJob,
   });
 }

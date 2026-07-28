@@ -13,17 +13,44 @@ const roleLinks = {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/quotations", label: "Quotations" },
+    {
+      href: "/dashboard/jobs",
+      label: "Job on the Go",
+      children: [
+        { href: "/dashboard/jobs/po-pending", label: "PO Pending" },
+        { href: "/dashboard/jobs/purchase-orders", label: "PO Received" },
+      ],
+    },
+    { href: "/dashboard/invoices", label: "Invoice" },
     { href: "/dashboard/employees", label: "Employees" },
   ],
   accountant: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/quotations", label: "Quotations" },
+    {
+      href: "/dashboard/jobs",
+      label: "Job on the Go",
+      children: [
+        { href: "/dashboard/jobs/po-pending", label: "PO Pending" },
+        { href: "/dashboard/jobs/purchase-orders", label: "PO Received" },
+      ],
+    },
+    { href: "/dashboard/invoices", label: "Invoice" },
   ],
   sales: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/quotations", label: "Quotations" },
+    {
+      href: "/dashboard/jobs",
+      label: "Job on the Go",
+      children: [
+        { href: "/dashboard/jobs/po-pending", label: "PO Pending" },
+        { href: "/dashboard/jobs/purchase-orders", label: "PO Received" },
+      ],
+    },
+    { href: "/dashboard/invoices", label: "Invoice" },
   ],
 };
 

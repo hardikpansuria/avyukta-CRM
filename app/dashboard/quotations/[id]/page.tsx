@@ -275,6 +275,7 @@ export default function QuotationDetailPage() {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [jobCreated, setJobCreated] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -361,7 +362,10 @@ export default function QuotationDetailPage() {
   useEffect(() => {
     if (!successMessage) return;
 
-    const timeoutId = window.setTimeout(() => setSuccessMessage(null), 4000);
+    const timeoutId = window.setTimeout(() => {
+      setSuccessMessage(null);
+      setJobCreated(false);
+    }, 6000);
     return () => window.clearTimeout(timeoutId);
   }, [successMessage]);
 
@@ -413,7 +417,12 @@ export default function QuotationDetailPage() {
         body: JSON.stringify({ status: confirmedStatus }),
       });
       const payload = (await response.json().catch(() => null)) as
-        | { quotation?: Quotation; error?: string }
+        | {
+            quotation?: Quotation;
+            error?: string;
+            job_created?: boolean;
+            job?: { id: string; job_status?: string | null };
+          }
         | null;
 
       if (!response.ok || !payload?.quotation) {
@@ -428,8 +437,11 @@ export default function QuotationDetailPage() {
       setPendingStatus(null);
       setStatusDialogOpen(false);
       setSuccessMessage(
-        `Quotation status changed to ${formatStatus(savedStatus)}.`,
+        payload.job_created
+          ? "Quotation accepted. A PO Pending Job on the Go was created automatically."
+          : `Quotation status changed to ${formatStatus(savedStatus)}.`,
       );
+      setJobCreated(Boolean(payload.job_created));
       setRefreshKey((key) => key + 1);
     } catch {
       setError("Unable to update status.");
@@ -585,6 +597,14 @@ export default function QuotationDetailPage() {
           role="status"
         >
           {successMessage}
+          {jobCreated ? (
+            <Link
+              className="ml-2 underline underline-offset-2"
+              href="/dashboard/jobs/po-pending"
+            >
+              Open Job on the Go
+            </Link>
+          ) : null}
         </div>
       ) : null}
 
