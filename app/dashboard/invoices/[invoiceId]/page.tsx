@@ -104,20 +104,27 @@ export default function InvoiceDetailPage() {
     const controller = new AbortController();
     async function load() {
       setLoading(true);
-      const response = await fetch(`/api/org/job-invoices/${invoiceId}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | { invoice?: Invoice; error?: string }
-        | null;
-      if (!response.ok || !payload?.invoice) {
-        setError(payload?.error ?? "Unable to load invoice.");
-      } else {
+      try {
+        const response = await fetch(`/api/org/job-invoices/${invoiceId}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { invoice?: Invoice; error?: string }
+          | null;
+        if (!response.ok || !payload?.invoice) {
+          setError(payload?.error ?? "Unable to load invoice.");
+          return;
+        }
         setInvoice(payload.invoice);
         setError(null);
+      } catch {
+        if (!controller.signal.aborted) {
+          setError("Unable to load invoice.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
-      if (!controller.signal.aborted) setLoading(false);
     }
     void load();
     return () => controller.abort();
@@ -480,4 +487,3 @@ export default function InvoiceDetailPage() {
     </div>
   );
 }
-

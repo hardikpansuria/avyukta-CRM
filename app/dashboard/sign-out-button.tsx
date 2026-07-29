@@ -1,19 +1,18 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LogOutIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
 export function SignOutButton({ compact = false }: { compact?: boolean }) {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleSignOut() {
     setIsLoading(true);
     await fetch("/api/auth/logout", { method: "POST" });
-    router.replace("/login");
+    // Discard the App Router cache so no authenticated layout survives logout.
+    window.location.replace("/login");
   }
 
   return (

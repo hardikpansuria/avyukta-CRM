@@ -1,10 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 export default function SuperAdminLoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +30,7 @@ export default function SuperAdminLoginPage() {
         return;
       }
 
-      router.replace("/super-admin/dashboard");
+      window.location.replace("/super-admin/dashboard");
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

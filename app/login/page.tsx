@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import {
   Building2Icon,
@@ -24,7 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [orgCode, setOrgCode] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -59,7 +57,10 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/dashboard");
+      // Authentication changes the HTTP-only Supabase and organization cookies.
+      // A client-side navigation can reuse a dashboard layout rendered for the
+      // previous user, so cross the auth boundary with a fresh document request.
+      window.location.replace("/dashboard");
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
