@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       ? (statusValue as JobStatus)
       : undefined,
     search: searchParams.get("search")?.trim() ?? "",
+    customerId: searchParams.get("customer_id")?.trim() || undefined,
     page: Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1,
     pageSize:
       Number.isInteger(pageSizeValue) && pageSizeValue > 0 ? pageSizeValue : 20,
@@ -43,4 +44,3 @@ export async function GET(request: Request) {
     },
   });
 }
-

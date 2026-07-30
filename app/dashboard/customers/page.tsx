@@ -57,7 +57,6 @@ type AssignedSalesRep = {
 type Customer = {
   id: string;
   company_name: string;
-  legal_company_name: string | null;
   customer_code: string | null;
   industry: string | null;
   customer_status: string;
@@ -437,11 +436,6 @@ export default function CustomersPage() {
                         >
                           {customer.company_name}
                         </Link>
-                        {customer.legal_company_name ? (
-                          <p className="mt-1 max-w-56 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                            {customer.legal_company_name}
-                          </p>
-                        ) : null}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
                         {customer.customer_code ?? "Pending"}

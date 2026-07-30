@@ -84,10 +84,7 @@ type GeneratedDocument = {
   file_size?: number | string | null;
   generated_at?: string | null;
   signed_url?: string | null;
-  generated_by_profile?: {
-    full_name?: string | null;
-    email?: string | null;
-  } | null;
+  generated_by_name: string;
 };
 
 type ApiPayload = {
@@ -348,7 +345,14 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         return;
       }
 
-      setGeneratedDocuments((current) => [payload.document!, ...current]);
+      setGeneratedDocuments((current) => [
+        payload.document!,
+        ...current.filter(
+          (document) =>
+            Number(document.revision_number ?? 0) !==
+            Number(payload.document!.revision_number ?? 0),
+        ),
+      ]);
       setSuccess("Customer quotation PDF generated.");
 
       if (payload.document.signed_url) {
@@ -789,9 +793,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                                 )
                               : "-"}{" "}
                             ·{" "}
-                            {generated.generated_by_profile?.full_name ||
-                              generated.generated_by_profile?.email ||
-                              "Unknown"}
+                            {generated.generated_by_name || "System"}
                           </p>
                         </div>
                         {signedUrl ? (

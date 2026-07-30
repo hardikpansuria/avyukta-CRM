@@ -44,14 +44,15 @@ export async function POST(request: Request) {
     return typeof entry === "string" ? entry.trim() : "";
   };
   const jobId = value("job_id");
+  const customerId = value("customer_id");
   const invoiceNumber = value("invoice_number");
   const invoiceDate = value("invoice_date");
   const invoiceAmount = Number(value("invoice_amount"));
   const remarks = value("remarks") || null;
   const overInvoicingAcknowledged =
     value("over_invoicing_acknowledged") === "true";
-  if (!jobId || !invoiceNumber) {
-    return jsonError("Job and Invoice Number are required", 400);
+  if (!customerId || !jobId || !invoiceNumber) {
+    return jsonError("Customer, Job, and Invoice Number are required", 400);
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate)) {
     return jsonError("Invoice Date is required", 400);
@@ -69,6 +70,9 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (jobError) return jsonError("Unable to validate job", 500);
   if (!job) return jsonError("Job not found", 404);
+  if (job.customer_id !== customerId) {
+    return jsonError("Selected job does not belong to the customer", 400);
+  }
   const { data: allocation, error: allocationError } = await admin
     .from("job_purchase_order_allocations")
     .select("purchase_order_id,total_po_amount")

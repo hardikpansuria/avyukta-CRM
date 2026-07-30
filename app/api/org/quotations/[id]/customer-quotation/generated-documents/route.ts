@@ -34,7 +34,7 @@ export async function GET(
     : { data: [{ id }] };
   const quotationIds = (seriesRows ?? [{ id }]).map((row) => row.id);
   const { data: documents, error: documentsError } = await admin
-    .from("quotation_generated_documents")
+    .from("latest_quotation_generated_documents")
     .select("*")
     .eq("org_id", session.org_id)
     .in("quotation_id", quotationIds)
@@ -69,8 +69,9 @@ export async function GET(
 
       return {
         ...document,
-        generated_by_profile:
-          profilesById.get(document.generated_by as string) ?? null,
+        generated_by_name:
+          profilesById.get(document.generated_by as string)?.full_name?.trim() ||
+          "System",
         signed_url: signedData?.signedUrl ?? null,
       };
     }),

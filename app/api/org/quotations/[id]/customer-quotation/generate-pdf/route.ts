@@ -154,6 +154,11 @@ export async function POST(
   const { data: signedData } = await admin.storage
     .from(bucketName)
     .createSignedUrl(filePath, 10 * 60);
+  const { data: generatorProfile } = await admin
+    .from("profiles")
+    .select("full_name")
+    .eq("id", session.user.id)
+    .maybeSingle();
 
   await logRevisionAudit(admin, { ...lock, id, org_id: session.org_id }, session.user.id, "customer_pdf_generated", {
     generated_document_id: generatedDocumentId,
@@ -163,6 +168,7 @@ export async function POST(
   return NextResponse.json({
     document: {
       ...generatedDocument,
+      generated_by_name: generatorProfile?.full_name?.trim() || "System",
       signed_url: signedData?.signedUrl ?? null,
     },
   });

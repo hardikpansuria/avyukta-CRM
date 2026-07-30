@@ -33,7 +33,6 @@ type CustomerRow = {
   id: string;
   company_name: string;
   customer_code?: string | null;
-  legal_company_name?: string | null;
 };
 
 type CustomerContactRow = {
@@ -273,7 +272,7 @@ export async function validateCustomer(
 ) {
   const { data, error } = await admin
     .from("customers")
-    .select("id, company_name, customer_code, legal_company_name")
+    .select("id, company_name, customer_code")
     .eq("id", customerId)
     .eq("org_id", orgId)
     .neq("record_status", "deleted")
@@ -1182,7 +1181,7 @@ async function fetchCustomers(
     customerIds.length > 0
       ? await admin
           .from("customers")
-          .select("id, company_name, customer_code, legal_company_name")
+          .select("id, company_name, customer_code")
           .eq("org_id", orgId)
           .in("id", customerIds)
       : { data: [], error: null };

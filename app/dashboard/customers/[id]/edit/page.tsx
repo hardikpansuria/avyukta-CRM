@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import {
+  CUSTOMER_INDUSTRIES,
+  isStandardIndustry,
+  OTHER_INDUSTRY_VALUE,
+} from "@/lib/customers/industries";
+
 type Assignee = {
   id: string;
   full_name: string | null;
@@ -14,13 +20,9 @@ type Assignee = {
 type Customer = {
   id: string;
   company_name: string;
-  legal_company_name?: string | null;
   industry?: string | null;
-  business_category?: string | null;
-  company_type?: string | null;
   business_registration_number?: string | null;
   gst_hst_number?: string | null;
-  vendor_number?: string | null;
   assigned_sales_rep_id?: string | null;
   account_manager_id?: string | null;
   lead_source?: string | null;
@@ -65,44 +67,6 @@ const inputClass =
   "mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-300";
 const labelClass = "text-sm font-medium text-zinc-800 dark:text-zinc-200";
 
-const COMPANY_TYPES = [
-  ["manufacturer", "Manufacturer"],
-  ["distributor", "Distributor"],
-  ["supplier", "Supplier"],
-  ["importer", "Importer"],
-  ["exporter", "Exporter"],
-  ["contractor", "Contractor"],
-  ["food_processing", "Food Processing"],
-  ["dairy", "Dairy"],
-  ["bakery", "Bakery"],
-  ["brewery", "Brewery"],
-  ["pharmaceutical", "Pharmaceutical"],
-  ["chemical", "Chemical"],
-  ["packaging", "Packaging"],
-  ["engineering", "Engineering"],
-  ["other", "Other"],
-];
-const INDUSTRIES = [
-  "Food & Beverage",
-  "Dairy",
-  "Bakery",
-  "Brewery",
-  "Pharmaceutical",
-  "Chemical",
-  "Packaging",
-  "Manufacturing",
-  "Engineering",
-  "Other",
-];
-const BUSINESS_CATEGORIES = [
-  "OEM",
-  "End User",
-  "Distributor",
-  "Supplier",
-  "Contractor",
-  "Service",
-  "Other",
-];
 const CUSTOMER_STATUSES = [
   ["prospect", "Prospect"],
   ["active", "Active"],
@@ -162,14 +126,11 @@ export default function EditCustomerPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
-  const [legalCompanyName, setLegalCompanyName] = useState("");
   const [industry, setIndustry] = useState("");
-  const [businessCategory, setBusinessCategory] = useState("");
-  const [companyType, setCompanyType] = useState("");
+  const [customIndustry, setCustomIndustry] = useState("");
   const [businessRegistrationNumber, setBusinessRegistrationNumber] =
     useState("");
   const [gstHstNumber, setGstHstNumber] = useState("");
-  const [vendorNumber, setVendorNumber] = useState("");
   const [headOfficeAddress, setHeadOfficeAddress] = useState<AddressForm>(
     emptyAddress,
   );
@@ -235,15 +196,21 @@ export default function EditCustomerPage() {
         );
 
         setCompanyName(customer.company_name);
-        setLegalCompanyName(customer.legal_company_name ?? "");
-        setIndustry(customer.industry ?? "");
-        setBusinessCategory(customer.business_category ?? "");
-        setCompanyType(customer.company_type ?? "");
+        const storedIndustry = customer.industry?.trim() ?? "";
+        if (isStandardIndustry(storedIndustry)) {
+          setIndustry(storedIndustry);
+          setCustomIndustry("");
+        } else if (storedIndustry) {
+          setIndustry(OTHER_INDUSTRY_VALUE);
+          setCustomIndustry(storedIndustry);
+        } else {
+          setIndustry("");
+          setCustomIndustry("");
+        }
         setBusinessRegistrationNumber(
           customer.business_registration_number ?? "",
         );
         setGstHstNumber(customer.gst_hst_number ?? "");
-        setVendorNumber(customer.vendor_number ?? "");
         setHeadOfficeAddress(fromAddress(headOffice));
         setBillingAddress(fromAddress(billing));
         setBillingSameAsHeadOffice(Boolean(billing?.same_as_head_office));
@@ -289,6 +256,16 @@ export default function EditCustomerPage() {
       return;
     }
 
+    const normalizedIndustry =
+      industry === OTHER_INDUSTRY_VALUE
+        ? customIndustry.trim()
+        : industry.trim();
+
+    if (industry === OTHER_INDUSTRY_VALUE && !normalizedIndustry) {
+      setError("Specify Industry is required when Other is selected.");
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -299,13 +276,9 @@ export default function EditCustomerPage() {
         },
         body: JSON.stringify({
           company_name: companyName,
-          legal_company_name: legalCompanyName,
-          industry,
-          business_category: businessCategory,
-          company_type: companyType,
+          industry: normalizedIndustry,
           business_registration_number: businessRegistrationNumber,
           gst_hst_number: gstHstNumber,
-          vendor_number: vendorNumber,
           assigned_sales_rep_id: assignedSalesRepId,
           account_manager_id: accountManagerId,
           lead_source: leadSource,
@@ -385,13 +358,29 @@ export default function EditCustomerPage() {
           </h2>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <TextField label="Company Name" required value={companyName} onChange={setCompanyName} />
-            <TextField label="Legal Company Name" value={legalCompanyName} onChange={setLegalCompanyName} />
-            <SelectField label="Industry" value={industry} onChange={setIndustry} options={INDUSTRIES.map((item) => [item, item])} placeholder="Select industry" />
-            <SelectField label="Business Category" value={businessCategory} onChange={setBusinessCategory} options={BUSINESS_CATEGORIES.map((item) => [item, item])} placeholder="Select category" />
-            <SelectField label="Company Type" value={companyType} onChange={setCompanyType} options={COMPANY_TYPES} placeholder="Select type" />
+            <SelectField
+              label="Industry"
+              value={industry}
+              onChange={setIndustry}
+              options={[
+                ...CUSTOMER_INDUSTRIES.map(
+                  (item) => [item, item] as [string, string],
+                ),
+                [OTHER_INDUSTRY_VALUE, "Other"],
+              ]}
+              placeholder="Select industry"
+            />
+            {industry === OTHER_INDUSTRY_VALUE ? (
+              <TextField
+                label="Specify Industry"
+                placeholder="Enter industry type"
+                required
+                value={customIndustry}
+                onChange={setCustomIndustry}
+              />
+            ) : null}
             <TextField label="Business Registration Number" value={businessRegistrationNumber} onChange={setBusinessRegistrationNumber} />
             <TextField label="GST/HST Number" value={gstHstNumber} onChange={setGstHstNumber} />
-            <TextField label="Vendor Number" value={vendorNumber} onChange={setVendorNumber} />
           </div>
         </section>
 
@@ -508,6 +497,7 @@ function TextField({
   type = "text",
   min,
   step,
+  placeholder,
 }: {
   label: string;
   value: string;
@@ -516,6 +506,7 @@ function TextField({
   type?: string;
   min?: string;
   step?: string;
+  placeholder?: string;
 }) {
   return (
     <label>
@@ -523,6 +514,7 @@ function TextField({
       <input
         className={inputClass}
         min={min}
+        placeholder={placeholder}
         required={required}
         step={step}
         type={type}

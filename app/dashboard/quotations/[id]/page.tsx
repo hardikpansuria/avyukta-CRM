@@ -159,7 +159,7 @@ type GeneratedCustomerDocument = {
   file_name?: string | null;
   generated_at?: string | null;
   signed_url?: string | null;
-  generated_by_profile?: Profile | null;
+  generated_by_name: string;
 };
 
 type MaterialItem = {
@@ -872,7 +872,7 @@ export default function QuotationDetailPage() {
                       </p>
                       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                         {formatDateTime(document.generated_at)} ·{" "}
-                        {profileName(document.generated_by_profile)}
+                        {document.generated_by_name || "System"}
                       </p>
                     </div>
                     {signedUrl ? (

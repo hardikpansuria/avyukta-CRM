@@ -12,16 +12,12 @@ type Profile = {
 type Customer = {
   id: string;
   company_name: string;
-  legal_company_name?: string | null;
   customer_code?: string | null;
   logo_storage_path?: string | null;
   logo_signed_url?: string | null;
   industry?: string | null;
-  business_category?: string | null;
-  company_type?: string | null;
   business_registration_number?: string | null;
   gst_hst_number?: string | null;
-  vendor_number?: string | null;
   assigned_sales_rep?: Profile | null;
   account_manager?: Profile | null;
   lead_source?: string | null;
@@ -829,22 +825,12 @@ export default function CustomerDetailPage() {
               Company Information
             </h2>
             <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <Field label="Legal Name" value={customer.legal_company_name} />
               <Field label="Industry" value={customer.industry} />
-              <Field
-                label="Business Category"
-                value={customer.business_category}
-              />
-              <Field
-                label="Company Type"
-                value={formatLabel(customer.company_type)}
-              />
               <Field
                 label="Business Registration"
                 value={customer.business_registration_number}
               />
               <Field label="GST/HST Number" value={customer.gst_hst_number} />
-              <Field label="Vendor Number" value={customer.vendor_number} />
               <Field
                 label="Record Status"
                 value={formatLabel(customer.record_status)}

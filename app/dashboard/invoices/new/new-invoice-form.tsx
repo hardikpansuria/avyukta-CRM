@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 type Job = {
   id: string;
+  customer_id: string;
   job_number?: string | null;
   job_status: string;
   customer?: { company_name?: string | null; currency?: string | null } | null;
@@ -37,6 +38,11 @@ type Job = {
   };
 };
 
+type CustomerOption = {
+  id: string;
+  company_name: string;
+};
+
 function money(value: number, currency: string) {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
@@ -45,11 +51,14 @@ function money(value: number, currency: string) {
 }
 
 export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [jobId, setJobId] = useState(initialJobId);
   const [job, setJob] = useState<Job | null>(null);
   const [jobOptions, setJobOptions] = useState<
     Array<{
       id: string;
+      customer_id: string;
       job_number?: string | null;
       job_status: string;
       customer?: { company_name?: string | null } | null;
@@ -71,25 +80,63 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
   useEffect(() => {
     if (initialJobId) return;
     const controller = new AbortController();
-    async function loadOptions() {
-      const response = await fetch("/api/org/jobs?pageSize=100", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | { jobs?: typeof jobOptions }
-        | null;
-      if (response.ok) {
+    async function loadCustomers() {
+      try {
+        const response = await fetch("/api/org/customers", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { customers?: CustomerOption[]; error?: string }
+          | null;
+        if (!response.ok) {
+          setError(payload?.error ?? "Unable to load customers.");
+          return;
+        }
+        setCustomerOptions(payload?.customers ?? []);
+      } catch {
+        if (!controller.signal.aborted) {
+          setError("Unable to load customers.");
+        }
+      }
+    }
+    void loadCustomers();
+    return () => controller.abort();
+  }, [initialJobId]);
+
+  useEffect(() => {
+    if (initialJobId || !selectedCustomerId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    async function loadJobs() {
+      try {
+        const response = await fetch(
+          `/api/org/jobs?pageSize=100&customer_id=${encodeURIComponent(selectedCustomerId)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | { jobs?: typeof jobOptions; error?: string }
+          | null;
+        if (!response.ok) {
+          setError(payload?.error ?? "Unable to load jobs.");
+          return;
+        }
         setJobOptions(
           (payload?.jobs ?? []).filter(
             (option) => option.job_status !== "po_pending",
           ),
         );
+      } catch {
+        if (!controller.signal.aborted) {
+          setError("Unable to load jobs.");
+        }
       }
     }
-    void loadOptions();
+    void loadJobs();
     return () => controller.abort();
-  }, [initialJobId]);
+  }, [initialJobId, selectedCustomerId]);
 
   useEffect(() => {
     if (!jobId) {
@@ -97,18 +144,25 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
     }
     const controller = new AbortController();
     async function load() {
-      const response = await fetch(`/api/org/jobs/${jobId}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | { job?: Job; error?: string }
-        | null;
-      if (!response.ok || !payload?.job) {
-        setError(payload?.error ?? "Unable to load job.");
-      } else {
+      try {
+        const response = await fetch(`/api/org/jobs/${jobId}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { job?: Job; error?: string }
+          | null;
+        if (!response.ok || !payload?.job) {
+          setError(payload?.error ?? "Unable to load job.");
+          return;
+        }
         setJob(payload.job);
+        setSelectedCustomerId(payload.job.customer_id);
         setError(null);
+      } catch {
+        if (!controller.signal.aborted) {
+          setError("Unable to load job.");
+        }
       }
     }
     void load();
@@ -121,6 +175,10 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
     : 0;
   const overInvoicing = overBy > 0.005;
   const currency = job?.customer?.currency ?? "CAD";
+  const selectedCustomer = customerOptions.find(
+    (customer) => customer.id === selectedCustomerId,
+  );
+  const selectedJobOption = jobOptions.find((option) => option.id === jobId);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -128,6 +186,7 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
     setSubmitting(true);
     setError(null);
     const form = new FormData();
+    form.set("customer_id", selectedCustomerId);
     form.set("job_id", job.id);
     form.set("invoice_number", invoiceNumber);
     form.set("invoice_date", invoiceDate);
@@ -214,30 +273,66 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
       ) : null}
       {!initialJobId ? (
         <Card>
-          <CardContent className="space-y-2">
-            <Label>Select Job</Label>
-            <Select
-              value={jobId}
-              onValueChange={(value) => {
-                setJob(null);
-                setJobId(String(value ?? ""));
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a job with a received PO" />
-              </SelectTrigger>
-              <SelectContent>
-                {jobOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.job_number ?? "Pending"} ·{" "}
-                    {option.customer?.company_name ?? "Customer"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-zinc-500">
-              Only jobs with a received purchase order are available.
-            </p>
+          <CardContent className="grid gap-5 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Customer</Label>
+              <Select
+                value={selectedCustomerId}
+                onValueChange={(value) => {
+                  setSelectedCustomerId(String(value ?? ""));
+                  setJobId("");
+                  setJob(null);
+                  setJobOptions([]);
+                  setAcknowledged(false);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select customer">
+                    {selectedCustomer?.company_name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {customerOptions.map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.company_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Select Job</Label>
+              <Select
+                disabled={!selectedCustomerId}
+                value={jobId}
+                onValueChange={(value) => {
+                  setJob(null);
+                  setJobId(String(value ?? ""));
+                  setAcknowledged(false);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a job with a received PO">
+                    {selectedJobOption
+                      ? `${selectedJobOption.job_number ?? "Pending"} · ${
+                          selectedJobOption.customer?.company_name ?? "Customer"
+                        }`
+                      : undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {jobOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.job_number ?? "Pending"} ·{" "}
+                      {option.customer?.company_name ?? "Customer"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-zinc-500">
+                Only jobs with a received purchase order are available.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : null}
