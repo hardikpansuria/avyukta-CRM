@@ -8,7 +8,13 @@ import { SignOutButton } from "./sign-out-button";
 
 export const dynamic = "force-dynamic";
 
-const roleLinks = {
+type DashboardLink = {
+  href: string;
+  label: string;
+  children?: Array<{ href: string; label: string }>;
+};
+
+const roleLinks: Record<string, DashboardLink[]> = {
   admin: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/customers", label: "Customers" },
@@ -22,7 +28,9 @@ const roleLinks = {
       ],
     },
     { href: "/dashboard/invoices", label: "Invoice" },
-    { href: "/dashboard/employees", label: "Employees" },
+    { href: "/dashboard/employees", label: "Employee List" },
+    { href: "/dashboard/calendar", label: "Public Calendar" },
+    { href: "/dashboard/user-management", label: "User Management" },
   ],
   accountant: [
     { href: "/dashboard", label: "Dashboard" },
@@ -37,6 +45,8 @@ const roleLinks = {
       ],
     },
     { href: "/dashboard/invoices", label: "Invoice" },
+    { href: "/dashboard/employees", label: "Employee List" },
+    { href: "/dashboard/calendar", label: "Public Calendar" },
   ],
   sales: [
     { href: "/dashboard", label: "Dashboard" },
@@ -51,8 +61,13 @@ const roleLinks = {
       ],
     },
     { href: "/dashboard/invoices", label: "Invoice" },
+    { href: "/dashboard/employees", label: "Employee List" },
+    { href: "/dashboard/calendar", label: "Public Calendar" },
   ],
 };
+
+roleLinks.org_admin = roleLinks.admin;
+roleLinks.accounts = roleLinks.accountant;
 
 export default async function DashboardLayout({
   children,

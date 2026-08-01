@@ -10,6 +10,8 @@ import {
   LayoutDashboardIcon,
   UsersIcon,
   UserRoundCogIcon,
+  ContactRoundIcon,
+  CalendarDaysIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -22,7 +24,9 @@ const iconByHref = {
   "/dashboard/jobs/po-pending": FileCheck2Icon,
   "/dashboard/jobs/purchase-orders": ReceiptTextIcon,
   "/dashboard/invoices": ReceiptTextIcon,
-  "/dashboard/employees": UserRoundCogIcon,
+  "/dashboard/employees": ContactRoundIcon,
+  "/dashboard/calendar": CalendarDaysIcon,
+  "/dashboard/user-management": UserRoundCogIcon,
 };
 
 export function DashboardNavigation({

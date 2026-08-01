@@ -147,3 +147,67 @@
     @apply font-sans;
   }
 }
+
+@layer components {
+  .calendar-shell .fc {
+    --fc-border-color: var(--border);
+    --fc-page-bg-color: var(--card);
+    --fc-neutral-bg-color: var(--muted);
+    --fc-today-bg-color: color-mix(in oklch, var(--primary) 7%, transparent);
+    --fc-now-indicator-color: var(--destructive);
+    font-size: 0.875rem;
+  }
+  .calendar-shell .fc-theme-standard td,
+  .calendar-shell .fc-theme-standard th,
+  .calendar-shell .fc-scrollgrid {
+    border-color: var(--border);
+  }
+  .calendar-shell .fc-col-header-cell-cushion,
+  .calendar-shell .fc-daygrid-day-number {
+    padding: 0.5rem;
+    color: var(--foreground);
+  }
+  .calendar-shell .fc-event {
+    border: 0;
+    border-radius: 0.5rem;
+    padding: 0.125rem;
+    cursor: pointer;
+  }
+  .calendar-event-holiday {
+    background: color-mix(in oklch, oklch(0.62 0.15 155) 22%, var(--card)) !important;
+    color: color-mix(in oklch, oklch(0.42 0.14 155) 88%, var(--foreground)) !important;
+  }
+  .calendar-event-job {
+    background: color-mix(in oklch, oklch(0.62 0.16 250) 22%, var(--card)) !important;
+    color: color-mix(in oklch, oklch(0.42 0.15 250) 88%, var(--foreground)) !important;
+  }
+  .calendar-event-company {
+    background: color-mix(in oklch, oklch(0.68 0.16 75) 24%, var(--card)) !important;
+    color: color-mix(in oklch, oklch(0.45 0.14 75) 88%, var(--foreground)) !important;
+  }
+  .dark .calendar-event-holiday,
+  .dark .calendar-event-job,
+  .dark .calendar-event-company {
+    color: var(--foreground) !important;
+  }
+  .calendar-marker {
+    display: inline-flex;
+    min-width: 1rem;
+    height: 1rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .calendar-event-cancelled {
+    opacity: 0.55;
+    text-decoration: line-through;
+  }
+  @media (max-width: 767px) {
+    .calendar-shell .fc-toolbar-title { font-size: 1rem; }
+    .calendar-shell { min-height: 540px; }
+  }
+}

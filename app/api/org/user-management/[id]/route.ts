@@ -17,7 +17,7 @@ function jsonError(error: string, status: number) {
 
 export async function PATCH(
   request: Request,
-  context: RouteContext<"/api/org/employees/[id]">,
+  context: RouteContext<"/api/org/user-management/[id]">,
 ) {
   const session = await verifyOrgSession();
 
