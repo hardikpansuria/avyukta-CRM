@@ -12,6 +12,7 @@ import {
   UserRoundCogIcon,
   ContactRoundIcon,
   CalendarDaysIcon,
+  LibraryIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ const iconByHref = {
   "/dashboard/invoices": ReceiptTextIcon,
   "/dashboard/employees": ContactRoundIcon,
   "/dashboard/calendar": CalendarDaysIcon,
+  "/dashboard/supplier-price-library": LibraryIcon,
   "/dashboard/user-management": UserRoundCogIcon,
 };
 

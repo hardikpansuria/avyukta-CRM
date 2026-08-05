@@ -30,6 +30,15 @@ const roleLinks: Record<string, DashboardLink[]> = {
     { href: "/dashboard/invoices", label: "Invoice" },
     { href: "/dashboard/employees", label: "Employee List" },
     { href: "/dashboard/calendar", label: "Public Calendar" },
+    {
+      href: "/dashboard/supplier-price-library",
+      label: "Supplier Price Library",
+      children: [
+        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
+        { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
+        { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
+      ],
+    },
     { href: "/dashboard/user-management", label: "User Management" },
   ],
   accountant: [
@@ -47,6 +56,15 @@ const roleLinks: Record<string, DashboardLink[]> = {
     { href: "/dashboard/invoices", label: "Invoice" },
     { href: "/dashboard/employees", label: "Employee List" },
     { href: "/dashboard/calendar", label: "Public Calendar" },
+    {
+      href: "/dashboard/supplier-price-library",
+      label: "Supplier Price Library",
+      children: [
+        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
+        { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
+        { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
+      ],
+    },
   ],
   sales: [
     { href: "/dashboard", label: "Dashboard" },
@@ -63,6 +81,15 @@ const roleLinks: Record<string, DashboardLink[]> = {
     { href: "/dashboard/invoices", label: "Invoice" },
     { href: "/dashboard/employees", label: "Employee List" },
     { href: "/dashboard/calendar", label: "Public Calendar" },
+    {
+      href: "/dashboard/supplier-price-library",
+      label: "Supplier Price Library",
+      children: [
+        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
+        { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
+        { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
+      ],
+    },
   ],
 };
 
