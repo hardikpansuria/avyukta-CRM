@@ -104,3 +104,13 @@ node-waf
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Database backups — never commit
+backups/
+database-backups/
+*.dump
+*.backup
+roles.sql
+schema.sql
+data.sql
+SHA256SUMS
