@@ -34,9 +34,9 @@ const roleLinks: Record<string, DashboardLink[]> = {
       href: "/dashboard/supplier-price-library",
       label: "Supplier Price Library",
       children: [
-        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
         { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
         { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
+        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
       ],
     },
     { href: "/dashboard/user-management", label: "User Management" },
@@ -60,9 +60,9 @@ const roleLinks: Record<string, DashboardLink[]> = {
       href: "/dashboard/supplier-price-library",
       label: "Supplier Price Library",
       children: [
-        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
         { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
         { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
+        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
       ],
     },
   ],
@@ -85,9 +85,9 @@ const roleLinks: Record<string, DashboardLink[]> = {
       href: "/dashboard/supplier-price-library",
       label: "Supplier Price Library",
       children: [
-        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
         { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
         { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
+        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
       ],
     },
   ],

@@ -1,10 +1,296 @@
 "use client";
-import Link from "next/link";import { useCallback,useEffect,useMemo,useState } from "react";import { ArchiveIcon,ArchiveRestoreIcon,ArrowLeftIcon,CopyIcon,PencilIcon,PlusIcon } from "lucide-react";import { Badge } from "@/components/ui/badge";import { Button } from "@/components/ui/button";import { Card,CardContent,CardHeader,CardTitle } from "@/components/ui/card";import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from "@/components/ui/dialog";import { Input } from "@/components/ui/input";import { Label } from "@/components/ui/label";import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";import { Skeleton } from "@/components/ui/skeleton";import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from "@/components/ui/table";import { Textarea } from "@/components/ui/textarea";import type { SupplierPricePermissions } from "@/lib/supplier-price-library/access";import type { Pagination,SupplierPriceMaterial,SupplierPriceRecord,SupplierPriceSupplier } from "@/lib/supplier-price-library/types";import { ModuleHeader } from "../../module-tabs";
-type Latest=SupplierPriceRecord&{supplier_name?:string};type PriceData={latest:Latest[];history:SupplierPriceRecord[];pagination:Pagination;unit_of_measure:string};
-export function MaterialDetailClient({materialId,permissions}:{materialId:string;permissions:SupplierPricePermissions}){const[material,setMaterial]=useState<SupplierPriceMaterial|null>(null),[prices,setPrices]=useState<PriceData|null>(null),[suppliers,setSuppliers]=useState<SupplierPriceSupplier[]>([]),[error,setError]=useState(""),[loading,setLoading]=useState(true),[priceDialog,setPriceDialog]=useState<SupplierPriceRecord|null|undefined>(undefined),[latestSort,setLatestSort]=useState("supplier"),[historySupplier,setHistorySupplier]=useState("all"),[historyStatus,setHistoryStatus]=useState("all"),[historySort,setHistorySort]=useState("newest"),[dateFrom,setDateFrom]=useState(""),[dateTo,setDateTo]=useState(""),[page,setPage]=useState(1),[refresh,setRefresh]=useState(0);const load=useCallback(async()=>{setLoading(true);try{const q=new URLSearchParams({page:String(page),pageSize:"25",status:historyStatus,sort:historySort});if(historySupplier!=="all")q.set("supplier",historySupplier);if(dateFrom)q.set("dateFrom",dateFrom);if(dateTo)q.set("dateTo",dateTo);const[m,p,s]=await Promise.all([fetch(`/api/org/supplier-price-library/materials/${materialId}`,{cache:"no-store"}),fetch(`/api/org/supplier-price-library/materials/${materialId}/prices?${q}`,{cache:"no-store"}),fetch("/api/org/supplier-price-library/suppliers?status=all&pageSize=100",{cache:"no-store"})]);const[md,pd,sd]=await Promise.all([m.json(),p.json(),s.json()]);if(!m.ok)throw new Error(md.error);if(!p.ok)throw new Error(pd.error);setMaterial(md.material);setPrices(pd);setSuppliers(sd.suppliers??[]);setError("")}catch(e){setError(e instanceof Error?e.message:"Unable to load material")}finally{setLoading(false)}},[materialId,page,historySupplier,historyStatus,historySort,dateFrom,dateTo]);useEffect(()=>{queueMicrotask(()=>void load())},[load,refresh]);const latest=useMemo(()=>sortLatest(prices?.latest??[],latestSort),[prices,latestSort]);const currencies=Array.from(new Set(latest.map(x=>x.currency)));async function toggleMaterial(){if(!material)return;if(!confirm(material.is_archived?"Restore this material?":"Archive this material? Existing price history will remain visible."))return;const r=await fetch(`/api/org/supplier-price-library/materials/${material.id}/${material.is_archived?"restore":"archive"}`,{method:"POST"}),p=await r.json();if(!r.ok){setError(p.error);return}setRefresh(x=>x+1)}async function archivePrice(row:SupplierPriceRecord){if(!confirm("Archive this supplier price? It will remain in history."))return;const r=await fetch(`/api/org/supplier-price-library/prices/${row.id}/archive`,{method:"POST"}),p=await r.json();if(!r.ok){setError(p.error);return}setRefresh(x=>x+1)}if(loading&&!material)return <div className="mx-auto max-w-7xl space-y-4"><Skeleton className="h-24"/><Skeleton className="h-80"/></div>;return <div className="mx-auto max-w-7xl space-y-6"><ModuleHeader title={material?`${material.material_code} · ${material.material_description}`:"Material"} description="Master material information, supplier comparison, and immutable price history." actions={material?<div className="flex flex-wrap gap-2">{permissions.canEdit?<><Button nativeButton={false} variant="outline" render={<Link href={`/dashboard/supplier-price-library/materials/${material.id}/edit`}/>}><PencilIcon/>Edit Material</Button><Button nativeButton={false} variant="outline" render={<Link href={`/dashboard/supplier-price-library/materials/new?duplicate=${material.id}`}/>}><CopyIcon/>Duplicate Material</Button></>:null}{permissions.canAdmin?<Button variant="outline" onClick={()=>void toggleMaterial()}>{material.is_archived?<ArchiveRestoreIcon/>:<ArchiveIcon/>}{material.is_archived?"Restore":"Archive"}</Button>:null}{permissions.canEdit&&!material.is_archived?<Button onClick={()=>setPriceDialog(null)}><PlusIcon/>Add Supplier Price</Button>:null}</div>:undefined}/><Button nativeButton={false} variant="ghost" render={<Link href="/dashboard/supplier-price-library/materials"/>}><ArrowLeftIcon/>Back to Materials</Button>{error?<div className="rounded-xl border border-destructive/30 p-4 text-sm text-destructive">{error}</div>:null}{material?<MaterialInfo material={material}/>:null}<Card><CardHeader className="flex-row items-center justify-between"><div><CardTitle>Latest Supplier Price Comparison</CardTitle><p className="mt-1 text-sm text-muted-foreground">Latest active price from each supplier. No supplier is automatically preferred.</p></div><Select value={latestSort} onValueChange={v=>setLatestSort(String(v))}><SelectTrigger className="w-44"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="supplier">Supplier Name</SelectItem><SelectItem value="lowest">Lowest Price</SelectItem><SelectItem value="highest">Highest Price</SelectItem><SelectItem value="recent">Most Recent</SelectItem><SelectItem value="oldest">Oldest</SelectItem></SelectContent></Select></CardHeader><CardContent>{currencies.length>1?<div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">Prices use different currencies. Values are grouped by currency and no FX conversion or cross-currency lowest-price comparison is performed.</div>:null}<div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Supplier</TableHead><TableHead>Quote Number</TableHead><TableHead>Quote Date</TableHead><TableHead>Unit Price</TableHead><TableHead>Currency</TableHead><TableHead>Unit</TableHead><TableHead>Valid Until</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{latest.length?latest.map(row=><TableRow key={row.id}><TableCell className="font-medium">{row.supplier?.company_name??row.supplier_name??"—"}</TableCell><TableCell>{row.supplier_quote_number??"—"}</TableCell><TableCell>{date(row.quote_date)}</TableCell><TableCell className="tabular-nums">{Number(row.unit_price).toFixed(2)}</TableCell><TableCell>{row.currency}</TableCell><TableCell>{material?.unit_of_measure??"—"}</TableCell><TableCell>{date(row.price_valid_until)}</TableCell><TableCell><Validity row={row}/></TableCell></TableRow>):<Empty cols={8} text="No active supplier prices yet."/>}</TableBody></Table></div></CardContent></Card><HistoryCard data={prices} suppliers={suppliers} permissions={permissions} supplier={historySupplier} status={historyStatus} sort={historySort} dateFrom={dateFrom} dateTo={dateTo} page={page} onSupplier={v=>{setHistorySupplier(v);setPage(1)}} onStatus={v=>{setHistoryStatus(v);setPage(1)}} onSort={v=>{setHistorySort(v);setPage(1)}} onDateFrom={v=>{setDateFrom(v);setPage(1)}} onDateTo={v=>{setDateTo(v);setPage(1)}} onPage={setPage} onCorrect={setPriceDialog} onArchive={archivePrice}/><PriceTimeline history={prices?.history??[]} suppliers={suppliers}/>{material?<PriceDialog key={priceDialog===undefined?"closed":priceDialog?.id??"new"} material={material} suppliers={suppliers.filter(s=>!s.is_archived)} original={priceDialog} onClose={()=>setPriceDialog(undefined)} onSaved={()=>{setPriceDialog(undefined);setRefresh(x=>x+1)}}/>:null}</div>}
-function MaterialInfo({material}:{material:SupplierPriceMaterial}){const items=[["Material Code",material.material_code],["Category",material.category?.category_name??"—"],["Description",material.material_description],["Size / Specification",material.size_specification??"—"],["Grade / Material Type",material.grade_material_type??"—"],["Unit of Measure",material.unit_of_measure],["Status",material.is_archived?"Archived":"Active"],["Created Date",date(material.created_at)],["Updated Date",date(material.updated_at)]];return <Card><CardHeader><CardTitle>Material Information</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{items.map(([k,v])=><div key={k}><p className="text-xs font-medium uppercase text-muted-foreground">{k}</p><p className="mt-1">{v}</p></div>)}<div className="sm:col-span-2 lg:col-span-3"><p className="text-xs font-medium uppercase text-muted-foreground">Notes</p><p className="mt-1 whitespace-pre-wrap">{material.notes??"—"}</p></div></CardContent></Card>}
-function HistoryCard({data,suppliers,permissions,supplier,status,sort,dateFrom,dateTo,page,onSupplier,onStatus,onSort,onDateFrom,onDateTo,onPage,onCorrect,onArchive}:{data:PriceData|null;suppliers:SupplierPriceSupplier[];permissions:SupplierPricePermissions;supplier:string;status:string;sort:string;dateFrom:string;dateTo:string;page:number;onSupplier:(v:string)=>void;onStatus:(v:string)=>void;onSort:(v:string)=>void;onDateFrom:(v:string)=>void;onDateTo:(v:string)=>void;onPage:(v:number)=>void;onCorrect:(r:SupplierPriceRecord)=>void;onArchive:(r:SupplierPriceRecord)=>void}){return <Card><CardHeader><CardTitle>Complete Historical Pricing</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Filter value={supplier} onChange={onSupplier} all="All suppliers" rows={suppliers.map(x=>[x.id,x.company_name])}/><Filter value={status} onChange={onStatus} all="All statuses" rows={[["active","Active"],["superseded","Superseded"],["archived","Archived"]]}/><Filter value={sort} onChange={onSort} all="Newest" rows={[["oldest","Oldest"],["lowest","Lowest by currency"],["highest","Highest by currency"]]} allValue="newest"/><Input type="date" aria-label="Quote date from" value={dateFrom} onChange={e=>onDateFrom(e.target.value)}/><Input type="date" aria-label="Quote date to" value={dateTo} onChange={e=>onDateTo(e.target.value)}/></div><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Supplier</TableHead><TableHead>Quote Number</TableHead><TableHead>Quote Date</TableHead><TableHead>Unit Price</TableHead><TableHead>Currency</TableHead><TableHead>Valid Until</TableHead><TableHead>Status</TableHead><TableHead>Notes</TableHead><TableHead>Added By</TableHead><TableHead>Added Date</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>{data?.history.length?data.history.map(row=><TableRow className={row.record_status==="superseded"?"opacity-60":""} key={row.id}><TableCell>{row.supplier?.company_name??"—"}</TableCell><TableCell>{row.supplier_quote_number??"—"}</TableCell><TableCell>{date(row.quote_date)}</TableCell><TableCell>{Number(row.unit_price).toFixed(2)}</TableCell><TableCell>{row.currency}</TableCell><TableCell>{date(row.price_valid_until)}</TableCell><TableCell><Badge variant={row.record_status==="active"?"secondary":"outline"}>{row.record_status}</Badge></TableCell><TableCell className="max-w-56 truncate">{row.notes??"—"}</TableCell><TableCell>{row.added_by?.full_name??row.added_by?.email??"—"}</TableCell><TableCell>{date(row.created_at)}</TableCell><TableCell className="whitespace-nowrap">{permissions.canEdit&&row.record_status==="active"?<Button size="sm" variant="outline" onClick={()=>onCorrect(row)}>Correct Price</Button>:null}{permissions.canAdmin&&row.record_status!=="archived"?<Button size="sm" variant="ghost" onClick={()=>void onArchive(row)}>Archive</Button>:null}</TableCell></TableRow>):<Empty cols={11} text="No price history matches the filters."/>}</TableBody></Table></div><div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">{data?.pagination.total??0} records · Page {data?.pagination.page??1} of {data?.pagination.totalPages??1}</span><div className="flex gap-2"><Button variant="outline" disabled={page<=1} onClick={()=>onPage(page-1)}>Previous</Button><Button variant="outline" disabled={!data||page>=data.pagination.totalPages} onClick={()=>onPage(page+1)}>Next</Button></div></div></CardContent></Card>}
-function PriceTimeline({history,suppliers}:{history:SupplierPriceRecord[];suppliers:SupplierPriceSupplier[]}){const availableSuppliers=Array.from(new Set(history.map(x=>x.supplier_id))),[supplier,setSupplier]=useState(availableSuppliers[0]??""),currencies=Array.from(new Set(history.filter(x=>!supplier||x.supplier_id===supplier).map(x=>x.currency))),[currency,setCurrency]=useState(currencies[0]??"");const effectiveSupplier=availableSuppliers.includes(supplier)?supplier:availableSuppliers[0]??"",effectiveCurrency=currencies.includes(currency)?currency:currencies[0]??"",points=history.filter(x=>x.supplier_id===effectiveSupplier&&x.currency===effectiveCurrency).sort((a,b)=>a.quote_date.localeCompare(b.quote_date));return <Card><CardHeader><CardTitle>Price Timeline</CardTitle><p className="text-sm text-muted-foreground">Historical reference only. Different currencies are never joined in one line.</p></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><Filter value={effectiveSupplier||"none"} onChange={setSupplier} all="No supplier" allValue="none" rows={suppliers.filter(x=>availableSuppliers.includes(x.id)).map(x=>[x.id,x.company_name])}/><Filter value={effectiveCurrency||"none"} onChange={setCurrency} all="No currency" allValue="none" rows={currencies.map(x=>[x,x])}/></div><LineChart points={points}/></CardContent></Card>}
-function LineChart({points}:{points:SupplierPriceRecord[]}){if(!points.length)return <div className="flex h-56 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">Select a supplier with price history.</div>;const values=points.map(x=>Number(x.unit_price)),min=Math.min(...values),max=Math.max(...values),range=max-min||1,width=760,height=240,pad=35,coords=points.map((p,i)=>({x:pad+(i/Math.max(1,points.length-1))*(width-pad*2),y:height-pad-((Number(p.unit_price)-min)/range)*(height-pad*2),p})),line=coords.map(x=>`${x.x},${x.y}`).join(" ");return <div className="overflow-x-auto"><svg aria-label="Historical supplier price line chart" className="min-w-[700px] text-foreground" viewBox={`0 0 ${width} ${height}`} role="img"><line x1={pad} y1={height-pad} x2={width-pad} y2={height-pad} stroke="currentColor" opacity=".25"/><line x1={pad} y1={pad} x2={pad} y2={height-pad} stroke="currentColor" opacity=".25"/><polyline points={line} fill="none" stroke="currentColor" strokeWidth="2"/>{coords.map(({x,y,p})=><g key={p.id}><circle cx={x} cy={y} r="4" fill="currentColor"><title>{p.quote_date}: {p.currency} {Number(p.unit_price).toFixed(2)}</title></circle><text x={x} y={height-10} textAnchor="middle" fontSize="10" fill="currentColor">{p.quote_date.slice(5)}</text></g>)}<text x="4" y={pad+4} fontSize="10" fill="currentColor">{max.toFixed(2)}</text><text x="4" y={height-pad} fontSize="10" fill="currentColor">{min.toFixed(2)}</text></svg></div>}
-function PriceDialog({material,suppliers,original,onClose,onSaved}:{material:SupplierPriceMaterial;suppliers:SupplierPriceSupplier[];original:SupplierPriceRecord|null|undefined;onClose:()=>void;onSaved:()=>void}){const today=new Intl.DateTimeFormat("en-CA",{year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),[form,setForm]=useState(()=>({supplier_id:original?.supplier_id??"",supplier_quote_number:original?.supplier_quote_number??"",unit_price:original?String(original.unit_price):"",currency:original?.currency??"CAD",quote_date:original?.quote_date??today,price_valid_until:original?.price_valid_until??"",notes:original?.notes??""})),[saving,setSaving]=useState(false),[error,setError]=useState("");function update(k:keyof typeof form,v:string){setForm(x=>({...x,[k]:v}))}async function submit(e:React.FormEvent){e.preventDefault();setSaving(true);setError("");try{const url=original?`/api/org/supplier-price-library/prices/${original.id}/correct`:`/api/org/supplier-price-library/materials/${material.id}/prices`,r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...form,unit_price:Number(form.unit_price),currency:form.currency.toUpperCase()})}),p=await r.json();if(!r.ok)throw new Error(p.error);onSaved()}catch(e){setError(e instanceof Error?e.message:"Unable to save supplier price")}finally{setSaving(false)}}return <Dialog open={original!==undefined} onOpenChange={open=>{if(!open)onClose()}}><DialogContent className="sm:max-w-2xl"><form className="space-y-5" onSubmit={submit}><DialogHeader><DialogTitle>{original?"Correct Price":"Add New Price"}</DialogTitle><DialogDescription>{original?"The original supplier price will remain in history and the corrected price will be added as a new record.":`Every submission creates a new historical price record for ${material.material_code}.`}</DialogDescription></DialogHeader>{original?<div className="rounded-xl border bg-muted/40 p-3 text-sm"><p className="font-medium">Original record (read-only)</p><p className="mt-1">{original.supplier?.company_name??"Supplier"} · {original.currency} {Number(original.unit_price).toFixed(2)} · {date(original.quote_date)}</p></div>:null}<div className="grid gap-4 sm:grid-cols-2"><div><Label>Supplier *</Label><Select value={form.supplier_id} onValueChange={v=>update("supplier_id",String(v))}><SelectTrigger className="mt-2 w-full"><SelectValue placeholder="Select supplier"/></SelectTrigger><SelectContent>{suppliers.map(x=><SelectItem key={x.id} value={x.id}>{x.company_name}</SelectItem>)}</SelectContent></Select></div><Field label="Supplier Quote Number" value={form.supplier_quote_number} onChange={v=>update("supplier_quote_number",v)}/><Field label="Unit Price" type="number" min="0" step="0.0001" required value={form.unit_price} onChange={v=>update("unit_price",v)}/><Field label="Currency" maxLength={3} required value={form.currency} onChange={v=>update("currency",v.toUpperCase())}/><Field label="Quote Date" type="date" required value={form.quote_date} onChange={v=>update("quote_date",v)}/><Field label="Price Valid Until" type="date" min={form.quote_date} value={form.price_valid_until} onChange={v=>update("price_valid_until",v)}/><div className="sm:col-span-2"><Label>Notes</Label><Textarea className="mt-2" value={form.notes} onChange={e=>update("notes",e.target.value)}/></div></div>{error?<p className="text-sm text-destructive">{error}</p>:null}<DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button disabled={saving||!form.supplier_id}>{saving?"Saving…":original?"Add Corrected Price":"Add Supplier Price"}</Button></DialogFooter></form></DialogContent></Dialog>}
-function Field({label,value,onChange,...props}:{label:string;value:string;onChange:(v:string)=>void}&Omit<React.ComponentProps<typeof Input>,"value"|"onChange">){return <div><Label>{label}{props.required?" *":""}</Label><Input className="mt-2" value={value} onChange={e=>onChange(e.target.value)} {...props}/></div>}function Filter({value,onChange,all,rows,allValue="all"}:{value:string;onChange:(v:string)=>void;all:string;rows:string[][];allValue?:string}){return <Select value={value} onValueChange={v=>onChange(String(v))}><SelectTrigger className="w-full"><SelectValue/></SelectTrigger><SelectContent><SelectItem value={allValue}>{all}</SelectItem>{rows.map(([v,l])=><SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select>}function Empty({cols,text}:{cols:number;text:string}){return <TableRow><TableCell colSpan={cols} className="py-12 text-center text-muted-foreground">{text}</TableCell></TableRow>}function date(v:string|null|undefined){return v?new Intl.DateTimeFormat("en-CA",{dateStyle:"medium"}).format(new Date(`${v}${v.length===10?"T12:00:00":""}`)):"—"}function Validity({row}:{row:Latest}){const expired=Boolean(row.price_valid_until&&row.price_valid_until<new Date().toISOString().slice(0,10));return <Badge variant={expired?"outline":"secondary"}>{expired?"Expired":row.price_valid_until?`Valid until ${date(row.price_valid_until)}`:"Latest"}</Badge>}function sortLatest(rows:Latest[],sort:string){return [...rows].sort((a,b)=>{if(sort==="supplier")return(a.supplier?.company_name??a.supplier_name??"").localeCompare(b.supplier?.company_name??b.supplier_name??"");if(sort==="recent"||sort==="oldest")return a.quote_date.localeCompare(b.quote_date)*(sort==="recent"?-1:1);const currency=a.currency.localeCompare(b.currency);if(currency)return currency;return(Number(a.unit_price)-Number(b.unit_price))*(sort==="highest"?-1:1)})}
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  ArrowLeftIcon,
+  CopyIcon,
+  PencilIcon,
+  PlusIcon,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { SupplierPricePermissions } from "@/lib/supplier-price-library/access";
+import type {
+  Pagination,
+  SupplierPriceMaterial,
+  SupplierPriceRecord,
+  SupplierPriceSupplier,
+} from "@/lib/supplier-price-library/types";
+import {
+  PriceFormFields,
+  type SupplierPriceDraft,
+} from "../../price-form-fields";
+import { ModuleHeader } from "../../module-tabs";
+
+type LatestPrice = SupplierPriceRecord & { supplier_name?: string };
+type PriceData = {
+  latest: LatestPrice[];
+  history: SupplierPriceRecord[];
+  pagination: Pagination;
+  unit_of_measure: string;
+};
+
+export function MaterialDetailClient({
+  materialId,
+  permissions,
+}: {
+  materialId: string;
+  permissions: SupplierPricePermissions;
+}) {
+  const [material, setMaterial] = useState<SupplierPriceMaterial | null>(null);
+  const [prices, setPrices] = useState<PriceData | null>(null);
+  const [suppliers, setSuppliers] = useState<SupplierPriceSupplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [correcting, setCorrecting] = useState<SupplierPriceRecord | null>(null);
+  const [historyStatus, setHistoryStatus] = useState("all");
+  const [historySupplier, setHistorySupplier] = useState("all");
+  const [page, setPage] = useState(1);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("created") === "1") {
+      queueMicrotask(() => setToast("Material created successfully."));
+    } else if (params.get("priceAdded") === "1") {
+      queueMicrotask(() => setToast("Supplier price added successfully."));
+    }
+    if (params.has("created") || params.has("priceAdded")) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const query = new URLSearchParams({
+        page: String(page),
+        pageSize: "25",
+        status: historyStatus,
+      });
+      if (historySupplier !== "all") query.set("supplier", historySupplier);
+      const [materialResponse, pricesResponse, suppliersResponse] = await Promise.all([
+        fetch(`/api/org/supplier-price-library/materials/${materialId}`, {
+          cache: "no-store",
+        }),
+        fetch(
+          `/api/org/supplier-price-library/materials/${materialId}/prices?${query}`,
+          { cache: "no-store" },
+        ),
+        fetch(
+          "/api/org/supplier-price-library/suppliers?status=all&pageSize=100",
+          { cache: "no-store" },
+        ),
+      ]);
+      const [materialPayload, pricePayload, supplierPayload] = await Promise.all([
+        materialResponse.json(),
+        pricesResponse.json(),
+        suppliersResponse.json(),
+      ]);
+      if (!materialResponse.ok) throw new Error(materialPayload.error);
+      if (!pricesResponse.ok) throw new Error(pricePayload.error);
+      setMaterial(materialPayload.material);
+      setPrices(pricePayload);
+      setSuppliers(supplierPayload.suppliers ?? []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load material");
+    } finally {
+      setLoading(false);
+    }
+  }, [historyStatus, historySupplier, materialId, page]);
+
+  useEffect(() => {
+    queueMicrotask(() => void load());
+  }, [load, refresh]);
+
+  const materialLabel = material
+    ? [
+        material.material_code,
+        material.material_description,
+        material.size_specification,
+        material.grade_material_type,
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    : "";
+
+  async function toggleMaterial() {
+    if (!material) return;
+    const action = material.is_archived ? "restore" : "archive";
+    const response = await fetch(
+      `/api/org/supplier-price-library/materials/${material.id}/${action}`,
+      { method: "POST" },
+    );
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error);
+      return;
+    }
+    setToast(material.is_archived ? "Material restored." : "Material archived.");
+    setRefresh((value) => value + 1);
+  }
+
+  async function archivePrice(price: SupplierPriceRecord) {
+    if (!window.confirm("Archive this supplier price? It remains in history.")) return;
+    const response = await fetch(
+      `/api/org/supplier-price-library/prices/${price.id}/archive`,
+      { method: "POST" },
+    );
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error);
+      return;
+    }
+    setToast("Supplier price archived.");
+    setRefresh((value) => value + 1);
+  }
+
+  if (loading && !material) {
+    return (
+      <div className="mx-auto max-w-7xl space-y-4">
+        <Skeleton className="h-24" />
+        <Skeleton className="h-80" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <ModuleHeader
+        title={material ? `${material.material_code} · ${material.material_description}` : "Material"}
+        description="Master material information and supplier price history."
+        actions={material ? <div className="flex flex-wrap gap-2">
+          {permissions.canEdit ? <>
+            <Button nativeButton={false} variant="outline" render={<Link href={`/dashboard/supplier-price-library/materials/${material.id}/edit`} />}><PencilIcon /> Edit Material</Button>
+            <Button nativeButton={false} variant="outline" render={<Link href={`/dashboard/supplier-price-library/materials/new?duplicate=${material.id}`} />}><CopyIcon /> Duplicate Material</Button>
+            <Button variant="outline" onClick={() => void toggleMaterial()}>{material.is_archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}{material.is_archived ? "Restore" : "Archive"}</Button>
+            {!material.is_archived ? <Button nativeButton={false} render={<Link href={`/dashboard/supplier-price-library/prices/new?materialId=${material.id}`} />}><PlusIcon /> Add Supplier Price</Button> : null}
+          </> : null}
+        </div> : undefined}
+      />
+      <Button nativeButton={false} variant="ghost" render={<Link href="/dashboard/supplier-price-library/materials" />}><ArrowLeftIcon /> Back to Materials</Button>
+      {toast ? <div className="fixed right-4 top-4 z-[100] rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white shadow-lg">{toast}</div> : null}
+      {error ? <div className="rounded-xl border border-destructive/30 p-4 text-sm text-destructive">{error}</div> : null}
+
+      {material ? <MaterialInformation material={material} /> : null}
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <div>
+            <CardTitle>Supplier Price Summary</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">Latest active price from each supplier.</p>
+          </div>
+          {permissions.canEdit && material && !material.is_archived ? <Button nativeButton={false} render={<Link href={`/dashboard/supplier-price-library/prices/new?materialId=${material.id}`} />}><PlusIcon /> Add Supplier Price</Button> : null}
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader><TableRow><TableHead>Supplier</TableHead><TableHead>Quote Number</TableHead><TableHead>Quote Date</TableHead><TableHead>Unit Price</TableHead><TableHead>Currency</TableHead><TableHead>Material Unit</TableHead><TableHead>Valid Until</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {prices?.latest.length ? prices.latest.map((price) => <TableRow key={price.id}><TableCell className="font-medium">{price.supplier?.company_name ?? price.supplier_name ?? "—"}</TableCell><TableCell>{price.supplier_quote_number ?? "—"}</TableCell><TableCell>{formatDate(price.quote_date)}</TableCell><TableCell>{Number(price.unit_price).toFixed(2)}</TableCell><TableCell>{price.currency}</TableCell><TableCell>{material?.unit_of_measure ?? "—"}</TableCell><TableCell>{formatDate(price.price_valid_until)}</TableCell><TableCell><Badge variant="secondary">Latest</Badge></TableCell></TableRow>) : <EmptyPriceRow colSpan={8} permissions={permissions} materialId={materialId} text="No supplier prices have been recorded for this material." />}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Complete Price History</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SimpleSelect value={historySupplier} onChange={(value) => { setHistorySupplier(value); setPage(1); }} all="All suppliers" options={suppliers.map((supplier) => [supplier.id, supplier.company_name])} />
+            <SimpleSelect value={historyStatus} onChange={(value) => { setHistoryStatus(value); setPage(1); }} all="All statuses" options={[["active", "Active"], ["superseded", "Superseded"], ["archived", "Archived"]]} />
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Supplier</TableHead><TableHead>Quote Number</TableHead><TableHead>Quote Date</TableHead><TableHead>Unit Price</TableHead><TableHead>Currency</TableHead><TableHead>Valid Until</TableHead><TableHead>Status</TableHead><TableHead>Notes</TableHead><TableHead>Added By</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {prices?.history.length ? prices.history.map((price) => <TableRow className={price.record_status === "superseded" ? "opacity-60" : ""} key={price.id}><TableCell>{price.supplier?.company_name ?? "—"}</TableCell><TableCell>{price.supplier_quote_number ?? "—"}</TableCell><TableCell>{formatDate(price.quote_date)}</TableCell><TableCell>{Number(price.unit_price).toFixed(2)}</TableCell><TableCell>{price.currency}</TableCell><TableCell>{formatDate(price.price_valid_until)}</TableCell><TableCell><Badge variant={price.record_status === "active" ? "secondary" : "outline"}>{price.record_status}</Badge></TableCell><TableCell className="max-w-56 truncate">{price.notes ?? "—"}</TableCell><TableCell>{price.added_by?.full_name ?? price.added_by?.email ?? "—"}</TableCell><TableCell className="whitespace-nowrap">{permissions.canEdit && price.record_status === "active" ? <><Button size="sm" variant="outline" onClick={() => setCorrecting(price)}>Correct Price</Button><Button size="sm" variant="ghost" onClick={() => void archivePrice(price)}>Archive</Button></> : "—"}</TableCell></TableRow>) : <EmptyPriceRow colSpan={10} permissions={permissions} materialId={materialId} text="No supplier prices match the current filters." />}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">{prices?.pagination.total ?? 0} records · Page {prices?.pagination.page ?? 1} of {prices?.pagination.totalPages ?? 1}</span><div className="flex gap-2"><Button variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button variant="outline" disabled={!prices || page >= prices.pagination.totalPages} onClick={() => setPage((value) => value + 1)}>Next</Button></div></div>
+        </CardContent>
+      </Card>
+
+      <PriceTimeline history={prices?.history ?? []} suppliers={suppliers} />
+
+      {correcting && material ? <CorrectionDialog key={correcting.id} original={correcting} materialLabel={materialLabel} suppliers={suppliers.filter((supplier) => !supplier.is_archived)} onSupplierCreated={(supplier) => setSuppliers((current) => [...current, supplier])} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); setToast("Corrected price added; the original remains in history."); setRefresh((value) => value + 1); }} /> : null}
+    </div>
+  );
+}
+
+function MaterialInformation({ material }: { material: SupplierPriceMaterial }) {
+  const fields = [["Material Code", material.material_code], ["Category", material.category?.category_name ?? "—"], ["Material Description", material.material_description], ["Size / Specification", material.size_specification ?? "—"], ["Grade / Material Type", material.grade_material_type ?? "—"], ["Unit of Measure", material.unit_of_measure], ["Notes", material.notes ?? "—"]];
+  return <Card><CardHeader><CardTitle>Material Information</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{fields.map(([label, value]) => <div key={label}><p className="text-xs font-medium uppercase text-muted-foreground">{label}</p><p className="mt-1 whitespace-pre-wrap">{value}</p></div>)}</CardContent></Card>;
+}
+
+function CorrectionDialog({ original, materialLabel, suppliers, onSupplierCreated, onClose, onSaved }: { original: SupplierPriceRecord; materialLabel: string; suppliers: SupplierPriceSupplier[]; onSupplierCreated: (supplier: SupplierPriceSupplier) => void; onClose: () => void; onSaved: () => void }) {
+  const [draft, setDraft] = useState<SupplierPriceDraft>({ supplier_id: original.supplier_id, supplier_quote_number: original.supplier_quote_number ?? "", unit_price: String(original.unit_price), currency: original.currency, quote_date: original.quote_date, price_valid_until: original.price_valid_until ?? "", notes: original.notes ?? "" });
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  async function submit(event: React.FormEvent) { event.preventDefault(); setSaving(true); setError(""); try { const response = await fetch(`/api/org/supplier-price-library/prices/${original.id}/correct`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...draft, unit_price: Number(draft.unit_price) }) }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error); onSaved(); } catch (submitError) { setError(submitError instanceof Error ? submitError.message : "Unable to correct price"); } finally { setSaving(false); } }
+  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="sm:max-w-2xl"><form className="space-y-5" onSubmit={submit}><DialogHeader><DialogTitle>Correct Price</DialogTitle><DialogDescription>The original supplier price remains in history and the corrected price is added as a new record.</DialogDescription></DialogHeader><div className="rounded-xl border bg-muted/40 p-3 text-sm">Original: {original.supplier?.company_name ?? "Supplier"} · {original.currency} {Number(original.unit_price).toFixed(2)} · {formatDate(original.quote_date)}</div><PriceFormFields draft={draft} onChange={setDraft} suppliers={suppliers} onSupplierCreated={onSupplierCreated} materialLabel={materialLabel} />{error ? <p className="text-sm text-destructive">{error}</p> : null}<DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving || !draft.supplier_id}>{saving ? "Saving…" : "Add Corrected Price"}</Button></DialogFooter></form></DialogContent></Dialog>;
+}
+
+function PriceTimeline({ history, suppliers }: { history: SupplierPriceRecord[]; suppliers: SupplierPriceSupplier[] }) {
+  const supplierIds = Array.from(new Set(history.map((price) => price.supplier_id)));
+  const [supplierId, setSupplierId] = useState(supplierIds[0] ?? "none");
+  const effectiveSupplier = supplierIds.includes(supplierId) ? supplierId : supplierIds[0] ?? "none";
+  const currencies = Array.from(new Set(history.filter((price) => price.supplier_id === effectiveSupplier).map((price) => price.currency)));
+  const [currency, setCurrency] = useState(currencies[0] ?? "none");
+  const effectiveCurrency = currencies.includes(currency) ? currency : currencies[0] ?? "none";
+  const points = useMemo(() => history.filter((price) => price.supplier_id === effectiveSupplier && price.currency === effectiveCurrency).toSorted((a, b) => a.quote_date.localeCompare(b.quote_date)), [effectiveCurrency, effectiveSupplier, history]);
+  return <Card><CardHeader><CardTitle>Price Timeline</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><SimpleSelect value={effectiveSupplier} onChange={setSupplierId} all="No supplier" allValue="none" options={suppliers.filter((supplier) => supplierIds.includes(supplier.id)).map((supplier) => [supplier.id, supplier.company_name])} /><SimpleSelect value={effectiveCurrency} onChange={setCurrency} all="No currency" allValue="none" options={currencies.map((value) => [value, value])} /></div><MiniChart points={points} /></CardContent></Card>;
+}
+
+function MiniChart({ points }: { points: SupplierPriceRecord[] }) {
+  if (!points.length) return <div className="flex h-44 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">No timeline data for this selection.</div>;
+  const values = points.map((point) => Number(point.unit_price)); const minimum = Math.min(...values); const maximum = Math.max(...values); const range = maximum - minimum || 1;
+  const coordinates = points.map((point, index) => ({ x: 30 + (index / Math.max(1, points.length - 1)) * 700, y: 190 - ((Number(point.unit_price) - minimum) / range) * 150, point }));
+  return <div className="overflow-x-auto"><svg className="min-w-[760px] text-foreground" viewBox="0 0 760 220" role="img" aria-label="Historical supplier price line chart"><polyline fill="none" stroke="currentColor" strokeWidth="2" points={coordinates.map(({ x, y }) => `${x},${y}`).join(" ")} />{coordinates.map(({ x, y, point }) => <circle key={point.id} cx={x} cy={y} r="4" fill="currentColor"><title>{point.quote_date}: {point.currency} {Number(point.unit_price).toFixed(2)}</title></circle>)}</svg></div>;
+}
+
+function EmptyPriceRow({ colSpan, text, permissions, materialId }: { colSpan: number; text: string; permissions: SupplierPricePermissions; materialId: string }) {
+  return <TableRow><TableCell className="py-12 text-center" colSpan={colSpan}><p className="text-muted-foreground">{text}</p>{permissions.canEdit ? <Button className="mt-4" nativeButton={false} render={<Link href={`/dashboard/supplier-price-library/prices/new?materialId=${materialId}`} />}><PlusIcon /> Add First Supplier Price</Button> : null}</TableCell></TableRow>;
+}
+
+function SimpleSelect({ value, onChange, all, options, allValue = "all" }: { value: string; onChange: (value: string) => void; all: string; options: string[][]; allValue?: string }) {
+  return <Select value={value} onValueChange={(next) => onChange(String(next))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value={allValue}>{all}</SelectItem>{options.map(([option, label]) => <SelectItem key={option} value={option}>{label}</SelectItem>)}</SelectContent></Select>;
+}
+
+function formatDate(value: string | null | undefined) { return value ? new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(new Date(`${value}${value.length === 10 ? "T12:00:00" : ""}`)) : "—"; }

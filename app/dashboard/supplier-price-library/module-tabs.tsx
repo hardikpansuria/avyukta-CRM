@@ -5,15 +5,36 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 const links = [
-  ["/dashboard/supplier-price-library", "Overview"],
-  ["/dashboard/supplier-price-library/materials", "Materials"],
+  ["/dashboard/supplier-price-library", "Dashboard"],
   ["/dashboard/supplier-price-library/suppliers", "Suppliers"],
   ["/dashboard/supplier-price-library/categories", "Categories"],
+  ["/dashboard/supplier-price-library/materials", "Materials"],
 ] as const;
 
 export function ModuleTabs() {
   const pathname = usePathname();
-  return <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1">{links.map(([href, label]) => <Button key={href} nativeButton={false} size="sm" variant={pathname === href ? "default" : "ghost"} render={<Link href={href} />}>{label}</Button>)}</div>;
+  return (
+    <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1">
+      {links.map(([href, label]) => {
+        const active =
+          href === "/dashboard/supplier-price-library"
+            ? pathname === href
+            : pathname === href || pathname.startsWith(`${href}/`);
+
+        return (
+          <Button
+            key={href}
+            nativeButton={false}
+            size="sm"
+            variant={active ? "default" : "ghost"}
+            render={<Link aria-current={active ? "page" : undefined} href={href} />}
+          >
+            {label}
+          </Button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function ModuleHeader({ title, description, actions }: { title: string; description: string; actions?: React.ReactNode }) {

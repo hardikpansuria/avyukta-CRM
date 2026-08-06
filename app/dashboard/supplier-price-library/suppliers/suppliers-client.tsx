@@ -1,10 +1,474 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { ArchiveRestoreIcon, ArchiveIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge"; import { Button } from "@/components/ui/button"; import { Card,CardContent } from "@/components/ui/card"; import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from "@/components/ui/dialog"; import { Input } from "@/components/ui/input"; import { Label } from "@/components/ui/label"; import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select"; import { Skeleton } from "@/components/ui/skeleton"; import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from "@/components/ui/table"; import { Textarea } from "@/components/ui/textarea";
-import type { SupplierPricePermissions } from "@/lib/supplier-price-library/access"; import type { Pagination,SupplierPriceSupplier } from "@/lib/supplier-price-library/types"; import { ModuleHeader } from "../module-tabs";
 
-const emptyForm={company_name:"",contact_person:"",company_address:"",email_address:"",contact_number:""};
-export function SuppliersClient({permissions}:{permissions:SupplierPricePermissions}){const [rows,setRows]=useState<SupplierPriceSupplier[]>([]),[paging,setPaging]=useState<Pagination>({page:1,pageSize:20,total:0,totalPages:1}),[searchInput,setSearchInput]=useState(""),[search,setSearch]=useState(""),[status,setStatus]=useState("active"),[sort,setSort]=useState("company_name"),[direction,setDirection]=useState("asc"),[page,setPage]=useState(1),[loading,setLoading]=useState(true),[error,setError]=useState(""),[editing,setEditing]=useState<SupplierPriceSupplier|null|undefined>(undefined),[refresh,setRefresh]=useState(0);useEffect(()=>{const t=setTimeout(()=>{setSearch(searchInput.trim());setPage(1)},300);return()=>clearTimeout(t)},[searchInput]);const load=useCallback(async()=>{setLoading(true);setError("");try{const q=new URLSearchParams({search,status,sort,direction,page:String(page),pageSize:"20"});const r=await fetch(`/api/org/supplier-price-library/suppliers?${q}`,{cache:"no-store"}),p=await r.json();if(!r.ok)throw new Error(p.error);setRows(p.suppliers);setPaging(p.pagination)}catch(e){setError(e instanceof Error?e.message:"Unable to load suppliers")}finally{setLoading(false)}},[search,status,sort,direction,page]);useEffect(()=>{queueMicrotask(()=>void load())},[load,refresh]);async function toggle(row:SupplierPriceSupplier){if(!confirm(row.is_archived?`Restore ${row.company_name}?`:`Archive ${row.company_name}? Historical price records will remain visible.`))return;const r=await fetch(`/api/org/supplier-price-library/suppliers/${row.id}/${row.is_archived?"restore":"archive"}`,{method:"POST"});const p=await r.json();if(!r.ok){setError(p.error??"Action failed");return}setRefresh(x=>x+1)}return <div className="mx-auto max-w-7xl space-y-6"><ModuleHeader title="Suppliers" description="Manage supplier contact records used by the price library." actions={permissions.canAdmin?<Button onClick={()=>setEditing(null)}><PlusIcon/>Add Supplier</Button>:undefined}/><Card size="sm"><CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><div className="relative sm:col-span-2"><SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input className="pl-9" value={searchInput} onChange={e=>setSearchInput(e.target.value)} placeholder="Search company, contact or email"/></div><Filter value={status} onChange={v=>{setStatus(v);setPage(1)}} items={[["active","Active"],["archived","Archived"],["all","All statuses"]]}/><Filter value={sort} onChange={v=>{setSort(v);setPage(1)}} items={[["company_name","Company name"],["created_at","Date added"],["updated_at","Last updated"]]}/><Button variant="outline" onClick={()=>setDirection(v=>v==="asc"?"desc":"asc")}>{direction==="asc"?"Ascending":"Descending"}</Button></CardContent></Card>{error?<div className="rounded-xl border border-destructive/30 p-4 text-sm text-destructive">{error}</div>:null}<Card className="hidden md:block"><CardContent className="overflow-x-auto px-0"><Table><TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Contact Person</TableHead><TableHead>Email Address</TableHead><TableHead>Contact Number</TableHead><TableHead>Address</TableHead><TableHead>Status</TableHead><TableHead>Date Added</TableHead><TableHead>Last Updated</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{loading?Array.from({length:5}).map((_,i)=><TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-8 w-full"/></TableCell></TableRow>):rows.length?rows.map(row=><TableRow key={row.id}><TableCell className="font-medium">{row.company_name}</TableCell><TableCell>{row.contact_person??"—"}</TableCell><TableCell>{row.email_address??"—"}</TableCell><TableCell>{row.contact_number??"—"}</TableCell><TableCell className="max-w-56 truncate">{row.company_address??"—"}</TableCell><TableCell><Badge variant={row.is_archived?"outline":"secondary"}>{row.is_archived?"Archived":"Active"}</Badge></TableCell><TableCell>{date(row.created_at)}</TableCell><TableCell>{date(row.updated_at)}</TableCell><TableCell className="text-right">{permissions.canAdmin?<><Button aria-label="Edit supplier" size="icon-sm" variant="ghost" onClick={()=>setEditing(row)}><PencilIcon/></Button><Button aria-label={row.is_archived?"Restore supplier":"Archive supplier"} size="icon-sm" variant="ghost" onClick={()=>void toggle(row)}>{row.is_archived?<ArchiveRestoreIcon/>:<ArchiveIcon/>}</Button></>:"—"}</TableCell></TableRow>):<TableRow><TableCell colSpan={9} className="py-12 text-center text-muted-foreground">No suppliers match the current filters.</TableCell></TableRow>}</TableBody></Table></CardContent></Card><div className="grid gap-3 md:hidden">{loading?Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-44 rounded-xl"/>):rows.map(row=><Card key={row.id} size="sm"><CardContent className="space-y-3"><div className="flex justify-between gap-3"><div><p className="font-semibold">{row.company_name}</p><p className="text-sm text-muted-foreground">{row.contact_person??"No contact"}</p></div><Badge variant={row.is_archived?"outline":"secondary"}>{row.is_archived?"Archived":"Active"}</Badge></div><p className="text-sm">{row.email_address??"—"} · {row.contact_number??"—"}</p>{permissions.canAdmin?<div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>setEditing(row)}><PencilIcon/>Edit</Button><Button size="sm" variant="outline" onClick={()=>void toggle(row)}>{row.is_archived?<ArchiveRestoreIcon/>:<ArchiveIcon/>}{row.is_archived?"Restore":"Archive"}</Button></div>:null}</CardContent></Card>)}</div><div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">{paging.total} suppliers · Page {paging.page} of {paging.totalPages}</span><div className="flex gap-2"><Button variant="outline" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}><ChevronLeftIcon/>Previous</Button><Button variant="outline" disabled={page>=paging.totalPages||loading} onClick={()=>setPage(p=>p+1)}>Next<ChevronRightIcon/></Button></div></div><SupplierDialog key={editing===undefined?"closed":editing?.id??"new"} supplier={editing} onClose={()=>setEditing(undefined)} onSaved={()=>{setEditing(undefined);setRefresh(x=>x+1)}}/></div>}
-function SupplierDialog({supplier,onClose,onSaved}:{supplier:SupplierPriceSupplier|null|undefined;onClose:()=>void;onSaved:()=>void}){const [form,setForm]=useState(()=>supplier?{company_name:supplier.company_name,contact_person:supplier.contact_person??"",company_address:supplier.company_address??"",email_address:supplier.email_address??"",contact_number:supplier.contact_number??""}:emptyForm),[saving,setSaving]=useState(false),[error,setError]=useState("");async function submit(e:React.FormEvent){e.preventDefault();setSaving(true);setError("");try{const r=await fetch(supplier?`/api/org/supplier-price-library/suppliers/${supplier.id}`:"/api/org/supplier-price-library/suppliers",{method:supplier?"PATCH":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)}),p=await r.json();if(!r.ok)throw new Error(p.error);onSaved()}catch(e){setError(e instanceof Error?e.message:"Unable to save supplier")}finally{setSaving(false)}}return <Dialog open={supplier!==undefined} onOpenChange={open=>{if(!open)onClose()}}><DialogContent><form className="space-y-5" onSubmit={submit}><DialogHeader><DialogTitle>{supplier?"Edit Supplier":"Add Supplier"}</DialogTitle><DialogDescription>Keep this record focused on supplier contact information.</DialogDescription></DialogHeader><Field label="Company Name" required value={form.company_name} onChange={v=>setForm({...form,company_name:v})}/><Field label="Contact Person" value={form.contact_person} onChange={v=>setForm({...form,contact_person:v})}/><div><Label>Company Address</Label><Textarea className="mt-2" value={form.company_address} onChange={e=>setForm({...form,company_address:e.target.value})}/></div><Field label="Email Address" type="email" value={form.email_address} onChange={v=>setForm({...form,email_address:v})}/><Field label="Contact Number" value={form.contact_number} onChange={v=>setForm({...form,contact_number:v})}/>{error?<p className="text-sm text-destructive">{error}</p>:null}<DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button disabled={saving}>{saving?"Saving…":"Save Supplier"}</Button></DialogFooter></form></DialogContent></Dialog>}
-function Field({label,value,onChange,type="text",required=false}:{label:string;value:string;onChange:(v:string)=>void;type?:string;required?:boolean}){return <div><Label>{label}{required?" *":""}</Label><Input className="mt-2" type={type} required={required} value={value} onChange={e=>onChange(e.target.value)}/></div>};function Filter({value,onChange,items}:{value:string;onChange:(v:string)=>void;items:string[][]}){return <Select value={value} onValueChange={v=>onChange(String(v))}><SelectTrigger className="w-full"><SelectValue/></SelectTrigger><SelectContent>{items.map(([v,l])=><SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select>};function date(v:string){return new Intl.DateTimeFormat("en-CA",{dateStyle:"medium"}).format(new Date(v))}
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilIcon,
+  PlusIcon,
+  SearchIcon,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { SupplierPricePermissions } from "@/lib/supplier-price-library/access";
+import type {
+  Pagination,
+  SupplierPriceSupplier,
+} from "@/lib/supplier-price-library/types";
+import {
+  emptySupplierForm,
+  saveSupplier,
+  SupplierFields,
+  type SupplierFormValue,
+} from "../supplier-form";
+import { ModuleHeader } from "../module-tabs";
+
+export function SuppliersClient({
+  permissions,
+}: {
+  permissions: SupplierPricePermissions;
+}) {
+  const [suppliers, setSuppliers] = useState<SupplierPriceSupplier[]>([]);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 1,
+  });
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("active");
+  const [sort, setSort] = useState("company_name");
+  const [direction, setDirection] = useState("asc");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState<SupplierPriceSupplier | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("created") === "1") {
+      queueMicrotask(() => setToast("Supplier created successfully."));
+      params.delete("created");
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${params.size ? `?${params}` : ""}`,
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const loadSuppliers = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        search,
+        status,
+        sort,
+        direction,
+        page: String(page),
+        pageSize: "20",
+      });
+      const response = await fetch(
+        `/api/org/supplier-price-library/suppliers?${params}`,
+        { cache: "no-store" },
+      );
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setSuppliers(payload.suppliers);
+      setPagination(payload.pagination);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to load suppliers",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [direction, page, search, sort, status]);
+
+  useEffect(() => {
+    queueMicrotask(() => void loadSuppliers());
+  }, [loadSuppliers, refresh]);
+
+  async function toggleArchived(supplier: SupplierPriceSupplier) {
+    const action = supplier.is_archived ? "restore" : "archive";
+    if (
+      !window.confirm(
+        supplier.is_archived
+          ? `Restore ${supplier.company_name}?`
+          : `Archive ${supplier.company_name}? Historical prices remain visible.`,
+      )
+    )
+      return;
+    const response = await fetch(
+      `/api/org/supplier-price-library/suppliers/${supplier.id}/${action}`,
+      { method: "POST" },
+    );
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? "Action failed");
+      return;
+    }
+    setToast(supplier.is_archived ? "Supplier restored." : "Supplier archived.");
+    setRefresh((value) => value + 1);
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <ModuleHeader
+        title="Suppliers"
+        description="Manage the supplier profiles used by material price records."
+        actions={
+          permissions.canEdit ? (
+            <Button
+              nativeButton={false}
+              render={
+                <Link href="/dashboard/supplier-price-library/suppliers/new" />
+              }
+            >
+              <PlusIcon /> New Supplier
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <Card size="sm">
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="relative sm:col-span-2">
+            <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Search company, contact or email"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+          </div>
+          <ListSelect
+            value={status}
+            onChange={(value) => {
+              setStatus(value);
+              setPage(1);
+            }}
+            options={[
+              ["active", "Active"],
+              ["archived", "Archived"],
+              ["all", "All statuses"],
+            ]}
+          />
+          <ListSelect
+            value={sort}
+            onChange={(value) => {
+              setSort(value);
+              setPage(1);
+            }}
+            options={[
+              ["company_name", "Company name"],
+              ["created_at", "Date added"],
+              ["updated_at", "Last updated"],
+            ]}
+          />
+          <Button
+            variant="outline"
+            onClick={() =>
+              setDirection((value) => (value === "asc" ? "desc" : "asc"))
+            }
+          >
+            {direction === "asc" ? "Ascending" : "Descending"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {error ? <ErrorBox message={error} /> : null}
+      {toast ? <Toast message={toast} /> : null}
+
+      <Card>
+        <CardContent className="overflow-x-auto px-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Company Name</TableHead>
+                <TableHead>Contact Person</TableHead>
+                <TableHead>Email Address</TableHead>
+                <TableHead>Contact Number</TableHead>
+                <TableHead>Address</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date Added</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading
+                ? Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={index}>
+                      <TableCell colSpan={8}>
+                        <Skeleton className="h-8 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                : null}
+              {!loading && suppliers.length === 0 ? (
+                <TableRow>
+                  <TableCell className="py-14 text-center" colSpan={8}>
+                    <p className="text-muted-foreground">
+                      No suppliers have been added yet.
+                    </p>
+                    {permissions.canEdit ? (
+                      <Button
+                        className="mt-4"
+                        nativeButton={false}
+                        render={
+                          <Link href="/dashboard/supplier-price-library/suppliers/new" />
+                        }
+                      >
+                        <PlusIcon /> Create First Supplier
+                      </Button>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {!loading
+                ? suppliers.map((supplier) => (
+                    <TableRow key={supplier.id}>
+                      <TableCell className="font-medium">
+                        {supplier.company_name}
+                      </TableCell>
+                      <TableCell>{supplier.contact_person ?? "—"}</TableCell>
+                      <TableCell>{supplier.email_address ?? "—"}</TableCell>
+                      <TableCell>{supplier.contact_number ?? "—"}</TableCell>
+                      <TableCell className="max-w-56 truncate">
+                        {supplier.company_address ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={supplier.is_archived ? "outline" : "secondary"}>
+                          {supplier.is_archived ? "Archived" : "Active"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatDate(supplier.created_at)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">
+                        {permissions.canEdit ? (
+                          <>
+                            <Button
+                              aria-label={`Edit ${supplier.company_name}`}
+                              size="icon-sm"
+                              variant="ghost"
+                              onClick={() => setEditing(supplier)}
+                            >
+                              <PencilIcon />
+                            </Button>
+                            <Button
+                              aria-label={
+                                supplier.is_archived
+                                  ? `Restore ${supplier.company_name}`
+                                  : `Archive ${supplier.company_name}`
+                              }
+                              size="icon-sm"
+                              variant="ghost"
+                              onClick={() => void toggleArchived(supplier)}
+                            >
+                              {supplier.is_archived ? (
+                                <ArchiveRestoreIcon />
+                              ) : (
+                                <ArchiveIcon />
+                              )}
+                            </Button>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                : null}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-muted-foreground">
+          {pagination.total} suppliers · Page {pagination.page} of{" "}
+          {pagination.totalPages}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            disabled={loading || page <= 1}
+            variant="outline"
+            onClick={() => setPage((value) => value - 1)}
+          >
+            <ChevronLeftIcon /> Previous
+          </Button>
+          <Button
+            disabled={loading || page >= pagination.totalPages}
+            variant="outline"
+            onClick={() => setPage((value) => value + 1)}
+          >
+            Next <ChevronRightIcon />
+          </Button>
+        </div>
+      </div>
+
+      {editing ? (
+        <EditSupplierDialog
+          key={editing.id}
+          supplier={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            setToast("Supplier updated successfully.");
+            setRefresh((value) => value + 1);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function EditSupplierDialog({
+  supplier,
+  onClose,
+  onSaved,
+}: {
+  supplier: SupplierPriceSupplier;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<SupplierFormValue>({
+    ...emptySupplierForm,
+    company_name: supplier.company_name,
+    contact_person: supplier.contact_person ?? "",
+    company_address: supplier.company_address ?? "",
+    email_address: supplier.email_address ?? "",
+    contact_number: supplier.contact_number ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await saveSupplier(form, supplier.id);
+      onSaved();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to save supplier");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <form className="space-y-5" onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Edit Supplier</DialogTitle>
+            <DialogDescription>Update this library supplier profile.</DialogDescription>
+          </DialogHeader>
+          <SupplierFields form={form} onChange={setForm} />
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save Supplier"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ListSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[][];
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => onChange(String(next))}>
+      <SelectTrigger className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(([option, label]) => (
+          <SelectItem key={option} value={option}>
+            {label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(
+    new Date(value),
+  );
+}
+
+function ErrorBox({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-destructive/30 p-4 text-sm text-destructive">
+      {message}
+    </div>
+  );
+}
+
+function Toast({ message }: { message: string }) {
+  return (
+    <div className="fixed right-4 top-4 z-[100] rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white shadow-lg">
+      {message}
+    </div>
+  );
+}

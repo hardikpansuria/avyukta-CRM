@@ -11,7 +11,7 @@ export async function GET(_request: Request, context: RouteContext<"/api/org/sup
 }
 
 export async function PATCH(request: Request, context: RouteContext<"/api/org/supplier-price-library/suppliers/[supplierId]">) {
-  const auth = await requireSupplierPriceSession("admin"); if ("response" in auth) return auth.response;
+  const auth = await requireSupplierPriceSession("edit"); if ("response" in auth) return auth.response;
   const { supplierId } = await context.params; if (!validUuid(supplierId)) return jsonError("Supplier not found", 404);
   let body: SupplierBody; try { body = await request.json() as SupplierBody; } catch { return jsonError("Invalid request body", 400); }
   const companyName = text(body.company_name, true); const email = text(body.email_address);

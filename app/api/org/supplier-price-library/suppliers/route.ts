@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireSupplierPriceSession("admin");
+  const auth = await requireSupplierPriceSession("edit");
   if ("response" in auth) return auth.response;
   let body: SupplierBody;
   try { body = await request.json() as SupplierBody; } catch { return jsonError("Invalid request body", 400); }
