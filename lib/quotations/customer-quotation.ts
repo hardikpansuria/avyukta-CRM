@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import sanitizeHtml from "sanitize-html";
 
+import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
+
 export type CustomerQuotationItemInput = {
   id?: string;
   scope_id?: string | null;
@@ -247,7 +249,8 @@ async function getSourceContext(
   const address =
     billing && billing.same_as_head_office !== true ? billing : headOffice ?? billing;
   const logoStoragePath = text(organizationResult.data.logo_storage_path);
-  const { data: signedLogoData } = logoStoragePath
+  const { data: signedLogoData } =
+    logoStoragePath && isOrgScopedStoragePath(logoStoragePath, orgId)
     ? await admin.storage
         .from("crm-assets")
         .createSignedUrl(logoStoragePath, 10 * 60)

@@ -127,7 +127,10 @@ export async function POST(
     return jsonError("Supporting PDF is required", 400);
   }
 
-  if (file.type.toLowerCase() !== "application/pdf") {
+  if (
+    file.type.toLowerCase() !== "application/pdf" ||
+    !file.name.toLowerCase().endsWith(".pdf")
+  ) {
     return jsonError("Supporting document must be a PDF", 400);
   }
 
@@ -198,6 +201,9 @@ export async function POST(
     .single();
 
   if (documentError || !document) {
+    if (!existingDocument) {
+      await validation.admin.storage.from(bucketName).remove([filePath]);
+    }
     return jsonError("Unable to save supporting document metadata", 500);
   }
 
@@ -255,9 +261,17 @@ export async function DELETE(
     return jsonError("Supporting document not found", 404);
   }
 
+  const expectedPath = `${session.org_id}/quotations/${id}/scope-charges/${scopeChargeId}/supporting-document.pdf`;
+  if (
+    document.storage_bucket !== bucketName ||
+    document.file_path !== expectedPath
+  ) {
+    return jsonError("Supporting document storage metadata is invalid", 409);
+  }
+
   const { error: removeError } = await validation.admin.storage
-    .from(document.storage_bucket || bucketName)
-    .remove([document.file_path]);
+    .from(bucketName)
+    .remove([expectedPath]);
 
   if (removeError) {
     return jsonError("Unable to remove supporting document file", 500);

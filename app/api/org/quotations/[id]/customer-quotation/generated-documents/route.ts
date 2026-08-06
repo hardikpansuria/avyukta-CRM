@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
 const bucketName = "customer-quotation-pdfs";
 
@@ -63,9 +64,22 @@ export async function GET(
   );
   const enriched = await Promise.all(
     (documents ?? []).map(async (document) => {
+      const expectedPath = `${session.org_id}/quotations/${document.quotation_id}/customer-quotations/revision-${document.revision_number}/${document.id}.pdf`;
+      if (
+        document.file_path !== expectedPath ||
+        !isOrgScopedStoragePath(expectedPath, session.org_id)
+      ) {
+        return {
+          ...document,
+          generated_by_name:
+            profilesById.get(document.generated_by as string)?.full_name?.trim() ||
+            "System",
+          signed_url: null,
+        };
+      }
       const { data: signedData } = await admin.storage
         .from(bucketName)
-        .createSignedUrl(document.file_path, 10 * 60);
+        .createSignedUrl(expectedPath, 10 * 60);
 
       return {
         ...document,

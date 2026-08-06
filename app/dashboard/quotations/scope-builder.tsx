@@ -222,10 +222,7 @@ export function ScopeBuilder({
     }
 
     const looksLikePdf =
-      file.type === "application/pdf" ||
-      file.type === "application/x-pdf" ||
-      file.type === "application/octet-stream" ||
-      file.type === "" ||
+      file.type === "application/pdf" &&
       file.name.toLowerCase().endsWith(".pdf");
 
     if (!looksLikePdf) {
@@ -341,7 +338,10 @@ export function ScopeBuilder({
       return;
     }
 
-    if (file.type !== "application/pdf") {
+    if (
+      file.type !== "application/pdf" ||
+      !file.name.toLowerCase().endsWith(".pdf")
+    ) {
       setDocumentError("Supporting document must be a PDF.");
       return;
     }

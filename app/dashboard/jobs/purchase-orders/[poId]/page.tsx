@@ -338,7 +338,7 @@ export default function PurchaseOrderDetailPage() {
                 accept={
                   uploadType === "purchase_order"
                     ? "application/pdf"
-                    : "application/pdf,image/jpeg,image/png,image/webp"
+                    : ".pdf,.jpg,.jpeg,.png,.docx,.xlsx,application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 }
                 id="additional-po-document"
                 type="file"
@@ -431,4 +431,3 @@ export default function PurchaseOrderDetailPage() {
     </div>
   );
 }
-

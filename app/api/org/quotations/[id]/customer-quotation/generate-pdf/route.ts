@@ -16,6 +16,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const bucketName = "customer-quotation-pdfs";
+const maxPdfBytes = 50 * 1024 * 1024;
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -99,6 +100,10 @@ export async function POST(
   } catch (error) {
     console.error("Unable to render customer quotation PDF", error);
     return jsonError("Unable to render customer quotation PDF", 500);
+  }
+
+  if (pdfBuffer.length === 0 || pdfBuffer.length > maxPdfBytes) {
+    return jsonError("Generated customer quotation PDF has an invalid size", 500);
   }
 
   const { error: uploadError } = await admin.storage

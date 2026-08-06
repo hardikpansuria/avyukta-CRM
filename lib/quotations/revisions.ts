@@ -151,9 +151,12 @@ export async function cloneQuotationRevisionData(
       })));
     }
 
-    const cloneFile = async (row: Row, path: string) => {
-      const bucket = String(row.storage_bucket || "quotation-documents");
-      const { data: blob, error: downloadError } = await admin.storage.from(bucket).download(String(row.file_path));
+    const cloneFile = async (row: Row, sourcePath: string, path: string) => {
+      const bucket = "quotation-documents";
+      if (row.storage_bucket !== bucket || row.file_path !== sourcePath) {
+        throw new Error("Attachment storage metadata is invalid");
+      }
+      const { data: blob, error: downloadError } = await admin.storage.from(bucket).download(sourcePath);
       if (downloadError || !blob) throw downloadError ?? new Error("Attachment download failed");
       const { error: uploadError } = await admin.storage.from(bucket).upload(path, await blob.arrayBuffer(), {
         contentType: String(row.mime_type || "application/pdf"), upsert: false,
@@ -168,7 +171,8 @@ export async function cloneQuotationRevisionData(
       const scopeId = scopeMap.get(String(row.scope_id));
       if (!materialId || !scopeId) throw new Error("Unable to map material attachment");
       const path = `${orgId}/quotations/${newQuotationId}/materials/${materialId}/supplier-quote.pdf`;
-      const file = await cloneFile(row, path);
+      const sourcePath = `${orgId}/quotations/${sourceQuotationId}/materials/${row.material_item_id}/supplier-quote.pdf`;
+      const file = await cloneFile(row, sourcePath, path);
       await insertRows("quotation_material_documents", [{
         ...withoutSystemFields(row, ["file_path", "uploaded_by"]), id: crypto.randomUUID(), org_id: orgId,
         quotation_id: newQuotationId, scope_id: scopeId, material_item_id: materialId,
@@ -181,7 +185,8 @@ export async function cloneQuotationRevisionData(
       const scopeId = scopeMap.get(String(row.scope_id));
       if (!chargeId || !scopeId) throw new Error("Unable to map charge attachment");
       const path = `${orgId}/quotations/${newQuotationId}/scope-charges/${chargeId}/supporting-document.pdf`;
-      const file = await cloneFile(row, path);
+      const sourcePath = `${orgId}/quotations/${sourceQuotationId}/scope-charges/${row.scope_charge_id}/supporting-document.pdf`;
+      const file = await cloneFile(row, sourcePath, path);
       await insertRows("quotation_scope_charge_documents", [{
         ...withoutSystemFields(row, ["file_path", "uploaded_by"]), id: crypto.randomUUID(), org_id: orgId,
         quotation_id: newQuotationId, scope_id: scopeId, scope_charge_id: chargeId,

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { jobDocumentBuckets } from "@/lib/jobs/documents";
+import {
+  isExpectedPurchaseOrderDocumentPath,
+  jobDocumentBuckets,
+} from "@/lib/jobs/documents";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function jsonError(error: string, status: number) {
@@ -28,6 +31,16 @@ export async function GET(
 
   if (error) return jsonError("Unable to validate document", 500);
   if (!document) return jsonError("Document not found", 404);
+  if (
+    !isExpectedPurchaseOrderDocumentPath({
+      path: document.file_path,
+      orgId: session.org_id,
+      purchaseOrderId: poId,
+      documentId,
+    })
+  ) {
+    return jsonError("Document path is invalid", 409);
+  }
 
   const download = new URL(request.url).searchParams.get("download") === "1";
   const { data, error: signedError } = await admin.storage
@@ -44,4 +57,3 @@ export async function GET(
     file_name: document.file_name,
   });
 }
-

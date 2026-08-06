@@ -8,12 +8,6 @@ import { lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisi
 
 const bucketName = "quotation-documents";
 const maxPdfBytes = 10 * 1024 * 1024;
-const pdfMimeTypes = new Set([
-  "application/pdf",
-  "application/x-pdf",
-  "application/octet-stream",
-  "",
-]);
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -128,7 +122,7 @@ export async function POST(
   }
 
   if (
-    !pdfMimeTypes.has(file.type.toLowerCase()) &&
+    file.type.toLowerCase() !== "application/pdf" ||
     !file.name.toLowerCase().endsWith(".pdf")
   ) {
     return jsonError("Supplier quote must be a PDF", 400);
@@ -208,6 +202,9 @@ export async function POST(
     .single();
 
   if (documentError || !document) {
+    if (!existingDocument) {
+      await validation.admin.storage.from(bucketName).remove([filePath]);
+    }
     console.error("Unable to save supplier quote metadata", {
       code: documentError?.code,
       message: documentError?.message,
@@ -266,9 +263,17 @@ export async function DELETE(
     return jsonError("Supplier quote not found", 404);
   }
 
+  const expectedPath = `${session.org_id}/quotations/${id}/materials/${materialItemId}/supplier-quote.pdf`;
+  if (
+    document.storage_bucket !== bucketName ||
+    document.file_path !== expectedPath
+  ) {
+    return jsonError("Supplier quote storage metadata is invalid", 409);
+  }
+
   const { error: removeError } = await validation.admin.storage
-    .from(document.storage_bucket || bucketName)
-    .remove([document.file_path]);
+    .from(bucketName)
+    .remove([expectedPath]);
 
   if (removeError) {
     return jsonError("Unable to remove supplier quote file", 500);

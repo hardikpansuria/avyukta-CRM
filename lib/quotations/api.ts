@@ -1464,11 +1464,15 @@ export async function getQuotationDetail(
 
   for (const document of (documentsResult.data ?? []) as MaterialDocumentRow[]) {
     let signedUrl: string | null = null;
+    const expectedPath = `${orgId}/quotations/${quotationRow.id}/materials/${document.material_item_id}/supplier-quote.pdf`;
 
-    if (document.file_path) {
+    if (
+      document.storage_bucket === "quotation-documents" &&
+      document.file_path === expectedPath
+    ) {
       const { data: signedData } = await admin.storage
-        .from(document.storage_bucket || "quotation-documents")
-        .createSignedUrl(document.file_path, 10 * 60);
+        .from("quotation-documents")
+        .createSignedUrl(expectedPath, 10 * 60);
 
       signedUrl = signedData?.signedUrl ?? null;
     }
@@ -1492,11 +1496,15 @@ export async function getQuotationDetail(
   for (const document of (chargeDocumentsResult.data ??
     []) as ChargeDocumentRow[]) {
     let signedUrl: string | null = null;
+    const expectedPath = `${orgId}/quotations/${quotationRow.id}/scope-charges/${document.scope_charge_id}/supporting-document.pdf`;
 
-    if (document.file_path) {
+    if (
+      document.storage_bucket === "quotation-documents" &&
+      document.file_path === expectedPath
+    ) {
       const { data: signedData } = await admin.storage
-        .from(document.storage_bucket || "quotation-documents")
-        .createSignedUrl(document.file_path, 10 * 60);
+        .from("quotation-documents")
+        .createSignedUrl(expectedPath, 10 * 60);
 
       signedUrl = signedData?.signedUrl ?? null;
     }

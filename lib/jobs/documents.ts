@@ -1,14 +1,29 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
+
 const PURCHASE_ORDER_BUCKET = "job-purchase-order-documents";
 const INVOICE_BUCKET = "job-invoice-documents";
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
-const allowedSupportingMimeTypes = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
+const allowedDocumentTypes = new Map([
+  ["pdf", "application/pdf"],
+  ["jpg", "image/jpeg"],
+  ["jpeg", "image/jpeg"],
+  ["png", "image/png"],
+  [
+    "docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ],
+  [
+    "xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ],
 ]);
+
+function fileExtension(fileName: string) {
+  const separator = fileName.lastIndexOf(".");
+  return separator >= 0 ? fileName.slice(separator + 1).toLowerCase() : "";
+}
 
 export function sanitizeFileName(fileName: string) {
   const safe = fileName
@@ -26,13 +41,44 @@ export function validateDocument(
 ) {
   if (file.size <= 0) return "The selected file is empty.";
   if (file.size > MAX_FILE_SIZE) return "Each document must be 15 MB or less.";
-  if (options.pdfOnly && file.type !== "application/pdf") {
+  const extension = fileExtension(file.name);
+  const expectedMimeType = allowedDocumentTypes.get(extension);
+  if (options.pdfOnly && (extension !== "pdf" || file.type !== "application/pdf")) {
     return "The purchase order document must be a PDF.";
   }
-  if (!options.pdfOnly && !allowedSupportingMimeTypes.has(file.type)) {
-    return "Supporting documents must be PDF, JPEG, PNG, or WebP files.";
+  if (!options.pdfOnly && (!expectedMimeType || file.type !== expectedMimeType)) {
+    return "Supporting documents must be PDF, JPEG, PNG, DOCX, or XLSX files.";
   }
   return null;
+}
+
+export function isExpectedPurchaseOrderDocumentPath(args: {
+  path: string;
+  orgId: string;
+  purchaseOrderId: string;
+  documentId: string;
+}) {
+  return (
+    isOrgScopedStoragePath(args.path, args.orgId) &&
+    args.path.startsWith(
+      `${args.orgId}/purchase-orders/${args.purchaseOrderId}/${args.documentId}-`,
+    )
+  );
+}
+
+export function isExpectedInvoiceDocumentPath(args: {
+  path: string;
+  orgId: string;
+  jobId: string;
+  invoiceId: string;
+  documentId: string;
+}) {
+  return (
+    isOrgScopedStoragePath(args.path, args.orgId) &&
+    args.path.startsWith(
+      `${args.orgId}/jobs/${args.jobId}/invoices/${args.invoiceId}/${args.documentId}-`,
+    )
+  );
 }
 
 export async function uploadPurchaseOrderDocument(args: {

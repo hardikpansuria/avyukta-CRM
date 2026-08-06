@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
 type ProfileRow = {
   id: string;
@@ -317,7 +318,11 @@ export async function GET(
   }
 
   const logoStoragePath = customer.logo_storage_path as string | null;
-  const { data: signedLogoData } = logoStoragePath
+  const expectedLogoPrefix = `${session.org_id}/customers/${id}/logo/`;
+  const { data: signedLogoData } =
+    logoStoragePath &&
+    logoStoragePath.startsWith(expectedLogoPrefix) &&
+    isOrgScopedStoragePath(logoStoragePath, session.org_id)
     ? await admin.storage
         .from("crm-assets")
         .createSignedUrl(logoStoragePath, 60 * 60)

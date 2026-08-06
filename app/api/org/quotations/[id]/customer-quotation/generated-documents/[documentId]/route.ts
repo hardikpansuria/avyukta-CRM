@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
 const bucketName = "customer-quotation-pdfs";
 
@@ -40,9 +41,17 @@ export async function GET(
   if (documentError) return jsonError("Unable to fetch document", 500);
   if (!document) return jsonError("Generated document not found", 404);
 
+  const expectedPath = `${session.org_id}/quotations/${id}/customer-quotations/revision-${document.revision_number}/${documentId}.pdf`;
+  if (
+    document.file_path !== expectedPath ||
+    !isOrgScopedStoragePath(expectedPath, session.org_id)
+  ) {
+    return jsonError("Generated document path is invalid", 409);
+  }
+
   const { data: signedData, error: signedError } = await admin.storage
     .from(bucketName)
-    .createSignedUrl(document.file_path, 10 * 60);
+    .createSignedUrl(expectedPath, 10 * 60);
 
   if (signedError || !signedData?.signedUrl) {
     return jsonError("Unable to open generated document", 500);

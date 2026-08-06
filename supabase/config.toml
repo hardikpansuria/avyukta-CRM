@@ -412,3 +412,53 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# =========================================================
+# AVYUKTA CRM STORAGE BUCKETS
+# =========================================================
+
+[storage.buckets.crm-assets]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/svg+xml",
+  "application/pdf",
+  "image/vnd.dwg"
+]
+
+[storage.buckets.customer-quotation-pdfs]
+public = false
+file_size_limit = "50MiB"
+allowed_mime_types = [
+  "application/pdf"
+]
+
+[storage.buckets.job-invoice-documents]
+public = false
+file_size_limit = "50MiB"
+allowed_mime_types = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg"
+]
+
+[storage.buckets.job-purchase-order-documents]
+public = false
+file_size_limit = "50MiB"
+allowed_mime_types = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+]
+
+[storage.buckets.quotation-documents]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = [
+  "application/pdf"
+]
