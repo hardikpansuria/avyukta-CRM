@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   allowedQuotationRoles,
   buildQuotationContactRows,
   calculateFinalQuotationTotals,
   getOptionalDate,
-  getOptionalStatus,
   getOptionalString,
   getQuotationDetail,
   normalizeContactIds,
@@ -126,9 +124,16 @@ export async function PATCH(
 
   const { id } = await context.params;
   const input = body as Record<string, unknown>;
+
+  if (input.status !== undefined) {
+    return jsonError(
+      "Use the quotation status action to change workflow status.",
+      400,
+    );
+  }
+
   const quoteDate = getOptionalDate(input.quote_date, "Quote date");
   const expiryDate = getOptionalDate(input.expiry_date, "Expiry date");
-  const status = getOptionalStatus(input.status);
   const contactIds = normalizeContactIds(input.contact_ids);
   const scopes = normalizeScopesPayload(input.scopes);
   const finalAdjustments = normalizeFinalAdjustmentsPayload(
@@ -139,7 +144,6 @@ export async function PATCH(
   for (const result of [
     quoteDate,
     expiryDate,
-    status,
     contactIds,
     scopes,
     finalAdjustments,
@@ -248,10 +252,6 @@ export async function PATCH(
 
   if (input.sales_rep_id !== undefined) {
     updates.sales_rep_id = salesRepId ?? null;
-  }
-
-  if (input.status !== undefined) {
-    updates.status = status.value ?? "draft";
   }
 
   if (scopes.value !== undefined) {
@@ -370,14 +370,9 @@ export async function PATCH(
     }
   }
 
-  const locksAfterUpdate =
-    updates.status === "sent" && existingQuotation.status !== "sent";
-  const preSyncUpdates = { ...updates };
-  if (locksAfterUpdate) delete preSyncUpdates.status;
-
   const { data: updatedQuotation, error: updateError } = await admin
     .from("quotations")
-    .update(preSyncUpdates)
+    .update(updates)
     .eq("id", id)
     .eq("org_id", session.org_id)
     .select("*")
@@ -398,21 +393,6 @@ export async function PATCH(
     return jsonError("Unable to synchronize the customer quotation draft", 500);
   }
 
-  let quotation = updatedQuotation;
-  if (locksAfterUpdate) {
-    const { data: lockedQuotation, error: lockError } = await admin
-      .from("quotations")
-      .update({ status: "sent", updated_by: session.user.id })
-      .eq("id", id)
-      .eq("org_id", session.org_id)
-      .select("*")
-      .single();
-    if (lockError || !lockedQuotation) {
-      return jsonError("Unable to send quotation", 500);
-    }
-    quotation = lockedQuotation;
-  }
-
   const areas = [
     scopes.value !== undefined && "scope/material/labour/scope_charge",
     finalAdjustments.value !== undefined && "final_adjustment",
@@ -420,64 +400,16 @@ export async function PATCH(
     contactIds.value !== undefined && "contacts",
     "quotation",
   ].filter(Boolean);
-  await logRevisionAudit(admin, quotation, session.user.id, "revision_modified", { area: areas.join(",") });
-
-  if (
-    input.status !== undefined &&
-    status.value &&
-    status.value !== existingQuotation.status
-  ) {
-    if (status.value === "sent") {
-      await logCustomerActivity(admin, {
-        org_id: session.org_id,
-        customer_id: customerId,
-        activity_type: "quote_sent",
-        description: `Quotation ${quotation.quotation_number} sent`,
-        actor_id: session.user.id,
-        linked_record_type: "quotation",
-        linked_record_id: id,
-        linked_record_number: quotation.quotation_number,
-      });
-    }
-    await logRevisionAudit(admin, quotation, session.user.id, "status_changed", {
-      previous_status: existingQuotation.status,
-      new_status: status.value,
-    });
-  }
-
-  let operationalJob: {
-    id: string;
-    job_number?: string | null;
-    job_status?: string | null;
-  } | null = null;
-  const jobWasCreated =
-    existingQuotation.status === "sent" && status.value === "accepted";
-
-  if (jobWasCreated && quotation.quotation_series_id) {
-    const { data: job, error: jobError } = await admin
-      .from("jobs")
-      .select("id,job_number,job_status")
-      .eq("org_id", session.org_id)
-      .eq("quotation_series_id", quotation.quotation_series_id)
-      .maybeSingle();
-
-    if (jobError) {
-      console.error("Quotation accepted but job confirmation lookup failed", {
-        code: jobError.code,
-        message: jobError.message,
-      });
-    } else {
-      operationalJob = job;
-    }
-  }
+  await logRevisionAudit(
+    admin,
+    updatedQuotation,
+    session.user.id,
+    "revision_modified",
+    { area: areas.join(",") },
+  );
 
   return NextResponse.json({
-    quotation,
-    message:
-      jobWasCreated && operationalJob
-        ? "Quotation accepted and Job on the Go created"
-        : "Quotation updated",
-    job_created: jobWasCreated && Boolean(operationalJob),
-    job: operationalJob,
+    quotation: updatedQuotation,
+    message: "Quotation updated",
   });
 }

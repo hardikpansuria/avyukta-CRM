@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { allowedNextQuotationStatuses } from "@/lib/quotations/status-transitions";
 
 import {
   formatCurrency,
@@ -402,6 +403,7 @@ export default function QuotationDetailPage() {
   const revisions = detail.series_revisions ?? [];
   const auditHistory = detail.revision_audit ?? [];
   const printableDetail = detail;
+  const allowedStatuses = allowedNextQuotationStatuses(quotation.status);
 
   async function updateStatus() {
     if (!pendingStatus || isChangingStatus) return;
@@ -411,7 +413,7 @@ export default function QuotationDetailPage() {
     setIsChangingStatus(true);
 
     try {
-      const response = await fetch(`/api/org/quotations/${quotationId}`, {
+      const response = await fetch(`/api/org/quotations/${quotationId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: confirmedStatus }),
@@ -984,16 +986,16 @@ export default function QuotationDetailPage() {
             <DownloadIcon className="size-4" />
             {isDownloading ? "Preparing PDF..." : "Download PDF"}
           </Button>
-          {!quotation.is_locked ? <><Select
+          {allowedStatuses.length > 0 ? <><Select
             disabled={isChangingStatus}
-            value={statusValue}
+            key={statusValue}
             onValueChange={selectPendingStatus}
           >
             <SelectTrigger className="h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 sm:w-56">
               <SelectValue placeholder="Change status" />
             </SelectTrigger>
             <SelectContent align="start">
-              {quotationStatuses.map(([value, label]) => (
+              {quotationStatuses.filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}
                 </SelectItem>

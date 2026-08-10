@@ -26,9 +26,9 @@ import {
   type NoteSectionInput,
 } from "./final-sections";
 import {
+  formatStatus,
   PageHeader,
   QuotationStatusBadge,
-  quotationStatuses,
   SectionCard,
 } from "./quotation-ui";
 import { ScopeBuilder } from "./scope-builder";
@@ -370,7 +370,6 @@ export function QuotationForm({
         project_location: projectLocation,
         customer_rfq_number: customerRfqNumber,
         sales_rep_id: salesRepId,
-        status,
         contact_ids: selectedContactIds,
       };
       let targetQuotationId = persistedQuotationId;
@@ -520,13 +519,7 @@ export function QuotationForm({
               onChange={setExpiryDate}
             />
             <ReadOnlyField label="Revision Number" value={revisionNumber} />
-            <SelectField
-              label="Status"
-              value={status}
-              onChange={setStatus}
-              options={quotationStatuses}
-              disabled={!isPersisted}
-            />
+            <ReadOnlyField label="Status" value={formatStatus(status)} />
           </div>
         </SectionCard>
 
