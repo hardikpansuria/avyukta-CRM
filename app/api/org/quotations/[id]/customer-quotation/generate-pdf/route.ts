@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   getCustomerQuotationData,
 } from "@/lib/quotations/customer-quotation";
@@ -50,6 +51,8 @@ export async function POST(
   const session = await verifyOrgSession();
 
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "quotations", "view");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const admin = createAdminClient();

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { getQuotationDetail } from "@/lib/quotations/api";
 import type {
   ComparisonCustomerDocument,
@@ -162,6 +163,8 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const denied = await requireOrgPermission(session, "quotation_revisions", "view");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const url = new URL(request.url);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { getPurchaseOrder } from "@/lib/jobs/purchase-orders";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -14,6 +15,8 @@ export async function GET(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "purchase_orders", "view");
+  if (denied) return denied;
   const { poId } = await context.params;
   const result = await getPurchaseOrder(
     createAdminClient(),
@@ -24,4 +27,3 @@ export async function GET(
   if (!result.purchaseOrder) return jsonError("Purchase order not found", 404);
   return NextResponse.json({ purchase_order: result.purchaseOrder });
 }
-

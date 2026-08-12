@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { canAccessPublicCalendar } from "@/lib/calendar/access";
 
 import { CalendarClient } from "./calendar-client";
 
@@ -17,7 +16,6 @@ export default async function CalendarPage({
 }) {
   const session = await verifyOrgSession();
   if (!session) redirect("/login");
-  if (!canAccessPublicCalendar(session.role)) redirect("/dashboard");
   const params = await searchParams;
   const view = ["month", "week", "day"].includes(params.view ?? "")
     ? params.view!

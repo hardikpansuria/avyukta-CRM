@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  allowedQuotationRoles,
   buildQuotationContactRows,
   calculateFinalQuotationTotals,
   getOptionalDate,
@@ -39,6 +39,8 @@ export async function GET(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "quotations", "view");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const admin = createAdminClient();
@@ -109,10 +111,8 @@ export async function PATCH(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
-
-  if (!allowedQuotationRoles.has(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "quotations", "edit");
+  if (denied) return denied;
 
   let body: unknown;
 

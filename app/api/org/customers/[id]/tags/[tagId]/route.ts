@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -19,6 +20,8 @@ export async function DELETE(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "edit");
+  if (denied) return denied;
 
   if (!allowedRoles.has(session.role)) {
     return jsonError("Forbidden", 403);

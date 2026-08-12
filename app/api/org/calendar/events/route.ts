@@ -1,5 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { canAccessPublicCalendar } from "@/lib/calendar/access";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   calendarEventColumns,
   calendarJsonError,
@@ -22,7 +22,8 @@ function isoParam(value: string | null) {
 export async function GET(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
-  if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
+  const denied = await requireOrgPermission(session, "calendar", "view");
+  if (denied) return denied;
 
   const params = new URL(request.url).searchParams;
   const start = isoParam(params.get("start"));
@@ -61,7 +62,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
-  if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
+  const denied = await requireOrgPermission(session, "calendar", "create");
+  if (denied) return denied;
   let body: CalendarEventBody;
   try {
     body = (await request.json()) as CalendarEventBody;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function jsonError(error: string, status: number) {
@@ -23,6 +24,12 @@ export async function PATCH(
   if (!["draft", "sent", "payment_received"].includes(status)) {
     return jsonError("Invalid invoice status", 400);
   }
+  const denied = await requireOrgPermission(
+    session,
+    "invoices",
+    status === "payment_received" ? "record_payment" : "update_status",
+  );
+  if (denied) return denied;
   const { invoiceId } = await context.params;
   const admin = createAdminClient();
   const { data: invoice, error } = await admin
@@ -70,4 +77,3 @@ export async function PATCH(
   }
   return NextResponse.json({ invoice: updated });
 }
-

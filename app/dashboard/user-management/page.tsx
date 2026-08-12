@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { hasOrgPermission } from "@/lib/auth/permissions";
 
 import { UserManagementClient } from "./user-management-client";
 
@@ -11,8 +12,8 @@ export default async function UserManagementPage() {
     redirect("/login");
   }
 
-  if (session.role !== "admin") {
-    redirect("/dashboard");
+  if (!(await hasOrgPermission(session, "settings", "manage"))) {
+    redirect("/dashboard/access-denied?module=settings");
   }
 
   return <UserManagementClient />;

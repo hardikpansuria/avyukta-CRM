@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { authorizeOrgRequest } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type UpdateEmployeeBody = {
@@ -19,15 +19,9 @@ export async function PATCH(
   request: Request,
   context: RouteContext<"/api/org/user-management/[id]">,
 ) {
-  const session = await verifyOrgSession();
-
-  if (!session) {
-    return jsonError("Unauthorized", 401);
-  }
-
-  if (session.role !== "admin") {
-    return jsonError("Forbidden", 403);
-  }
+  const auth = await authorizeOrgRequest("settings", "manage");
+  if ("response" in auth) return auth.response;
+  const session = auth.session;
 
   const { id } = await context.params;
   let body: UpdateEmployeeBody;
@@ -73,6 +67,12 @@ export async function PATCH(
     .maybeSingle();
 
   if (error) {
+    if (error.code === "23514") {
+      return jsonError(
+        "This change would remove the organization's last active Settings manager.",
+        409,
+      );
+    }
     return jsonError("Unable to update employee", 500);
   }
 

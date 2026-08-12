@@ -1,4 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { canAccessPublicCalendar } from "@/lib/calendar/access";
 import { calendarJsonError, checkCalendarConflicts, getActiveCalendarEmployees, isEventType, parseInterval } from "@/lib/calendar/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -6,6 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function GET(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "calendar", "view");
+  if (denied) return denied;
   if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
   const params = new URL(request.url).searchParams;
   const eventType = params.get("eventType") ?? "job_site_assignment";
@@ -36,4 +39,3 @@ export async function GET(request: Request) {
     })),
   });
 }
-

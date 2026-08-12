@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { getOutstandingReceivables } from "@/lib/invoices/outstanding";
 import { renderOutstandingPdf } from "@/lib/invoices/outstanding-pdf";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -12,6 +13,8 @@ function jsonError(error: string, status: number) {
 export async function GET(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "invoices", "view");
+  if (denied) return denied;
   const result = await getOutstandingReceivables(
     createAdminClient(),
     session.org_id,

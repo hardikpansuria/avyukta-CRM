@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
 
@@ -102,6 +103,8 @@ export async function POST(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "supplier_quotations", "create");
+  if (denied) return denied;
 
   const { id, materialItemId } = await context.params;
   const validation = await verifyQuotationMaterial(
@@ -235,6 +238,8 @@ export async function DELETE(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "supplier_quotations", "delete");
+  if (denied) return denied;
 
   const { id, materialItemId } = await context.params;
   const validation = await verifyQuotationMaterial(

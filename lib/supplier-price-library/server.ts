@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import {
-  canAdminSupplierPriceLibrary,
-  canEditSupplierPriceLibrary,
-  canViewSupplierPriceLibrary,
-} from "@/lib/supplier-price-library/access";
+import { requireOrgPermission, type PermissionAction } from "@/lib/auth/permissions";
 
 export type SupplierPriceSession = NonNullable<
   Awaited<ReturnType<typeof verifyOrgSession>>
@@ -16,19 +12,16 @@ export function jsonError(error: string, status: number, details?: object) {
 }
 
 export async function requireSupplierPriceSession(
-  permission: "view" | "edit" | "admin" = "view",
+  permission: Extract<PermissionAction, "view" | "create" | "edit" | "delete"> = "view",
 ) {
   const session = await verifyOrgSession();
   if (!session) return { response: jsonError("Unauthorized", 401) } as const;
-
-  const allowed =
-    permission === "admin"
-      ? canAdminSupplierPriceLibrary(session.role)
-      : permission === "edit"
-        ? canEditSupplierPriceLibrary(session.role)
-        : canViewSupplierPriceLibrary(session.role);
-
-  if (!allowed) return { response: jsonError("Forbidden", 403) } as const;
+  const denied = await requireOrgPermission(
+    session,
+    "supplier_price_library",
+    permission,
+  );
+  if (denied) return { response: denied } as const;
   return { session } as const;
 }
 

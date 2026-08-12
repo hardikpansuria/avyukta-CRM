@@ -1,4 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { canAccessEmployeeDirectory } from "@/lib/employees/access";
 import {
   jsonError,
@@ -13,6 +14,8 @@ export async function POST(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "employees", "edit");
+  if (denied) return denied;
   if (!canAccessEmployeeDirectory(session.role)) {
     return jsonError("Forbidden", 403);
   }

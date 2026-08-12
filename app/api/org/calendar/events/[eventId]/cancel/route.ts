@@ -1,4 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { canAccessPublicCalendar } from "@/lib/calendar/access";
 import { calendarEventColumns, calendarJsonError, hydrateCalendarEvents } from "@/lib/calendar/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -9,6 +10,8 @@ export async function POST(
 ) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "calendar", "edit");
+  if (denied) return denied;
   if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
   const { eventId } = await context.params;
   const admin = createAdminClient();
@@ -30,4 +33,3 @@ export async function POST(
   const hydrated = await hydrateCalendarEvents(admin, session.org_id, [data]);
   return Response.json({ event: hydrated.events[0] });
 }
-

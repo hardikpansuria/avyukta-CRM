@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { ReactNode } from "react";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { getEffectivePermissionKeys, type PermissionModule } from "@/lib/auth/permissions";
 
+import { AccessDeniedWarning } from "./access-denied-warning";
 import { DashboardNavigation } from "./dashboard-navigation";
 import { SignOutButton } from "./sign-out-button";
 
@@ -11,90 +13,38 @@ export const dynamic = "force-dynamic";
 type DashboardLink = {
   href: string;
   label: string;
-  children?: Array<{ href: string; label: string }>;
+  module: PermissionModule;
+  children?: Array<{ href: string; label: string; module: PermissionModule }>;
 };
 
-const roleLinks: Record<string, DashboardLink[]> = {
-  admin: [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/dashboard/customers", label: "Customers" },
-    { href: "/dashboard/quotations", label: "Quotations" },
+const dashboardLinks: DashboardLink[] = [
+    { href: "/dashboard", label: "Dashboard", module: "dashboard" },
+    { href: "/dashboard/customers", label: "Customers", module: "customers" },
+    { href: "/dashboard/quotations", label: "Quotations", module: "quotations" },
     {
       href: "/dashboard/jobs",
       label: "Job on the Go",
+      module: "jobs",
       children: [
-        { href: "/dashboard/jobs/po-pending", label: "PO Pending" },
-        { href: "/dashboard/jobs/purchase-orders", label: "PO Received" },
+        { href: "/dashboard/jobs/po-pending", label: "PO Pending", module: "jobs" },
+        { href: "/dashboard/jobs/purchase-orders", label: "PO Received", module: "purchase_orders" },
       ],
     },
-    { href: "/dashboard/invoices", label: "Invoice" },
-    { href: "/dashboard/employees", label: "Employee List" },
-    { href: "/dashboard/calendar", label: "Public Calendar" },
+    { href: "/dashboard/invoices", label: "Invoice", module: "invoices" },
+    { href: "/dashboard/employees", label: "Employee List", module: "employees" },
+    { href: "/dashboard/calendar", label: "Public Calendar", module: "calendar" },
     {
       href: "/dashboard/supplier-price-library",
       label: "Supplier Price Library",
+      module: "supplier_price_library",
       children: [
-        { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
-        { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
-        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
+        { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers", module: "supplier_price_library" },
+        { href: "/dashboard/supplier-price-library/categories", label: "Categories", module: "supplier_price_library" },
+        { href: "/dashboard/supplier-price-library/materials", label: "Materials", module: "supplier_price_library" },
       ],
     },
-    { href: "/dashboard/user-management", label: "User Management" },
-  ],
-  accountant: [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/dashboard/customers", label: "Customers" },
-    { href: "/dashboard/quotations", label: "Quotations" },
-    {
-      href: "/dashboard/jobs",
-      label: "Job on the Go",
-      children: [
-        { href: "/dashboard/jobs/po-pending", label: "PO Pending" },
-        { href: "/dashboard/jobs/purchase-orders", label: "PO Received" },
-      ],
-    },
-    { href: "/dashboard/invoices", label: "Invoice" },
-    { href: "/dashboard/employees", label: "Employee List" },
-    { href: "/dashboard/calendar", label: "Public Calendar" },
-    {
-      href: "/dashboard/supplier-price-library",
-      label: "Supplier Price Library",
-      children: [
-        { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
-        { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
-        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
-      ],
-    },
-  ],
-  sales: [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/dashboard/customers", label: "Customers" },
-    { href: "/dashboard/quotations", label: "Quotations" },
-    {
-      href: "/dashboard/jobs",
-      label: "Job on the Go",
-      children: [
-        { href: "/dashboard/jobs/po-pending", label: "PO Pending" },
-        { href: "/dashboard/jobs/purchase-orders", label: "PO Received" },
-      ],
-    },
-    { href: "/dashboard/invoices", label: "Invoice" },
-    { href: "/dashboard/employees", label: "Employee List" },
-    { href: "/dashboard/calendar", label: "Public Calendar" },
-    {
-      href: "/dashboard/supplier-price-library",
-      label: "Supplier Price Library",
-      children: [
-        { href: "/dashboard/supplier-price-library/suppliers", label: "Suppliers" },
-        { href: "/dashboard/supplier-price-library/categories", label: "Categories" },
-        { href: "/dashboard/supplier-price-library/materials", label: "Materials" },
-      ],
-    },
-  ],
-};
-
-roleLinks.org_admin = roleLinks.admin;
-roleLinks.accounts = roleLinks.accountant;
+    { href: "/dashboard/user-management", label: "Settings", module: "settings" },
+];
 
 export default async function DashboardLayout({
   children,
@@ -107,9 +57,19 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  const links = roleLinks[session.role as keyof typeof roleLinks] ?? [
-    { href: "/dashboard", label: "Dashboard" },
-  ];
+  const permissions = await getEffectivePermissionKeys(session);
+  const links = dashboardLinks
+    .filter((link) =>
+      permissions.has(
+        link.module === "settings" ? "settings.manage" : `${link.module}.view`,
+      ),
+    )
+    .map((link) => ({
+      ...link,
+      children: link.children?.filter((child) =>
+        permissions.has(`${child.module}.view`),
+      ),
+    }));
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
@@ -145,6 +105,7 @@ export default async function DashboardLayout({
       </aside>
 
       <div className="md:pl-64">
+        <AccessDeniedWarning />
         <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur md:hidden dark:border-zinc-800 dark:bg-zinc-950/95">
           <div className="flex h-16 items-center justify-between gap-3 px-4">
             <div className="flex min-w-0 items-center gap-3">

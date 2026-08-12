@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const allowedStatuses = new Set(["work_in_process", "work_completed"]);
@@ -15,6 +16,8 @@ export async function PATCH(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "jobs", "update_status");
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await request.json();
@@ -54,4 +57,3 @@ export async function PATCH(
   }
   return NextResponse.json({ job: updated });
 }
-

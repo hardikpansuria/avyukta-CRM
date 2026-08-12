@@ -1,4 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { canAccessEmployeeDirectory } from "@/lib/employees/access";
 import { jsonError, optionalText } from "@/lib/employees/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -9,6 +10,8 @@ export async function PATCH(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "employees", "edit");
+  if (denied) return denied;
   if (!canAccessEmployeeDirectory(session.role)) {
     return jsonError("Forbidden", 403);
   }
@@ -70,6 +73,8 @@ export async function DELETE(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "employees", "delete");
+  if (denied) return denied;
   if (!canAccessEmployeeDirectory(session.role)) {
     return jsonError("Forbidden", 403);
   }

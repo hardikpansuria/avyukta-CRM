@@ -38,7 +38,7 @@ export function DashboardNavigation({
   links: Array<{
     href: string;
     label: string;
-    children?: Array<{ href: string; label: string }>;
+    children?: Array<{ href: string; label: string; module: string }>;
   }>;
   mobile?: boolean;
 }) {

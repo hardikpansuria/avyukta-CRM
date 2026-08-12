@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type CustomerRow = {
@@ -118,7 +119,6 @@ type ContactInsert = {
   created_by: string;
 };
 
-const allowedRoles = new Set(["admin", "sales", "accountant"]);
 const customerStatuses = new Set([
   "prospect",
   "active",
@@ -232,6 +232,8 @@ export async function GET(request: Request) {
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "view");
+  if (denied) return denied;
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim() ?? "";
@@ -506,10 +508,8 @@ export async function POST(request: Request) {
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
-
-  if (!allowedRoles.has(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "customers", "create");
+  if (denied) return denied;
 
   let body: CreateCustomerBody;
 

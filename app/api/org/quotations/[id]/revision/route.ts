@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { getQuotationDetail } from "@/lib/quotations/api";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -18,6 +19,8 @@ export async function POST(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "quotations", "revise");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const admin = createAdminClient();

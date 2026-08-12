@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { getJobDetail } from "@/lib/jobs/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -14,6 +15,8 @@ export async function GET(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "jobs", "view");
+  if (denied) return denied;
 
   const { jobId } = await context.params;
   const admin = createAdminClient();

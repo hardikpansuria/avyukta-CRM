@@ -1,4 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { canAccessPublicCalendar } from "@/lib/calendar/access";
 import { calendarJsonError, getActiveCalendarEmployees, listCalendarJobs } from "@/lib/calendar/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -6,6 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function GET() {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "calendar", "view");
+  if (denied) return denied;
   if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
   const admin = createAdminClient();
   const [employees, jobs, customers] = await Promise.all([

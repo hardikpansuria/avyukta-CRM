@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireSupplierPriceSession("edit"); if ("response" in auth) return auth.response; let body: { category_name?: unknown }; try { body = await request.json(); } catch { return jsonError("Invalid request body", 400); }
+  const auth = await requireSupplierPriceSession("create"); if ("response" in auth) return auth.response; let body: { category_name?: unknown }; try { body = await request.json(); } catch { return jsonError("Invalid request body", 400); }
   const name = text(body.category_name, true); if (!name) return jsonError("Category name is required", 400);
   const { data, error } = await createAdminClient().from("supplier_price_categories").insert({ org_id: auth.session.org_id, category_name: name, created_by: auth.session.user.id, updated_by: auth.session.user.id }).select("id,category_name,is_archived,created_at,updated_at").single();
   if (error) { if (isDuplicateError(error)) return jsonError("A category with this name already exists.", 409); logDatabaseError("Unable to create category", error); return jsonError("Unable to create category", 500); }

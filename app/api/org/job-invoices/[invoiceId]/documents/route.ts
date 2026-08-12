@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   uploadInvoiceDocument,
   validateDocument,
@@ -17,6 +18,8 @@ export async function POST(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "invoices", "edit");
+  if (denied) return denied;
   const { invoiceId } = await context.params;
   const admin = createAdminClient();
   const { data: invoice, error } = await admin
@@ -45,4 +48,3 @@ export async function POST(
   if (result.error) return jsonError("Unable to upload invoice PDF", 500);
   return NextResponse.json({ document: result.document }, { status: 201 });
 }
-

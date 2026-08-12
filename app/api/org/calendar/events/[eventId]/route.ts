@@ -1,5 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { canAccessPublicCalendar } from "@/lib/calendar/access";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   calendarEventColumns,
   calendarJsonError,
@@ -25,7 +25,8 @@ export async function GET(
 ) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
-  if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
+  const denied = await requireOrgPermission(session, "calendar", "view");
+  if (denied) return denied;
   const { eventId } = await context.params;
   const admin = createAdminClient();
   const { data, error } = await getEvent(admin, session.org_id, eventId);
@@ -71,7 +72,8 @@ export async function PATCH(
 ) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
-  if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
+  const denied = await requireOrgPermission(session, "calendar", "edit");
+  if (denied) return denied;
   const { eventId } = await context.params;
   let patch: CalendarEventBody;
   try {
@@ -216,7 +218,8 @@ export async function DELETE(
 ) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
-  if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
+  const denied = await requireOrgPermission(session, "calendar", "delete");
+  if (denied) return denied;
   const { eventId } = await context.params;
   const admin = createAdminClient();
   const { data: existing, error } = await getEvent(admin, session.org_id, eventId);

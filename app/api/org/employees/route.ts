@@ -1,6 +1,6 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
-  canAccessEmployeeDirectory,
   isEmployeeDirectoryRole,
   isEmployeeDirectoryStatus,
 } from "@/lib/employees/access";
@@ -45,9 +45,8 @@ function safeSearchValue(value: string) {
 export async function GET(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
-  if (!canAccessEmployeeDirectory(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "employees", "view");
+  if (denied) return denied;
 
   const params = new URL(request.url).searchParams;
   const search = safeSearchValue(params.get("search")?.trim() ?? "");
@@ -122,9 +121,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
-  if (!canAccessEmployeeDirectory(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "employees", "create");
+  if (denied) return denied;
 
   let body: CreateEmployeeBody;
   try {

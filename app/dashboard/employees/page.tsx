@@ -1,13 +1,11 @@
 import { redirect } from "next/navigation";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { canAccessEmployeeDirectory } from "@/lib/employees/access";
 
 import { EmployeesClient } from "./employees-client";
 
 export default async function EmployeesPage() {
   const session = await verifyOrgSession();
   if (!session) redirect("/login");
-  if (!canAccessEmployeeDirectory(session.role)) redirect("/dashboard");
   return <EmployeesClient />;
 }

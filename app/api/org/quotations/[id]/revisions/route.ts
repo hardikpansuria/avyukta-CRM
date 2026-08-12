@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   cloneQuotationRevisionData,
   revisionIdFromRpc,
@@ -18,6 +19,8 @@ export async function GET(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "quotation_revisions", "view");
+  if (denied) return denied;
   const { id } = await context.params;
   const admin = createAdminClient();
   const { data: current, error: currentError } = await admin
@@ -58,6 +61,8 @@ export async function POST(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "quotations", "revise");
+  if (denied) return denied;
   const body = await request.json().catch(() => null) as { purpose?: unknown } | null;
   const purpose = typeof body?.purpose === "string" ? body.purpose.trim() : "";
   if (!purpose) return jsonError("Purpose of revision is required", 400);

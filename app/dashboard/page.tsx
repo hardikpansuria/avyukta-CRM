@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { hasOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import {
@@ -39,6 +40,9 @@ export default async function DashboardPage() {
 
   if (!session) {
     redirect("/login");
+  }
+  if (!(await hasOrgPermission(session, "dashboard", "view"))) {
+    redirect("/dashboard/access-denied?module=dashboard");
   }
 
   const admin = createAdminClient();

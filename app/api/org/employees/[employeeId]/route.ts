@@ -1,6 +1,6 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
-  canAccessEmployeeDirectory,
   isEmployeeDirectoryRole,
   isEmployeeDirectoryStatus,
 } from "@/lib/employees/access";
@@ -37,9 +37,8 @@ export async function GET(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
-  if (!canAccessEmployeeDirectory(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "employees", "view");
+  if (denied) return denied;
 
   const { employeeId } = await context.params;
   const admin = createAdminClient();
@@ -70,9 +69,8 @@ export async function PATCH(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
-  if (!canAccessEmployeeDirectory(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "employees", "edit");
+  if (denied) return denied;
 
   const { employeeId } = await context.params;
   let body: UpdateEmployeeBody;

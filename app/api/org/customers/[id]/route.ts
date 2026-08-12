@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
@@ -66,7 +67,6 @@ type UpdateCustomerBody = {
   };
 };
 
-const allowedRoles = new Set(["admin", "sales", "accountant"]);
 const customerStatuses = new Set([
   "prospect",
   "active",
@@ -190,6 +190,8 @@ export async function GET(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "view");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const admin = createAdminClient();
@@ -372,10 +374,8 @@ export async function PATCH(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
-
-  if (!allowedRoles.has(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "customers", "edit");
+  if (denied) return denied;
 
   const { id } = await context.params;
   let body: UpdateCustomerBody;

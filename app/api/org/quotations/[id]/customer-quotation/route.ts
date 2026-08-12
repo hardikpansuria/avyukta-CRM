@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   getCustomerQuotationData,
   normalizeCustomerQuotationDraft,
@@ -71,6 +72,8 @@ export async function GET(
   const session = await verifyOrgSession();
 
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "quotations", "view");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const admin = createAdminClient();
@@ -103,6 +106,8 @@ export async function POST(
   const session = await verifyOrgSession();
 
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "quotations", "edit");
+  if (denied) return denied;
 
   const body = await parseBody(request);
   if (!body) return jsonError("Invalid request body", 400);
@@ -208,6 +213,8 @@ export async function PATCH(
   const session = await verifyOrgSession();
 
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "quotations", "edit");
+  if (denied) return denied;
 
   const body = await parseBody(request);
   if (!body) return jsonError("Invalid request body", 400);

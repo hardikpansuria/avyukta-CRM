@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { getInvoiceDetail, numeric } from "@/lib/invoices/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -14,6 +15,8 @@ export async function GET(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "invoices", "view");
+  if (denied) return denied;
   const { invoiceId } = await context.params;
   const result = await getInvoiceDetail(
     createAdminClient(),
@@ -31,6 +34,8 @@ export async function PATCH(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "invoices", "edit");
+  if (denied) return denied;
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;
@@ -113,4 +118,3 @@ export async function PATCH(
   if (updateError || !updated) return jsonError("Unable to update invoice", 500);
   return NextResponse.json({ invoice: updated });
 }
-

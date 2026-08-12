@@ -4,11 +4,39 @@ import { FormEvent, useEffect, useState } from "react";
 
 type Employee = {
   id: string;
+  user_id: string;
   full_name: string | null;
   email: string | null;
   role: string;
   status: string;
   member_since: string | null;
+};
+
+type PermissionDefinition = {
+  id: string;
+  action_key: string;
+  display_name: string;
+  sort_order: number;
+};
+
+type PermissionModule = {
+  id: string;
+  module_key: string;
+  display_name: string;
+  sort_order: number;
+  permission_definitions: PermissionDefinition[];
+};
+
+type RoleDefault = {
+  role_key: string;
+  permission_id: string;
+  allowed: boolean;
+};
+
+type PermissionOverride = {
+  user_id: string;
+  permission_id: string;
+  allowed: boolean;
 };
 
 const INVITE_ROLES = ["accountant", "sales"];
@@ -42,6 +70,11 @@ export function UserManagementClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [isInviting, setIsInviting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [permissionModules, setPermissionModules] = useState<PermissionModule[]>([]);
+  const [roleDefaults, setRoleDefaults] = useState<RoleDefault[]>([]);
+  const [overrides, setOverrides] = useState<PermissionOverride[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [savingPermissionId, setSavingPermissionId] = useState<string | null>(null);
 
   async function loadEmployees() {
     setError(null);
@@ -69,9 +102,31 @@ export function UserManagementClient() {
     }
   }
 
+  async function loadPermissions() {
+    try {
+      const response = await fetch("/api/org/permissions", { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as {
+        modules?: PermissionModule[];
+        role_defaults?: RoleDefault[];
+        overrides?: PermissionOverride[];
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        setError(payload?.error ?? "Unable to load permissions.");
+        return;
+      }
+      setPermissionModules(payload?.modules ?? []);
+      setRoleDefaults(payload?.role_defaults ?? []);
+      setOverrides(payload?.overrides ?? []);
+    } catch {
+      setError("Unable to load permissions.");
+    }
+  }
+
   useEffect(() => {
     queueMicrotask(() => {
       void loadEmployees();
+      void loadPermissions();
     });
   }, []);
 
@@ -113,6 +168,62 @@ export function UserManagementClient() {
     } finally {
       setIsInviting(false);
     }
+  }
+
+  async function savePermission(
+    userId: string,
+    permissionId: string,
+    allowed: boolean,
+  ) {
+    setError(null);
+    setMessage(null);
+    setSavingPermissionId(permissionId);
+    try {
+      const response = await fetch("/api/org/permissions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, permission_id: permissionId, allowed }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        override?: PermissionOverride;
+        error?: string;
+      } | null;
+      if (!response.ok || !payload?.override) {
+        setError(payload?.error ?? "Unable to save permission.");
+        return;
+      }
+      setOverrides((current) => [
+        ...current.filter(
+          (item) =>
+            item.user_id !== userId || item.permission_id !== permissionId,
+        ),
+        payload.override!,
+      ]);
+      setMessage("Custom permission saved.");
+    } catch {
+      setError("Unable to save permission.");
+    } finally {
+      setSavingPermissionId(null);
+    }
+  }
+
+  async function resetPermissions(userId: string) {
+    setError(null);
+    setMessage(null);
+    const response = await fetch(
+      `/api/org/permissions?user_id=${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+    );
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    if (!response.ok) {
+      setError(payload?.error ?? "Unable to reset permissions.");
+      return;
+    }
+    setOverrides((current) => current.filter((item) => item.user_id !== userId));
+    setMessage(payload?.message ?? "Permissions reset to role defaults.");
   }
 
   async function updateEmployee(
@@ -322,6 +433,134 @@ export function UserManagementClient() {
           </table>
         </div>
       </section>
+
+      <section className="mt-8 rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Module permissions</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Inherit role defaults, or create an explicit grant or denial for a user.
+            </p>
+          </div>
+          <select
+            className="h-10 min-w-64 rounded-md border border-zinc-300 bg-white px-3 text-sm"
+            value={selectedUserId}
+            onChange={(event) => setSelectedUserId(event.target.value)}
+          >
+            <option value="">Select a user</option>
+            {employees.map((employee) => (
+              <option key={employee.user_id} value={employee.user_id}>
+                {employee.full_name ?? employee.email ?? employee.user_id} ({employee.role})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedUserId ? (
+          <PermissionEditor
+            employee={employees.find((employee) => employee.user_id === selectedUserId)!}
+            modules={permissionModules}
+            roleDefaults={roleDefaults}
+            overrides={overrides}
+            savingPermissionId={savingPermissionId}
+            onSave={savePermission}
+            onReset={resetPermissions}
+          />
+        ) : (
+          <p className="mt-6 rounded-md bg-zinc-50 p-4 text-sm text-zinc-600">
+            Select a user to review effective permissions.
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PermissionEditor({
+  employee,
+  modules,
+  roleDefaults,
+  overrides,
+  savingPermissionId,
+  onSave,
+  onReset,
+}: {
+  employee: Employee;
+  modules: PermissionModule[];
+  roleDefaults: RoleDefault[];
+  overrides: PermissionOverride[];
+  savingPermissionId: string | null;
+  onSave: (userId: string, permissionId: string, allowed: boolean) => Promise<void>;
+  onReset: (userId: string) => Promise<void>;
+}) {
+  const defaults = new Map(
+    roleDefaults
+      .filter((item) => item.role_key === employee.role)
+      .map((item) => [item.permission_id, item.allowed]),
+  );
+  const userOverrides = new Map(
+    overrides
+      .filter((item) => item.user_id === employee.user_id)
+      .map((item) => [item.permission_id, item.allowed]),
+  );
+
+  return (
+    <div className="mt-6 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-zinc-50 p-3 text-sm">
+        <span>
+          Role: <strong className="capitalize">{employee.role}</strong>. Green/Red choices are custom overrides.
+        </span>
+        <button
+          className="rounded-md border border-zinc-300 bg-white px-3 py-2 font-medium hover:bg-zinc-100"
+          onClick={() => void onReset(employee.user_id)}
+          type="button"
+        >
+          Reset to Role Defaults
+        </button>
+      </div>
+      {modules.map((module) => (
+        <div className="rounded-md border border-zinc-200 p-4" key={module.id}>
+          <h3 className="font-semibold">{module.display_name}</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {module.permission_definitions.map((permission) => {
+              const inherited = defaults.get(permission.id) ?? false;
+              const custom = userOverrides.get(permission.id);
+              const effective = custom ?? inherited;
+              return (
+                <div className="rounded-md bg-zinc-50 p-3" key={permission.id}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{permission.display_name}</span>
+                    <span className={effective ? "text-xs text-emerald-700" : "text-xs text-red-700"}>
+                      {effective ? "Allowed" : "Denied"}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex gap-1">
+                    <span className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-center text-xs">
+                      {custom === undefined ? `Inherited: ${inherited ? "allow" : "deny"}` : "Inherited"}
+                    </span>
+                    <button
+                      className={`rounded border px-2 py-1 text-xs ${custom === true ? "border-emerald-600 bg-emerald-50 text-emerald-800" : "border-zinc-200 bg-white"}`}
+                      disabled={savingPermissionId === permission.id}
+                      onClick={() => void onSave(employee.user_id, permission.id, true)}
+                      type="button"
+                    >
+                      Grant
+                    </button>
+                    <button
+                      className={`rounded border px-2 py-1 text-xs ${custom === false ? "border-red-600 bg-red-50 text-red-800" : "border-zinc-200 bg-white"}`}
+                      disabled={savingPermissionId === permission.id}
+                      onClick={() => void onSave(employee.user_id, permission.id, false)}
+                      type="button"
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { listInvoices, numeric } from "@/lib/invoices/data";
 import {
   uploadInvoiceDocument,
@@ -15,6 +16,8 @@ function jsonError(error: string, status: number) {
 export async function GET(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "invoices", "view");
+  if (denied) return denied;
   const params = new URL(request.url).searchParams;
   const result = await listInvoices(createAdminClient(), session.org_id, {
     customer: params.get("customer")?.trim() ?? "",
@@ -33,6 +36,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "invoices", "create");
+  if (denied) return denied;
   let form: FormData;
   try {
     form = await request.formData();

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { findAuthUserByEmail } from "@/lib/auth/find-auth-user-by-email";
-import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { authorizeOrgRequest } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type CreateEmployeeBody = {
@@ -23,6 +23,7 @@ type ProfileEmbed =
 
 type MembershipRow = {
   id: string;
+  user_id: string;
   role: string;
   status: string;
   created_at?: string | null;
@@ -44,15 +45,9 @@ function getProfile(profile: ProfileEmbed) {
 }
 
 export async function GET() {
-  const session = await verifyOrgSession();
-
-  if (!session) {
-    return jsonError("Unauthorized", 401);
-  }
-
-  if (session.role !== "admin") {
-    return jsonError("Forbidden", 403);
-  }
+  const auth = await authorizeOrgRequest("settings", "manage");
+  if ("response" in auth) return auth.response;
+  const session = auth.session;
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -70,6 +65,7 @@ export async function GET() {
 
     return {
       id: membership.id,
+      user_id: membership.user_id,
       full_name: profile?.full_name ?? null,
       email: profile?.email ?? null,
       role: membership.role,
@@ -82,15 +78,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await verifyOrgSession();
-
-  if (!session) {
-    return jsonError("Unauthorized", 401);
-  }
-
-  if (session.role !== "admin") {
-    return jsonError("Forbidden", 403);
-  }
+  const auth = await authorizeOrgRequest("settings", "manage");
+  if ("response" in auth) return auth.response;
+  const session = auth.session;
 
   let body: CreateEmployeeBody;
 

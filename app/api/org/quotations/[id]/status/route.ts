@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { logCustomerActivity } from "@/lib/customers/activity";
-import { allowedQuotationRoles } from "@/lib/quotations/api";
 import { logRevisionAudit } from "@/lib/quotations/revisions";
 import { canTransitionQuotationStatus } from "@/lib/quotations/status-transitions";
 import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
@@ -19,7 +19,8 @@ export async function PATCH(
   const session = await verifyOrgSession();
 
   if (!session) return jsonError("Unauthorized", 401);
-  if (!allowedQuotationRoles.has(session.role)) return jsonError("Forbidden", 403);
+  const denied = await requireOrgPermission(session, "quotations", "edit");
+  if (denied) return denied;
 
   let body: unknown;
   try {

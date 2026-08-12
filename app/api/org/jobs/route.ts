@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { listJobs } from "@/lib/jobs/data";
 import type { JobStatus } from "@/lib/jobs/types";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -14,6 +15,8 @@ const statuses = new Set<JobStatus>([
 export async function GET(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const denied = await requireOrgPermission(session, "jobs", "view");
+  if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const statusValue = searchParams.get("status")?.trim() ?? "";
   const pageValue = Number(searchParams.get("page") ?? 1);

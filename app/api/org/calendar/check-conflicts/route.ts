@@ -1,4 +1,5 @@
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { canAccessPublicCalendar } from "@/lib/calendar/access";
 import { calendarJsonError, checkCalendarConflicts, isEventType, parseInterval, uniqueIds, validateActiveEmployees } from "@/lib/calendar/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -6,6 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function POST(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return calendarJsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "calendar", "create");
+  if (denied) return denied;
   if (!canAccessPublicCalendar(session.role)) return calendarJsonError("Forbidden", 403);
   let body: Record<string, unknown>;
   try { body = (await request.json()) as Record<string, unknown>; }
@@ -29,4 +32,3 @@ export async function POST(request: Request) {
   if (result.error) return calendarJsonError("Unable to check employee availability", 500);
   return Response.json({ conflicts: result.conflicts });
 }
-

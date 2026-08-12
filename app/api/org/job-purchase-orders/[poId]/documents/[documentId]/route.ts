@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   isExpectedPurchaseOrderDocumentPath,
   jobDocumentBuckets,
@@ -19,6 +20,8 @@ export async function GET(
 ) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "purchase_orders", "view");
+  if (denied) return denied;
   const { poId, documentId } = await context.params;
   const admin = createAdminClient();
   const { data: document, error } = await admin

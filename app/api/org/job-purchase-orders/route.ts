@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   uploadPurchaseOrderDocument,
   validateDocument,
@@ -8,8 +9,6 @@ import {
 import { listPurchaseOrders } from "@/lib/jobs/purchase-orders";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-const allowedRoles = new Set(["admin", "sales", "accountant"]);
 
 type AllocationInput = {
   job_id?: unknown;
@@ -43,6 +42,8 @@ function parsePurchaseOrderId(value: unknown): string {
 export async function GET(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "purchase_orders", "view");
+  if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim() ?? "";
   const parsedPage = Number(searchParams.get("page") ?? 1);
@@ -74,7 +75,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401);
-  if (!allowedRoles.has(session.role)) return jsonError("Forbidden", 403);
+  const denied = await requireOrgPermission(session, "purchase_orders", "attach_po");
+  if (denied) return denied;
 
   let formData: FormData;
   try {

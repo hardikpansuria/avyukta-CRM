@@ -8,7 +8,7 @@ type OrgContext = {
   org_id: string;
 };
 
-type OrgSession = {
+export type OrgSession = {
   user: User;
   org_id: string;
   role: string;
