@@ -60,6 +60,15 @@ type JobDetail = {
     invoice_amount: number | string;
     status: string;
   }>;
+  invoice_requests: Array<{
+    id: string;
+    request_number: number | string;
+    invoice_type: string;
+    requested_amount: number | string;
+    currency: string;
+    status: string;
+    created_at: string;
+  }>;
   status_history: Array<{
     id: string;
     previous_status?: string | null;
@@ -311,19 +320,40 @@ export default function JobDetailPage() {
       </div>
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Invoices</CardTitle>
+          <CardTitle>Invoice Requests</CardTitle>
           {job.purchase_order ? (
             <Button
               nativeButton={false}
-              render={
-                <Link href={`/dashboard/invoices/new?jobId=${job.id}`} />
-              }
+              render={<Link href={`/dashboard/invoice-requests/new?jobId=${job.id}`} />}
               size="sm"
             >
               <FilePlus2Icon />
-              Create Invoice
+              Request Invoice
             </Button>
           ) : null}
+        </CardHeader>
+        <CardContent>
+          {job.invoice_requests.length ? (
+            <Table>
+              <TableHeader><TableRow><TableHead>Request</TableHead><TableHead>Type</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead>Created</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {job.invoice_requests.map((request) => (
+                  <TableRow key={request.id}>
+                    <TableCell><Link className="font-medium hover:underline" href={`/dashboard/invoice-requests/${request.id}`}>IR-{String(request.request_number).padStart(3, "0")}</Link></TableCell>
+                    <TableCell>{title(request.invoice_type)}</TableCell>
+                    <TableCell>{money(request.requested_amount, request.currency)}</TableCell>
+                    <TableCell><Badge variant="outline">{title(request.status)}</Badge></TableCell>
+                    <TableCell>{new Date(request.created_at).toLocaleDateString("en-CA")}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : <p className="text-sm text-zinc-500">No invoice requests submitted.</p>}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Invoices</CardTitle>
         </CardHeader>
         <CardContent>
           {job.invoices.length ? (
@@ -440,4 +470,3 @@ export default function JobDetailPage() {
     </div>
   );
 }
-

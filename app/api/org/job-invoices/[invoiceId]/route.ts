@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { requireOrgPermission } from "@/lib/auth/permissions";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
 import { getInvoiceDetail, numeric } from "@/lib/invoices/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -18,14 +18,22 @@ export async function GET(
   const denied = await requireOrgPermission(session, "invoices", "view");
   if (denied) return denied;
   const { invoiceId } = await context.params;
-  const result = await getInvoiceDetail(
-    createAdminClient(),
-    session.org_id,
-    invoiceId,
-  );
+  const [result, canEdit, canUpdateStatus, canRecordPayment] = await Promise.all([
+    getInvoiceDetail(createAdminClient(), session.org_id, invoiceId),
+    hasOrgPermission(session, "invoices", "edit"),
+    hasOrgPermission(session, "invoices", "update_status"),
+    hasOrgPermission(session, "invoices", "record_payment"),
+  ]);
   if (result.error) return jsonError("Unable to fetch invoice", 500);
   if (!result.invoice) return jsonError("Invoice not found", 404);
-  return NextResponse.json({ invoice: result.invoice });
+  return NextResponse.json({
+    invoice: result.invoice,
+    permissions: {
+      can_edit: canEdit,
+      can_update_status: canUpdateStatus,
+      can_record_payment: canRecordPayment,
+    },
+  });
 }
 
 export async function PATCH(

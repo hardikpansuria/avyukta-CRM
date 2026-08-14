@@ -14,6 +14,7 @@ export const permissionModules = [
   "purchase_orders",
   "work_orders",
   "jobs",
+  "invoice_requests",
   "invoices",
   "employees",
   "calendar",
@@ -31,6 +32,9 @@ export type PermissionAction =
   | "attach_po"
   | "update_status"
   | "record_payment"
+  | "process"
+  | "archive"
+  | "reopen"
   | "manage";
 
 export type PermissionKey = `${PermissionModule}.${PermissionAction}`;

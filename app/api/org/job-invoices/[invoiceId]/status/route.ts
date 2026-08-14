@@ -75,5 +75,33 @@ export async function PATCH(
   if (updateError || !updated) {
     return jsonError("Unable to update invoice status", 500);
   }
+  const requestStatus =
+    status === "sent" ? "sent_to_customer" : status === "payment_received" ? "paid" : null;
+  if (requestStatus) {
+    const { data: invoiceRequest } = await admin
+      .from("invoice_requests")
+      .update({
+        status: requestStatus,
+        closed_at: requestStatus === "paid" ? new Date().toISOString() : null,
+        updated_by: session.user.id,
+      })
+      .eq("invoice_id", invoiceId)
+      .eq("org_id", session.org_id)
+      .select("id,requested_by,request_number")
+      .maybeSingle();
+    if (invoiceRequest?.requested_by) {
+      await admin.from("crm_notifications").insert({
+        org_id: session.org_id,
+        user_id: invoiceRequest.requested_by,
+        kind: requestStatus === "paid" ? "payment_received" : "invoice_sent",
+        title:
+          requestStatus === "paid"
+            ? `Payment received for invoice ${updated.invoice_number}`
+            : `Invoice ${updated.invoice_number} sent to customer`,
+        message: `Request IR-${String(invoiceRequest.request_number).padStart(3, "0")}`,
+        href: `/dashboard/invoices/${invoiceId}`,
+      });
+    }
+  }
   return NextResponse.json({ invoice: updated });
 }

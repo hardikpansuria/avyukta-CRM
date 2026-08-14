@@ -50,7 +50,13 @@ function money(value: number, currency: string) {
   }).format(value);
 }
 
-export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
+export function NewInvoiceForm({
+  initialJobId,
+  invoiceRequestId,
+}: {
+  initialJobId: string;
+  invoiceRequestId: string;
+}) {
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [jobId, setJobId] = useState(initialJobId);
@@ -76,9 +82,51 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
     id: string;
     document_warning?: string | null;
   } | null>(null);
+  const [requestReference, setRequestReference] = useState("");
 
   useEffect(() => {
-    if (initialJobId) return;
+    if (!invoiceRequestId) return;
+    const controller = new AbortController();
+    async function loadRequest() {
+      try {
+        const response = await fetch(
+          `/api/org/invoice-requests/${invoiceRequestId}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              request?: {
+                job_id: string;
+                request_number: number | string;
+                requested_amount: number | string;
+                billing_description: string;
+                status: string;
+              };
+              error?: string;
+            }
+          | null;
+        if (!response.ok || !payload?.request) {
+          setError(payload?.error ?? "Unable to load invoice request.");
+          return;
+        }
+        if (payload.request.status !== "under_review") {
+          setError("Invoice request must be Under Review before an invoice can be uploaded.");
+          return;
+        }
+        setJobId(payload.request.job_id);
+        setInvoiceAmount(String(payload.request.requested_amount));
+        setRemarks(payload.request.billing_description);
+        setRequestReference(`IR-${String(payload.request.request_number).padStart(3, "0")}`);
+      } catch {
+        if (!controller.signal.aborted) setError("Unable to load invoice request.");
+      }
+    }
+    void loadRequest();
+    return () => controller.abort();
+  }, [invoiceRequestId]);
+
+  useEffect(() => {
+    if (initialJobId || invoiceRequestId) return;
     const controller = new AbortController();
     async function loadCustomers() {
       try {
@@ -102,10 +150,10 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
     }
     void loadCustomers();
     return () => controller.abort();
-  }, [initialJobId]);
+  }, [initialJobId, invoiceRequestId]);
 
   useEffect(() => {
-    if (initialJobId || !selectedCustomerId) {
+    if (initialJobId || invoiceRequestId || !selectedCustomerId) {
       return;
     }
 
@@ -136,7 +184,7 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
     }
     void loadJobs();
     return () => controller.abort();
-  }, [initialJobId, selectedCustomerId]);
+  }, [initialJobId, invoiceRequestId, selectedCustomerId]);
 
   useEffect(() => {
     if (!jobId) {
@@ -193,6 +241,7 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
     form.set("invoice_amount", invoiceAmount);
     form.set("remarks", remarks);
     form.set("over_invoicing_acknowledged", String(acknowledged));
+    if (invoiceRequestId) form.set("invoice_request_id", invoiceRequestId);
     if (invoicePdf) form.set("invoice_pdf", invoicePdf);
     try {
       const response = await fetch("/api/org/job-invoices", {
@@ -227,7 +276,7 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
         <Card>
           <CardContent className="py-10 text-center">
             <CheckCircle2Icon className="mx-auto size-12 text-emerald-600" />
-            <h1 className="mt-4 text-2xl font-semibold">Draft invoice created</h1>
+            <h1 className="mt-4 text-2xl font-semibold">Invoice copy uploaded</h1>
             {result.document_warning ? (
               <Alert className="mt-5 text-left">
                 <AlertTriangleIcon />
@@ -259,9 +308,10 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
         Back to Invoices
       </Button>
       <div>
-        <h1 className="text-2xl font-semibold">Create Invoice</h1>
+        <h1 className="text-2xl font-semibold">Upload Invoice</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          New invoices start in Draft status.
+          Record an invoice created in your company invoice system and upload its PDF copy.
+          {requestReference ? ` Linked request: ${requestReference}.` : ""}
         </p>
       </div>
       {error ? (
@@ -271,7 +321,7 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      {!initialJobId ? (
+      {!initialJobId && !invoiceRequestId ? (
         <Card>
           <CardContent className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-2">
@@ -411,6 +461,7 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
                 <Input
                   accept="application/pdf"
                   id="invoice-pdf"
+                  required
                   type="file"
                   onChange={(event) =>
                     setInvoicePdf(event.target.files?.[0] ?? null)
@@ -458,12 +509,13 @@ export function NewInvoiceForm({ initialJobId }: { initialJobId: string }) {
                 !invoiceNumber.trim() ||
                 !invoiceDate ||
                 !invoiceAmount ||
+                !invoicePdf ||
                 amount < 0 ||
                 (overInvoicing && !acknowledged)
               }
               type="submit"
             >
-              {submitting ? "Creating..." : "Create Draft Invoice"}
+              {submitting ? "Uploading..." : "Upload Invoice Copy"}
             </Button>
           </div>
         </>

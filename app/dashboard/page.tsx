@@ -9,6 +9,8 @@ import {
   FileTextIcon,
   PlusIcon,
   UsersIcon,
+  ClipboardListIcon,
+  BellIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +46,11 @@ export default async function DashboardPage() {
   if (!(await hasOrgPermission(session, "dashboard", "view"))) {
     redirect("/dashboard/access-denied?module=dashboard");
   }
+  const canViewInvoiceRequests = await hasOrgPermission(
+    session,
+    "invoice_requests",
+    "view",
+  );
 
   const admin = createAdminClient();
   const [
@@ -52,6 +59,8 @@ export default async function DashboardPage() {
     openQuotesResult,
     acceptedResult,
     recentResult,
+    pendingRequestsResult,
+    notificationsResult,
   ] = await Promise.all([
     admin
       .from("customers")
@@ -80,6 +89,20 @@ export default async function DashboardPage() {
       .eq("org_id", session.org_id)
       .order("created_at", { ascending: false })
       .limit(6),
+    canViewInvoiceRequests
+      ? admin
+          .from("invoice_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("org_id", session.org_id)
+          .eq("status", "pending")
+      : Promise.resolve({ count: 0 }),
+    admin
+      .from("crm_notifications")
+      .select("id,title,message,href,read_at,created_at")
+      .eq("org_id", session.org_id)
+      .eq("user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(5),
   ]);
   const openQuotes = openQuotesResult.data ?? [];
   const pipelineTotal = openQuotes.reduce(
@@ -161,6 +184,14 @@ export default async function DashboardPage() {
           label="Won Quotes"
           value={String(acceptedResult.count ?? 0)}
         />
+        {canViewInvoiceRequests ? (
+          <StatCard
+            description="Waiting for Accounts review"
+            icon={<ClipboardListIcon />}
+            label="Pending Invoice Requests"
+            value={String(pendingRequestsResult.count ?? 0)}
+          />
+        ) : null}
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -299,6 +330,31 @@ export default async function DashboardPage() {
 
         <aside className="space-y-6">
           <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex items-center gap-2">
+              <BellIcon className="size-4 text-zinc-500" />
+              <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
+                Notifications
+              </h2>
+            </div>
+            <div className="mt-4 space-y-2">
+              {(notificationsResult.data ?? []).map((notification) => (
+                <Link
+                  className="block rounded-md border border-zinc-200 p-3 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+                  href={notification.href ?? "/dashboard"}
+                  key={notification.id}
+                >
+                  <p className="text-sm font-medium">{notification.title}</p>
+                  {notification.message ? (
+                    <p className="mt-1 text-xs text-zinc-500">{notification.message}</p>
+                  ) : null}
+                </Link>
+              ))}
+              {!notificationsResult.data?.length ? (
+                <p className="text-sm text-zinc-500">No workflow notifications yet.</p>
+              ) : null}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
             <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
               Quick Actions
             </h2>
@@ -309,6 +365,14 @@ export default async function DashboardPage() {
                 icon={<UsersIcon />}
                 label="Add Customer"
               />
+              {canViewInvoiceRequests ? (
+                <QuickAction
+                  description="Review Sales billing requests"
+                  href="/dashboard/invoice-requests"
+                  icon={<ClipboardListIcon />}
+                  label="Invoice Requests"
+                />
+              ) : null}
               <QuickAction
                 description="Build and price a new quote"
                 href="/dashboard/quotations/new"

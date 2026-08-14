@@ -4,6 +4,7 @@ import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
 const PURCHASE_ORDER_BUCKET = "job-purchase-order-documents";
 const INVOICE_BUCKET = "job-invoice-documents";
+const INVOICE_REQUEST_BUCKET = "invoice-request-documents";
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const allowedDocumentTypes = new Map([
   ["pdf", "application/pdf"],
@@ -44,7 +45,7 @@ export function validateDocument(
   const extension = fileExtension(file.name);
   const expectedMimeType = allowedDocumentTypes.get(extension);
   if (options.pdfOnly && (extension !== "pdf" || file.type !== "application/pdf")) {
-    return "The purchase order document must be a PDF.";
+    return "The selected document must be a PDF.";
   }
   if (!options.pdfOnly && (!expectedMimeType || file.type !== expectedMimeType)) {
     return "Supporting documents must be PDF, JPEG, PNG, DOCX, or XLSX files.";
@@ -165,7 +166,47 @@ export async function uploadInvoiceDocument(args: {
   return { document, error: null };
 }
 
+export async function uploadInvoiceRequestDocument(args: {
+  admin: SupabaseClient;
+  orgId: string;
+  requestId: string;
+  actorId: string;
+  file: File;
+}) {
+  const id = crypto.randomUUID();
+  const safeName = sanitizeFileName(args.file.name);
+  const path = `${args.orgId}/invoice-requests/${args.requestId}/${id}-${safeName}`;
+  const { error: uploadError } = await args.admin.storage
+    .from(INVOICE_REQUEST_BUCKET)
+    .upload(path, await args.file.arrayBuffer(), {
+      contentType: args.file.type,
+      upsert: false,
+    });
+  if (uploadError) return { error: uploadError.message };
+
+  const { data: document, error: metadataError } = await args.admin
+    .from("invoice_request_documents")
+    .insert({
+      id,
+      org_id: args.orgId,
+      invoice_request_id: args.requestId,
+      file_name: args.file.name,
+      file_path: path,
+      file_size: args.file.size,
+      mime_type: args.file.type,
+      uploaded_by: args.actorId,
+    })
+    .select("*")
+    .single();
+  if (metadataError) {
+    await args.admin.storage.from(INVOICE_REQUEST_BUCKET).remove([path]);
+    return { error: metadataError.message };
+  }
+  return { document, error: null };
+}
+
 export const jobDocumentBuckets = {
   purchaseOrders: PURCHASE_ORDER_BUCKET,
   invoices: INVOICE_BUCKET,
+  invoiceRequests: INVOICE_REQUEST_BUCKET,
 };

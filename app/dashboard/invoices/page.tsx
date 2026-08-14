@@ -81,6 +81,7 @@ export default function InvoicesPage() {
   const [debounced, setDebounced] = useState(filters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [canCreate, setCanCreate] = useState(false);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebounced(filters), 350);
@@ -106,13 +107,14 @@ export default function InvoicesPage() {
           { cache: "no-store", signal: controller.signal },
         );
         const payload = (await response.json().catch(() => null)) as
-          | { groups?: Group[]; error?: string }
+          | { groups?: Group[]; permissions?: { can_create?: boolean }; error?: string }
           | null;
         if (!response.ok) {
           setError(payload?.error ?? "Unable to load invoices.");
           return;
         }
         setGroups(payload?.groups ?? []);
+        setCanCreate(payload?.permissions?.can_create === true);
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
           setError("Unable to load invoices.");
@@ -149,13 +151,15 @@ export default function InvoicesPage() {
           >
             Outstanding
           </Button>
-          <Button
-            nativeButton={false}
-            render={<Link href="/dashboard/invoices/new" />}
-          >
-            <FilePlus2Icon />
-            New Invoice
-          </Button>
+          {canCreate ? (
+            <Button
+              nativeButton={false}
+              render={<Link href="/dashboard/invoices/new" />}
+            >
+              <FilePlus2Icon />
+              Upload Invoice
+            </Button>
+          ) : null}
         </div>
       </div>
 

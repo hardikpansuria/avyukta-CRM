@@ -197,7 +197,7 @@ export async function getInvoiceDetail(
     .eq("org_id", orgId)
     .maybeSingle();
   if (invoiceError || !invoice) return { error: invoiceError, invoice: null };
-  const [jobResult, poResult, allocationResult, documentResult, historyResult] =
+  const [jobResult, poResult, allocationResult, documentResult, historyResult, requestResult] =
     await Promise.all([
       admin
         .from("jobs")
@@ -229,13 +229,20 @@ export async function getInvoiceDetail(
         .eq("invoice_id", invoiceId)
         .eq("org_id", orgId)
         .order("changed_at", { ascending: false }),
+      admin
+        .from("invoice_requests")
+        .select("id,request_number,status")
+        .eq("invoice_id", invoiceId)
+        .eq("org_id", orgId)
+        .maybeSingle(),
     ]);
   const error =
     jobResult.error ??
     poResult.error ??
     allocationResult.error ??
     documentResult.error ??
-    historyResult.error;
+    historyResult.error ??
+    requestResult.error;
   if (error) return { error, invoice: null };
 
   const [customerResult, quotationResult] = await Promise.all([
@@ -273,10 +280,10 @@ export async function getInvoiceDetail(
       quotation: quotationResult.data,
       documents: documentResult.data ?? [],
       status_history: historyResult.data ?? [],
+      invoice_request: requestResult.data,
       ...invoiceAging(invoice),
       outstanding_balance:
         invoice.status === "sent" ? numeric(invoice.invoice_amount) : 0,
     },
   };
 }
-

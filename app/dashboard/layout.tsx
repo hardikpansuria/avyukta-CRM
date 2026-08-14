@@ -30,6 +30,11 @@ const dashboardLinks: DashboardLink[] = [
         { href: "/dashboard/jobs/purchase-orders", label: "PO Received", module: "purchase_orders" },
       ],
     },
+    {
+      href: "/dashboard/invoice-requests",
+      label: "Invoice Requests",
+      module: "invoice_requests",
+    },
     { href: "/dashboard/invoices", label: "Invoice", module: "invoices" },
     { href: "/dashboard/employees", label: "Employee List", module: "employees" },
     { href: "/dashboard/calendar", label: "Public Calendar", module: "calendar" },

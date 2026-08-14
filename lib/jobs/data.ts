@@ -157,6 +157,7 @@ export async function getJobDetail(
     profileResult,
     allocationResult,
     invoiceResult,
+    invoiceRequestResult,
     historyResult,
     quotationHistoryResult,
   ] = await Promise.all([
@@ -194,6 +195,12 @@ export async function getJobDetail(
       .eq("org_id", orgId)
       .order("invoice_date", { ascending: false }),
     admin
+      .from("invoice_requests")
+      .select("id,request_number,invoice_type,requested_amount,currency,status,created_at")
+      .eq("job_id", jobId)
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false }),
+    admin
       .from("job_status_history")
       .select("*")
       .eq("job_id", jobId)
@@ -213,6 +220,7 @@ export async function getJobDetail(
     profileResult.error ??
     allocationResult.error ??
     invoiceResult.error ??
+    invoiceRequestResult.error ??
     historyResult.error ??
     quotationHistoryResult.error;
   if (relatedError) return { error: relatedError, job: null };
@@ -274,6 +282,7 @@ export async function getJobDetail(
       allocation,
       purchase_order: purchaseOrderResult.data,
       invoices,
+      invoice_requests: invoiceRequestResult.data ?? [],
       status_history: history.map((event) => ({
         ...event,
         changed_by_profile: event.changed_by

@@ -69,6 +69,17 @@ type Invoice = {
     payment_date?: string | null;
     payment_reference_number?: string | null;
   }>;
+  invoice_request?: {
+    id: string;
+    request_number: number | string;
+    status: string;
+  } | null;
+};
+
+type InvoicePermissions = {
+  can_edit: boolean;
+  can_update_status: boolean;
+  can_record_payment: boolean;
 };
 
 function title(value: string) {
@@ -88,6 +99,11 @@ function money(value: number | string, currency: string) {
 export default function InvoiceDetailPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [permissions, setPermissions] = useState<InvoicePermissions>({
+    can_edit: false,
+    can_update_status: false,
+    can_record_payment: false,
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
@@ -110,13 +126,20 @@ export default function InvoiceDetailPage() {
           signal: controller.signal,
         });
         const payload = (await response.json().catch(() => null)) as
-          | { invoice?: Invoice; error?: string }
+          | { invoice?: Invoice; permissions?: InvoicePermissions; error?: string }
           | null;
         if (!response.ok || !payload?.invoice) {
           setError(payload?.error ?? "Unable to load invoice.");
           return;
         }
         setInvoice(payload.invoice);
+        setPermissions(
+          payload.permissions ?? {
+            can_edit: false,
+            can_update_status: false,
+            can_record_payment: false,
+          },
+        );
         setError(null);
       } catch {
         if (!controller.signal.aborted) {
@@ -231,27 +254,26 @@ export default function InvoiceDetailPage() {
             {invoice.job?.job_number ?? "-"}
           </p>
         </div>
-        <Select
-          value={invoice.status}
-          onValueChange={(value) => {
-            const next = String(value ?? "");
-            if (next !== invoice.status) {
-              setPendingStatus(next);
-              setDialogOpen(true);
-            }
-          }}
-        >
-          <SelectTrigger className="w-52">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {statusOptions.map((status) => (
-              <SelectItem key={status} value={status}>
-                {title(status)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {(invoice.status === "draft" && permissions.can_update_status) ||
+        (invoice.status === "sent" && permissions.can_record_payment) ? (
+          <Select
+            value={invoice.status}
+            onValueChange={(value) => {
+              const next = String(value ?? "");
+              if (next !== invoice.status) {
+                setPendingStatus(next);
+                setDialogOpen(true);
+              }
+            }}
+          >
+            <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((status) => <SelectItem key={status} value={status}>{title(status)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Badge variant="outline">{title(invoice.status)}</Badge>
+        )}
       </div>
       {error ? (
         <Alert>
@@ -293,6 +315,12 @@ export default function InvoiceDetailPage() {
               ["Job Number", invoice.job?.job_number ?? "-"],
               ["Quotation", invoice.quotation?.quotation_number ?? "-"],
               ["Customer", invoice.customer?.company_name ?? "-"],
+              [
+                "Invoice Request",
+                invoice.invoice_request
+                  ? `IR-${String(invoice.invoice_request.request_number).padStart(3, "0")}`
+                  : "-",
+              ],
             ].map(([label, value]) => (
               <div key={label}>
                 <dt className="text-xs uppercase tracking-wide text-zinc-500">
@@ -351,6 +379,7 @@ export default function InvoiceDetailPage() {
               </div>
             </div>
           ))}
+          {permissions.can_edit ? (
           <div className="grid items-end gap-3 rounded-2xl border border-dashed p-4 sm:grid-cols-[1fr_auto]">
             <div className="space-y-2">
               <Label htmlFor="invoice-document">Upload Invoice PDF</Label>
@@ -371,6 +400,7 @@ export default function InvoiceDetailPage() {
               {uploading ? "Uploading..." : "Upload"}
             </Button>
           </div>
+          ) : null}
         </CardContent>
       </Card>
       <Card>

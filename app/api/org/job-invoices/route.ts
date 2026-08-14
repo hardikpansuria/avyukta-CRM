@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { requireOrgPermission } from "@/lib/auth/permissions";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
 import { listInvoices, numeric } from "@/lib/invoices/data";
 import {
   uploadInvoiceDocument,
@@ -19,18 +19,24 @@ export async function GET(request: Request) {
   const denied = await requireOrgPermission(session, "invoices", "view");
   if (denied) return denied;
   const params = new URL(request.url).searchParams;
-  const result = await listInvoices(createAdminClient(), session.org_id, {
-    customer: params.get("customer")?.trim() ?? "",
-    po: params.get("po")?.trim() ?? "",
-    job: params.get("job")?.trim() ?? "",
-    invoice: params.get("invoice")?.trim() ?? "",
-    status: params.get("status")?.trim() ?? "",
-    dateFrom: params.get("dateFrom")?.trim() ?? "",
-    dateTo: params.get("dateTo")?.trim() ?? "",
-    aging: params.get("aging")?.trim() ?? "",
-  });
+  const [result, canCreate] = await Promise.all([
+    listInvoices(createAdminClient(), session.org_id, {
+      customer: params.get("customer")?.trim() ?? "",
+      po: params.get("po")?.trim() ?? "",
+      job: params.get("job")?.trim() ?? "",
+      invoice: params.get("invoice")?.trim() ?? "",
+      status: params.get("status")?.trim() ?? "",
+      dateFrom: params.get("dateFrom")?.trim() ?? "",
+      dateTo: params.get("dateTo")?.trim() ?? "",
+      aging: params.get("aging")?.trim() ?? "",
+    }),
+    hasOrgPermission(session, "invoices", "create"),
+  ]);
   if (result.error) return jsonError("Unable to fetch invoices", 500);
-  return NextResponse.json({ groups: result.groups ?? [] });
+  return NextResponse.json({
+    groups: result.groups ?? [],
+    permissions: { can_create: canCreate },
+  });
 }
 
 export async function POST(request: Request) {
@@ -54,6 +60,7 @@ export async function POST(request: Request) {
   const invoiceDate = value("invoice_date");
   const invoiceAmount = Number(value("invoice_amount"));
   const remarks = value("remarks") || null;
+  const invoiceRequestId = value("invoice_request_id");
   const overInvoicingAcknowledged =
     value("over_invoicing_acknowledged") === "true";
   if (!customerId || !jobId || !invoiceNumber) {
@@ -65,6 +72,12 @@ export async function POST(request: Request) {
   if (!Number.isFinite(invoiceAmount) || invoiceAmount < 0) {
     return jsonError("Invoice Amount must be zero or greater", 400);
   }
+  const fileEntry = form.get("invoice_pdf");
+  if (!(fileEntry instanceof File) || fileEntry.size === 0) {
+    return jsonError("An invoice PDF copy is required", 400);
+  }
+  const validationError = validateDocument(fileEntry, { pdfOnly: true });
+  if (validationError) return jsonError(validationError, 400);
 
   const admin = createAdminClient();
   const { data: job, error: jobError } = await admin
@@ -96,6 +109,25 @@ export async function POST(request: Request) {
     return jsonError("Unable to validate purchase order", 500);
   }
   if (!purchaseOrder) return jsonError("Purchase order not found", 404);
+  if (invoiceRequestId) {
+    const { data: invoiceRequest, error: requestError } = await admin
+      .from("invoice_requests")
+      .select("id,job_id,purchase_order_id,status,invoice_id")
+      .eq("id", invoiceRequestId)
+      .eq("org_id", session.org_id)
+      .maybeSingle();
+    if (requestError) return jsonError("Unable to validate invoice request", 500);
+    if (!invoiceRequest) return jsonError("Invoice request not found", 404);
+    if (
+      invoiceRequest.job_id !== jobId ||
+      invoiceRequest.purchase_order_id !== allocation.purchase_order_id
+    ) {
+      return jsonError("Invoice does not match the linked request", 400);
+    }
+    if (invoiceRequest.status !== "under_review" || invoiceRequest.invoice_id) {
+      return jsonError("Invoice request is not ready for invoice upload", 409);
+    }
+  }
   const { data: previousInvoices, error: invoicesError } = await admin
     .from("job_invoices")
     .select("invoice_amount")
@@ -136,29 +168,49 @@ export async function POST(request: Request) {
     return jsonError(insertError?.message || "Unable to create invoice", 409);
   }
 
-  let documentWarning: string | null = null;
-  const fileEntry = form.get("invoice_pdf");
-  if (fileEntry instanceof File && fileEntry.size > 0) {
-    const validationError = validateDocument(fileEntry, { pdfOnly: true });
-    if (validationError) {
-      documentWarning = `Invoice created, but the PDF was not uploaded: ${validationError}`;
-    } else {
-      const upload = await uploadInvoiceDocument({
-        admin,
-        orgId: session.org_id,
-        jobId,
-        invoiceId: invoice.id,
-        actorId: session.user.id,
-        file: fileEntry,
+  const upload = await uploadInvoiceDocument({
+    admin,
+    orgId: session.org_id,
+    jobId,
+    invoiceId: invoice.id,
+    actorId: session.user.id,
+    file: fileEntry,
+  });
+  if (upload.error) {
+    await admin.from("job_invoices").delete().eq("id", invoice.id).eq("org_id", session.org_id);
+    return jsonError("Unable to upload invoice PDF copy", 500);
+  }
+
+  if (invoiceRequestId) {
+    const { data: linkedRequest, error: linkError } = await admin
+      .from("invoice_requests")
+      .update({
+        invoice_id: invoice.id,
+        status: "invoice_created",
+        updated_by: session.user.id,
+      })
+      .eq("id", invoiceRequestId)
+      .eq("org_id", session.org_id)
+      .eq("status", "under_review")
+      .is("invoice_id", null)
+      .select("requested_by,request_number")
+      .single();
+    if (linkError || !linkedRequest) {
+      return jsonError("Invoice uploaded, but the request could not be linked", 500);
+    }
+    if (linkedRequest.requested_by) {
+      await admin.from("crm_notifications").insert({
+        org_id: session.org_id,
+        user_id: linkedRequest.requested_by,
+        kind: "invoice_created",
+        title: `Invoice ${invoice.invoice_number} has been uploaded`,
+        message: `Request IR-${String(linkedRequest.request_number).padStart(3, "0")}`,
+        href: `/dashboard/invoices/${invoice.id}`,
       });
-      if (upload.error) {
-        documentWarning =
-          "Invoice created, but the PDF upload failed. Retry from invoice detail.";
-      }
     }
   }
   return NextResponse.json(
-    { invoice, document_warning: documentWarning },
+    { invoice, document_warning: null },
     { status: 201 },
   );
 }
