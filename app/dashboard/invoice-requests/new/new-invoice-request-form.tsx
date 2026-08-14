@@ -57,6 +57,7 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState("");
   const [jobs, setJobs] = useState<JobOption[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
   const [jobId, setJobId] = useState(initialJobId);
   const [job, setJob] = useState<Job | null>(null);
   const [invoiceType, setInvoiceType] = useState("deposit");
@@ -95,7 +96,8 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
         if (!response.ok) setError(payload.error ?? "Unable to load jobs.");
         else setJobs((payload.jobs ?? []).filter((option: JobOption) => option.job_status !== "po_pending"));
       })
-      .catch(() => { if (!controller.signal.aborted) setError("Unable to load jobs."); });
+      .catch(() => { if (!controller.signal.aborted) setError("Unable to load jobs."); })
+      .finally(() => { if (!controller.signal.aborted) setJobsLoading(false); });
     return () => controller.abort();
   }, [customerId, initialJobId]);
 
@@ -117,6 +119,8 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
   }, [jobId]);
 
   const currency = job?.customer?.currency ?? "CAD";
+  const selectedCustomer = customers.find((customer) => customer.id === customerId);
+  const selectedJob = jobs.find((option) => option.id === jobId);
   const calculated = job
     ? amountType === "percentage"
       ? job.totals.allocated_po_total * Number(amountValue || 0) / 100
@@ -174,8 +178,76 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       {!initialJobId ? (
         <Card><CardHeader><CardTitle>Select billing job</CardTitle></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">
-          <div className="space-y-2"><Label>Customer</Label><Select value={customerId} onValueChange={(value) => { setCustomerId(String(value)); setJobId(""); setJob(null); }}><SelectTrigger className="w-full"><SelectValue placeholder="Select customer" /></SelectTrigger><SelectContent>{customers.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.company_name}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-2"><Label>Job with PO Received</Label><Select disabled={!customerId} value={jobId} onValueChange={(value) => setJobId(String(value))}><SelectTrigger className="w-full"><SelectValue placeholder="Select job" /></SelectTrigger><SelectContent>{jobs.map((option) => <SelectItem key={option.id} value={option.id}>{option.job_number ?? "Job"} · {option.customer?.company_name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2">
+            <Label>Customer</Label>
+            <Select
+              value={customerId}
+              onValueChange={(value) => {
+                setCustomerId(String(value));
+                setJobId("");
+                setJob(null);
+                setJobs([]);
+                setJobsLoading(true);
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select customer">
+                  {selectedCustomer?.company_name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {customers.map((customer) => (
+                  <SelectItem key={customer.id} value={customer.id}>
+                    {customer.company_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Job with PO Received</Label>
+            <Select
+              disabled={!customerId || jobsLoading}
+              value={jobId}
+              onValueChange={(value) => setJobId(String(value))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={
+                    jobsLoading
+                      ? "Loading jobs..."
+                      : customerId && jobs.length === 0
+                        ? "No Job Available"
+                        : "Select job"
+                  }
+                >
+                  {selectedJob
+                    ? `${selectedJob.job_number ?? "Job number pending"} · ${
+                        selectedJob.customer?.company_name ??
+                        selectedCustomer?.company_name ??
+                        "Customer"
+                      }`
+                    : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {jobs.length === 0 ? (
+                  <SelectItem disabled value="no-job-available">
+                    No Job Available
+                  </SelectItem>
+                ) : (
+                  jobs.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.job_number ?? "Job number pending"} ·{" "}
+                      {option.customer?.company_name ??
+                        selectedCustomer?.company_name ??
+                        "Customer"}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent></Card>
       ) : null}
       {job ? <>
