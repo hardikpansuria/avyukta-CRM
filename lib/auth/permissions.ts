@@ -16,6 +16,7 @@ export const permissionModules = [
   "jobs",
   "invoice_requests",
   "invoices",
+  "document_exports",
   "employees",
   "calendar",
   "supplier_price_library",
@@ -35,7 +36,9 @@ export type PermissionAction =
   | "process"
   | "archive"
   | "reopen"
-  | "manage";
+  | "manage"
+  | "date_range_export"
+  | "full_backup";
 
 export type PermissionKey = `${PermissionModule}.${PermissionAction}`;
 

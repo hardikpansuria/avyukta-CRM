@@ -23,6 +23,7 @@ import {
   formatPlainDate,
   QuotationStatusBadge,
 } from "./quotations/quotation-ui";
+import { DownloadDocumentsDialog } from "./download-documents-dialog";
 
 type RecentQuotation = {
   id: string;
@@ -46,11 +47,15 @@ export default async function DashboardPage() {
   if (!(await hasOrgPermission(session, "dashboard", "view"))) {
     redirect("/dashboard/access-denied?module=dashboard");
   }
-  const canViewInvoiceRequests = await hasOrgPermission(
-    session,
-    "invoice_requests",
-    "view",
-  );
+  const [canViewInvoiceRequests, canViewDocumentExports, canDateRangeExport, canFullBackup] =
+    await Promise.all([
+      hasOrgPermission(session, "invoice_requests", "view"),
+      hasOrgPermission(session, "document_exports", "view"),
+      hasOrgPermission(session, "document_exports", "date_range_export"),
+      hasOrgPermission(session, "document_exports", "full_backup"),
+    ]);
+  const canDownloadDocuments =
+    canViewDocumentExports && (canDateRangeExport || canFullBackup);
 
   const admin = createAdminClient();
   const [
@@ -136,6 +141,12 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
+          {canDownloadDocuments ? (
+            <DownloadDocumentsDialog
+              canDateRangeExport={canDateRangeExport}
+              canFullBackup={canFullBackup}
+            />
+          ) : null}
           <Button
             className="h-9 rounded-md"
             nativeButton={false}
