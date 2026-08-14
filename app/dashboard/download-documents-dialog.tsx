@@ -66,6 +66,9 @@ export function DownloadDocumentsDialog({ canDateRangeExport, canFullBackup }: P
         ),
       });
       if (!response.ok) {
+        if (response.status === 504) {
+          throw new Error("The backup exceeded the server download time. Try a smaller date range or contact an administrator.");
+        }
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error || "Unable to download the backup.");
       }

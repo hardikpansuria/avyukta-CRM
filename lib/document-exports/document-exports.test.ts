@@ -127,10 +127,12 @@ describe("archive production and limits", () => {
     writeFileSync(archivePath, bytes);
     expect(execFileSync("unzip", ["-t", archivePath], { encoding: "utf8" })).toContain("No errors detected");
     const entries = execFileSync("unzip", ["-Z1", archivePath], { encoding: "utf8" });
+    const details = execFileSync("unzip", ["-lv", archivePath], { encoding: "utf8" });
     expect(entries).toContain(row.zipPath);
     expect(entries).toContain("Protech_fullbackup/Backup_Manifest.csv");
     expect(entries).toContain("Protech_fullbackup/README.txt");
     expect(readmeText(collection)).toContain("Archive Version: 1");
+    expect(details).toContain("Stored");
   });
 
   it("rejects count and metadata-byte limits before Storage access", async () => {
@@ -158,6 +160,24 @@ describe("archive production and limits", () => {
       maxFiles: 10,
       maxBytes: 100,
       validationConcurrency: 1,
+    })).rejects.toBeInstanceOf(StorageObjectError);
+    fetchSpy.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it("times out a stalled Storage validation instead of exhausting the Function duration", async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "local-test-key";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((_, init) => new Promise((_, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    }));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(validateExportSources([document()], {
+      maxFiles: 10,
+      maxBytes: 100,
+      validationConcurrency: 1,
+      storageRequestTimeoutMs: 5,
+      validationTimeoutMs: 50,
     })).rejects.toBeInstanceOf(StorageObjectError);
     fetchSpy.mockRestore();
     consoleSpy.mockRestore();

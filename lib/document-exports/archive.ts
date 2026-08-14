@@ -13,6 +13,8 @@ export type ExportLimits = {
   maxFiles: number;
   maxBytes: number;
   validationConcurrency: number;
+  storageRequestTimeoutMs?: number;
+  validationTimeoutMs?: number;
 };
 
 function positiveInteger(value: string | undefined, fallback: number) {
@@ -24,7 +26,11 @@ export function getExportLimits(): ExportLimits {
   return {
     maxFiles: positiveInteger(process.env.DOCUMENT_EXPORT_MAX_FILES, 500),
     maxBytes: positiveInteger(process.env.DOCUMENT_EXPORT_MAX_BYTES, 250 * 1024 * 1024),
-    validationConcurrency: positiveInteger(process.env.DOCUMENT_EXPORT_VALIDATION_CONCURRENCY, 4),
+    // Validation happens before response headers are sent. Keep enough requests in
+    // flight that a large export does not spend the whole Function duration here.
+    validationConcurrency: positiveInteger(process.env.DOCUMENT_EXPORT_VALIDATION_CONCURRENCY, 24),
+    storageRequestTimeoutMs: positiveInteger(process.env.DOCUMENT_EXPORT_STORAGE_TIMEOUT_MS, 20_000),
+    validationTimeoutMs: positiveInteger(process.env.DOCUMENT_EXPORT_VALIDATION_TIMEOUT_MS, 90_000),
   };
 }
 
@@ -53,19 +59,23 @@ function responseSize(response: Response) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-async function validateStorageObject(document: ExportDocument) {
+async function validateStorageObject(
+  document: ExportDocument,
+  timeoutMs: number,
+  validationSignal: AbortSignal,
+) {
   let response: Response;
   try {
     response = await fetch(storageObjectUrl(document), {
       method: "GET",
       headers: storageHeaders("bytes=0-0"),
       cache: "no-store",
+      signal: AbortSignal.any([validationSignal, AbortSignal.timeout(timeoutMs)]),
     });
   } catch (error) {
     console.error("Document export Storage validation failed", {
       sourceId: document.sourceId,
       bucket: document.bucket,
-      storagePath: document.storagePath,
       error,
     });
     throw new StorageObjectError("A required source document is unavailable.");
@@ -76,7 +86,6 @@ async function validateStorageObject(document: ExportDocument) {
     console.error("Document export Storage object is missing", {
       sourceId: document.sourceId,
       bucket: document.bucket,
-      storagePath: document.storagePath,
       status: response.status,
     });
     throw new StorageObjectError("A required source document is unavailable.");
@@ -86,10 +95,16 @@ async function validateStorageObject(document: ExportDocument) {
 
 async function boundedForEach<T>(items: T[], concurrency: number, task: (item: T) => Promise<void>) {
   let nextIndex = 0;
+  let stopped = false;
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (nextIndex < items.length) {
+    while (!stopped && nextIndex < items.length) {
       const item = items[nextIndex++];
-      await task(item);
+      try {
+        await task(item);
+      } catch (error) {
+        stopped = true;
+        throw error;
+      }
     }
   });
   await Promise.all(workers);
@@ -106,7 +121,16 @@ export async function validateExportSources(
   if (metadataBytes > limits.maxBytes) {
     throw new ExportLimitError("This backup is too large for instant download. Large asynchronous exports will be supported by the next export phase.");
   }
-  await boundedForEach(documents, limits.validationConcurrency, validateStorageObject);
+  const validationSignal = AbortSignal.timeout(limits.validationTimeoutMs ?? 90_000);
+  await boundedForEach(
+    documents,
+    limits.validationConcurrency,
+    (document) => validateStorageObject(
+      document,
+      limits.storageRequestTimeoutMs ?? 20_000,
+      validationSignal,
+    ),
+  );
   const verifiedBytes = documents.reduce((total, document) => total + (document.fileSize ?? 0), 0);
   if (verifiedBytes > limits.maxBytes) {
     throw new ExportLimitError("This backup is too large for instant download. Large asynchronous exports will be supported by the next export phase.");
@@ -126,7 +150,6 @@ function documentStream(document: ExportDocument) {
       console.error("Document export Storage download failed", {
         sourceId: document.sourceId,
         bucket: document.bucket,
-        storagePath: document.storagePath,
         error,
       });
       throw new StorageObjectError("A required source document could not be downloaded.");
@@ -135,7 +158,6 @@ function documentStream(document: ExportDocument) {
       console.error("Document export Storage download returned an error", {
         sourceId: document.sourceId,
         bucket: document.bucket,
-        storagePath: document.storagePath,
         status: response.status,
       });
       throw new StorageObjectError("A required source document could not be downloaded.");
@@ -192,7 +214,10 @@ export function createArchiveStream(
   openDocument: (document: ExportDocument) => Readable = documentStream,
 ) {
   const output = new PassThrough();
-  const archive = archiver("zip", { zlib: { level: 6 } });
+  // CRM documents are predominantly PDFs, images, and Office files, which are
+  // already compressed. Recompressing them wastes Function CPU and increases the
+  // chance of hitting Vercel's execution-duration limit.
+  const archive = archiver("zip", { store: true });
   archive.on("warning", (error) => output.destroy(error));
   archive.on("error", (error) => output.destroy(error));
   archive.pipe(output);

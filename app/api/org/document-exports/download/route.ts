@@ -31,6 +31,8 @@ function jsonError(error: string, status: number, code?: string) {
 }
 
 export async function POST(request: Request) {
+  const exportId = crypto.randomUUID();
+  const startedAt = Date.now();
   const snapshotAt = new Date().toISOString();
   const session = await verifyOrgSession();
   if (!session) return jsonError("Unauthorized", 401, "UNAUTHORIZED");
@@ -74,6 +76,13 @@ export async function POST(request: Request) {
       session,
       window,
     );
+    console.info("Document export metadata collected", {
+      exportId,
+      type: window.type,
+      fileCount: collection.documents.length,
+      knownBytes: collection.documents.reduce((total, document) => total + (document.fileSize ?? 0), 0),
+      elapsedMs: Date.now() - startedAt,
+    });
     if (collection.documents.length === 0) {
       return jsonError(
         window.type === "date_range"
@@ -83,9 +92,19 @@ export async function POST(request: Request) {
         "NO_DOCUMENTS",
       );
     }
-    await validateExportSources(collection.documents);
+    const validated = await validateExportSources(collection.documents);
+    console.info("Document export sources validated", {
+      exportId,
+      fileCount: validated.fileCount,
+      totalBytes: validated.totalBytes,
+      elapsedMs: Date.now() - startedAt,
+    });
     const filename = formatExportFilename(collection.organizationName, window);
     const rootFolder = filename.slice(0, -4);
+    console.info("Document export streaming started", {
+      exportId,
+      elapsedMs: Date.now() - startedAt,
+    });
     return new Response(createArchiveStream(collection, rootFolder), {
       status: 200,
       headers: {
@@ -110,7 +129,11 @@ export async function POST(request: Request) {
     if (error instanceof DocumentCollectionError) {
       return jsonError("Unable to prepare the document backup.", 500, "COLLECTION_FAILED");
     }
-    console.error("Unexpected document export failure", error);
+    console.error("Unexpected document export failure", {
+      exportId,
+      elapsedMs: Date.now() - startedAt,
+      error,
+    });
     return jsonError("Unable to create the document backup.", 500, "EXPORT_FAILED");
   }
 }
