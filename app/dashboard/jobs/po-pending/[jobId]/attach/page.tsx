@@ -59,6 +59,7 @@ export default function AttachPurchaseOrderPage() {
   const [poAmount, setPoAmount] = useState("");
   const [remarks, setRemarks] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
+  const [scopeIds, setScopeIds] = useState<string[]>([]);
   const [poPdf, setPoPdf] = useState<File | null>(null);
   const [supporting, setSupporting] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +87,7 @@ export default function AttachPurchaseOrderPage() {
           return;
         }
         setJob(payload.job);
+        setScopeIds(payload.job.assigned_scopes.map((scope) => scope.id));
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
           setError("Unable to load job.");
@@ -133,6 +135,7 @@ export default function AttachPurchaseOrderPage() {
           job_id: job.id,
           po_amount_before_tax: poBeforeTax,
           difference_acknowledged: acknowledged,
+          scope_ids: scopeIds,
         },
       ]),
     );
@@ -276,6 +279,20 @@ export default function AttachPurchaseOrderPage() {
             </Card>
 
             <Card>
+              <CardHeader><CardTitle>Work Order Scope</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-zinc-500">Select only the quotation scope(s) covered by this Work Order. The completion acknowledgement will use this exact selection.</p>
+                {job.assigned_scopes.map((scope) => (
+                  <label className="flex items-start gap-3 rounded-lg border p-3" key={scope.id}>
+                    <Checkbox checked={scopeIds.includes(scope.id)} onChange={(event) => setScopeIds((current) => event.target.checked ? [...current, scope.id] : current.filter((id) => id !== scope.id))} />
+                    <span><span className="block text-sm font-medium">{scope.scope_title}</span>{scope.scope_description ? <span className="mt-1 block text-xs text-zinc-500">{scope.scope_description}</span> : null}</span>
+                  </label>
+                ))}
+                {!job.assigned_scopes.length ? <Alert variant="destructive"><AlertDescription>This quotation has no scopes available for the Work Order.</AlertDescription></Alert> : null}
+              </CardContent>
+            </Card>
+
+            <Card>
               <CardHeader>
                 <CardTitle>Purchase Order</CardTitle>
               </CardHeader>
@@ -415,6 +432,7 @@ export default function AttachPurchaseOrderPage() {
                     !poNumber.trim() ||
                     !poDate ||
                     !poAmount ||
+                    !scopeIds.length ||
                     (differs && !acknowledged)
                   }
                   type="submit"
@@ -429,4 +447,3 @@ export default function AttachPurchaseOrderPage() {
     </div>
   );
 }
-

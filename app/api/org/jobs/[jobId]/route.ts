@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { requireOrgPermission } from "@/lib/auth/permissions";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
 import { getJobDetail } from "@/lib/jobs/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -23,5 +23,15 @@ export async function GET(
   const result = await getJobDetail(admin, session.org_id, jobId);
   if (result.error) return jsonError("Unable to fetch job", 500);
   if (!result.job) return jsonError("Job not found", 404);
-  return NextResponse.json({ job: result.job });
+  const [canReopen, canEditCompletion] = await Promise.all([
+    hasOrgPermission(session, "jobs", "reopen"),
+    hasOrgPermission(session, "jobs", "update_status"),
+  ]);
+  return NextResponse.json({
+    job: result.job,
+    permissions: {
+      can_reopen: canReopen,
+      can_edit_completion: canEditCompletion,
+    },
+  });
 }

@@ -32,7 +32,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { JobListItem } from "@/lib/jobs/types";
 
-type Selection = { selected: boolean; amount: string; acknowledged: boolean };
+type Selection = { selected: boolean; amount: string; acknowledged: boolean; scopeIds: string[] };
 
 function numeric(value: unknown) {
   const result = Number(value ?? 0);
@@ -66,18 +66,24 @@ export default function CombinePurchaseOrderPage() {
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
-      const response = await fetch(
-        "/api/org/jobs/po-pending?pageSize=100",
-        { cache: "no-store", signal: controller.signal },
-      );
-      const payload = (await response.json().catch(() => null)) as
-        | { jobs?: JobListItem[]; error?: string }
-        | null;
-      if (!response.ok) {
-        setError(payload?.error ?? "Unable to load jobs.");
-        return;
+      try {
+        const response = await fetch(
+          "/api/org/jobs/po-pending?pageSize=100",
+          { cache: "no-store", signal: controller.signal },
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | { jobs?: JobListItem[]; error?: string }
+          | null;
+        if (!response.ok) {
+          setError(payload?.error ?? "Unable to load jobs.");
+          return;
+        }
+        setJobs(payload?.jobs ?? []);
+      } catch (loadError) {
+        if ((loadError as Error).name !== "AbortError") {
+          setError("Unable to load jobs.");
+        }
       }
-      setJobs(payload?.jobs ?? []);
     }
     void load();
     return () => controller.abort();
@@ -130,6 +136,7 @@ export default function CombinePurchaseOrderPage() {
         selected: current[jobId]?.selected ?? false,
         amount: current[jobId]?.amount ?? "",
         acknowledged: current[jobId]?.acknowledged ?? false,
+        scopeIds: current[jobId]?.scopeIds ?? jobs.find((job) => job.id === jobId)?.assigned_scopes.map((scope) => scope.id) ?? [],
         ...patch,
       },
     }));
@@ -151,6 +158,7 @@ export default function CombinePurchaseOrderPage() {
           job_id: job.id,
           po_amount_before_tax: beforeTax,
           difference_acknowledged: selections[job.id].acknowledged,
+          scope_ids: selections[job.id].scopeIds,
         })),
       ),
     );
@@ -364,6 +372,7 @@ export default function CombinePurchaseOrderPage() {
                                 ? selections[job.id]?.amount || ""
                                 : "",
                               acknowledged: false,
+                              scopeIds: event.target.checked ? job.assigned_scopes.map((scope) => scope.id) : [],
                             })
                           }
                         />
@@ -429,6 +438,16 @@ export default function CombinePurchaseOrderPage() {
 
       {selectedJobs.length ? (
         <Card>
+          <CardHeader><CardTitle>Work Order Scopes</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-zinc-500">Choose the scope(s) covered by each Work Order. Only these scopes will appear on its completion acknowledgement.</p>
+            {selectedJobs.map((job) => <div className="rounded-lg border p-4" key={job.id}><p className="mb-3 text-sm font-semibold">{job.quotation?.quotation_number ?? job.job_number ?? "Job"} - {job.quotation?.project_name ?? "No project name"}</p><div className="grid gap-2 sm:grid-cols-2">{job.assigned_scopes.map((scope) => <label className="flex items-start gap-2 rounded-md border p-3 text-sm" key={scope.id}><Checkbox checked={selections[job.id]?.scopeIds.includes(scope.id) ?? false} onChange={(event) => updateSelection(job.id, { scopeIds: event.target.checked ? [...(selections[job.id]?.scopeIds ?? []), scope.id] : (selections[job.id]?.scopeIds ?? []).filter((id) => id !== scope.id) })} /><span><span className="block font-medium">{scope.scope_title}</span>{scope.scope_description ? <span className="block text-xs text-zinc-500">{scope.scope_description}</span> : null}</span></label>)}</div>{!job.assigned_scopes.length ? <p className="text-sm text-red-600">This quotation has no available scopes.</p> : null}</div>)}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {selectedJobs.length ? (
+        <Card>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Combined summary</CardTitle>
             {calculations.some(
@@ -479,6 +498,7 @@ export default function CombinePurchaseOrderPage() {
             !poNumber.trim() ||
             !poDate ||
             unacknowledged ||
+            selectedJobs.some((job) => !(selections[job.id]?.scopeIds.length)) ||
             calculations.some((row) => !selections[row.job.id]?.amount)
           }
           type="submit"
@@ -489,4 +509,3 @@ export default function CombinePurchaseOrderPage() {
     </form>
   );
 }
-

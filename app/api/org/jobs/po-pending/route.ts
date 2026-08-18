@@ -48,7 +48,7 @@ export async function GET(request: Request) {
       page: result.page,
       pageSize: result.pageSize,
       total: result.total,
-      totalPages: Math.max(1, Math.ceil(result.total / result.pageSize)),
+      totalPages: Math.max(1, Math.ceil(result.total / (result.pageSize ?? 20))),
     },
     filters: { search, customerId: customerId ?? "" },
   });

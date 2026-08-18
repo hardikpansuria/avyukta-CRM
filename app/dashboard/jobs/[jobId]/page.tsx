@@ -6,13 +6,19 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeftIcon,
   CalendarClockIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
   FilePlus2Icon,
+  PencilIcon,
+  PrinterIcon,
+  RotateCcwIcon,
 } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +42,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+
+import { JobCompletionDialog, type EditableCompletion } from "../job-completion-dialog";
 
 type JobDetail = {
   id: string;
@@ -75,11 +84,30 @@ type JobDetail = {
     new_status: string;
     changed_at: string;
     remarks?: string | null;
+    work_completion_id?: string | null;
     changed_by_profile?: {
       full_name?: string | null;
       email?: string | null;
     } | null;
   }>;
+  work_completions: Array<{
+    id: string;
+    certificate_number: string;
+    revision_number: number;
+    completion_date: string;
+    completion_status: "completed" | "completed_with_outstanding_items";
+    completion_notes?: string | null;
+    outstanding_items?: string | null;
+    completed_at: string;
+    certificate_generated_at?: string | null;
+    reopened_at?: string | null;
+    reopen_reason?: string | null;
+    correction_of_completion_id?: string | null;
+    replaces_certificate_number?: string | null;
+    technicians: Array<{ employee_id: string; employee_name: string }>;
+    completed_by_profile?: { full_name?: string | null; email?: string | null } | null;
+  }>;
+  completion?: JobDetail["work_completions"][number] | null;
   totals: {
     allocated_po_total: number;
     invoiced: number;
@@ -90,6 +118,7 @@ type JobDetail = {
 };
 
 function title(value: string) {
+  if (value === "work_in_process") return "Work In Progress";
   return value
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -129,40 +158,53 @@ export default function JobDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
-  const [pendingStatus, setPendingStatus] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [updating, setUpdating] = useState(false);
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const [canReopen, setCanReopen] = useState(false);
+  const [canEditCompletion, setCanEditCompletion] = useState(false);
+  const [editCompletionOpen, setEditCompletionOpen] = useState(false);
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopening, setReopening] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       setLoading(true);
-      const response = await fetch(`/api/org/jobs/${jobId}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | { job?: JobDetail; error?: string }
-        | null;
-      if (!response.ok || !payload?.job) {
-        setError(payload?.error ?? "Unable to load job.");
-      } else {
-        setJob(payload.job);
-        setError(null);
+      try {
+        const response = await fetch(`/api/org/jobs/${jobId}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | { job?: JobDetail; permissions?: { can_reopen?: boolean; can_edit_completion?: boolean }; error?: string }
+          | null;
+        if (!response.ok || !payload?.job) {
+          setError(payload?.error ?? "Unable to load job.");
+        } else {
+          setJob(payload.job);
+          setCanReopen(payload.permissions?.can_reopen === true);
+          setCanEditCompletion(payload.permissions?.can_edit_completion === true);
+          setError(null);
+        }
+      } catch (loadError) {
+        if ((loadError as Error).name !== "AbortError") {
+          setError("Unable to load job.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
-      if (!controller.signal.aborted) setLoading(false);
     }
     void load();
     return () => controller.abort();
   }, [jobId, refresh]);
 
-  async function confirmStatus() {
-    if (!pendingStatus || updating) return;
-    setUpdating(true);
-    const response = await fetch(`/api/org/jobs/${jobId}/status`, {
-      method: "PATCH",
+  async function reopenJob() {
+    if (!reopenReason.trim() || reopening) return;
+    setReopening(true);
+    const response = await fetch(`/api/org/jobs/${jobId}/reopen`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: pendingStatus }),
+      body: JSON.stringify({ reason: reopenReason }),
     });
     const payload = (await response.json().catch(() => null)) as
       | { error?: string }
@@ -170,11 +212,19 @@ export default function JobDetailPage() {
     if (!response.ok) {
       setError(payload?.error ?? "Unable to update job status.");
     } else {
-      setDialogOpen(false);
-      setPendingStatus("");
+      setReopenOpen(false);
+      setReopenReason("");
       setRefresh((value) => value + 1);
     }
-    setUpdating(false);
+    setReopening(false);
+  }
+
+  async function openCertificate(completionId: string, mode: "view" | "download" | "print") {
+    setError(null);
+    const response = await fetch(`/api/org/jobs/${jobId}/completion-certificates/${completionId}${mode === "download" ? "?download=1" : ""}`, { cache: "no-store" });
+    const payload = (await response.json().catch(() => null)) as { signed_url?: string; error?: string } | null;
+    if (!response.ok || !payload?.signed_url) return setError(payload?.error ?? "Unable to open completion certificate.");
+    window.open(payload.signed_url, "_blank", "noopener,noreferrer");
   }
 
   if (loading) return <div className="mx-auto max-w-7xl">Loading job...</div>;
@@ -191,6 +241,7 @@ export default function JobDetailPage() {
       job.quotation?.grand_total_before_tax ??
       0,
   );
+  const completion = job.completion;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -199,7 +250,9 @@ export default function JobDetailPage() {
         render={
           <Link
             href={
-              job.purchase_order
+              job.job_status === "work_completed"
+                ? "/dashboard/jobs/completed"
+                : job.purchase_order
                 ? `/dashboard/jobs/purchase-orders/${job.purchase_order.id}`
                 : "/dashboard/jobs/po-pending"
             }
@@ -219,25 +272,24 @@ export default function JobDetailPage() {
             {job.quotation?.project_name ?? "No project name"}
           </p>
         </div>
-        {job.job_status !== "po_pending" ? (
+        {job.job_status === "work_in_process" ? (
           <Select
             value={job.job_status}
             onValueChange={(value) => {
               const next = String(value ?? "");
-              if (next && next !== job.job_status) {
-                setPendingStatus(next);
-                setDialogOpen(true);
-              }
+              if (next === "work_completed") setCompletionOpen(true);
             }}
           >
             <SelectTrigger className="w-52">
-              <SelectValue />
+              <SelectValue>Work In Progress</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="work_in_process">Work in Process</SelectItem>
+              <SelectItem value="work_in_process">Work In Progress</SelectItem>
               <SelectItem value="work_completed">Work Completed</SelectItem>
             </SelectContent>
           </Select>
+        ) : job.job_status === "work_completed" ? (
+          <div className="flex items-center gap-2"><Badge variant="outline">Work Completed</Badge>{canReopen ? <Button size="sm" variant="outline" onClick={() => setReopenOpen(true)}><RotateCcwIcon />Reopen Job</Button> : null}</div>
         ) : (
           <Badge variant="outline">PO Pending</Badge>
         )}
@@ -299,6 +351,38 @@ export default function JobDetailPage() {
           </dl>
         </CardContent>
       </Card>
+      {completion ? (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Completion Information</CardTitle>
+            <div className="flex flex-wrap gap-2">
+              {canEditCompletion ? <Button size="sm" variant="outline" onClick={() => setEditCompletionOpen(true)}><PencilIcon />Edit Completion Information</Button> : null}
+              <Button size="sm" onClick={() => void openCertificate(completion.id, "view")}><ExternalLinkIcon />View Completion Certificate</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <Detail label="Certificate" value={`${completion.certificate_number}${completion.revision_number > 1 ? ` - Revision ${completion.revision_number}` : ""}`} />
+              <Detail label="Completion Date" value={new Date(`${completion.completion_date}T00:00:00Z`).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })} />
+              <Detail label="Technicians" value={completion.technicians.map((technician) => technician.employee_name).join(", ") || "-"} />
+              <Detail label="Completed By" value={completion.completed_by_profile?.full_name || completion.completed_by_profile?.email || "System"} />
+              <Detail label="Completion Status" value={completion.completion_status === "completed_with_outstanding_items" ? "Completed with Outstanding Items" : "Completed"} />
+              <Detail label="Certificate Generated" value={completion.certificate_generated_at ? new Date(completion.certificate_generated_at).toLocaleString("en-CA") : "-"} />
+            </dl>
+            {completion.completion_notes ? <div className="mt-5 rounded-lg border p-4"><p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Completion Notes</p><p className="mt-2 whitespace-pre-wrap text-sm">{completion.completion_notes}</p></div> : null}
+            {completion.outstanding_items ? <div className="mt-5 rounded-lg border p-4"><p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Outstanding Items</p><p className="mt-2 whitespace-pre-wrap text-sm">{completion.outstanding_items}</p></div> : null}
+            {completion.reopen_reason ? <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/30"><span className="font-medium">Reopened:</span> {completion.reopen_reason}</div> : null}
+          </CardContent>
+        </Card>
+      ) : null}
+      {job.work_completions.length ? (
+        <Card>
+          <CardHeader><CardTitle>Documents</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {job.work_completions.map((document) => <div className="flex flex-col justify-between gap-3 rounded-lg border p-4 sm:flex-row sm:items-center" key={document.id}><div><p className="font-medium">{document.certificate_number}{document.revision_number > 1 ? ` - Revision ${document.revision_number}` : ""}</p><p className="text-xs text-zinc-500">Work Completion Acknowledgement{document.replaces_certificate_number ? ` · Replaced ${document.replaces_certificate_number}` : ""} · {new Date(document.completed_at).toLocaleString("en-CA")}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void openCertificate(document.id, "view")}><ExternalLinkIcon />View</Button><Button size="sm" variant="outline" onClick={() => void openCertificate(document.id, "download")}><DownloadIcon />Download</Button><Button size="sm" variant="outline" onClick={() => void openCertificate(document.id, "print")}><PrinterIcon />Print</Button></div></div>)}
+          </CardContent>
+        </Card>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Summary
           label="PO Allocation"
@@ -421,6 +505,9 @@ export default function JobDetailPage() {
                 {event.remarks ? (
                   <p className="mt-1 text-sm text-zinc-500">{event.remarks}</p>
                 ) : null}
+                {event.work_completion_id ? (
+                  <button className="mt-2 text-xs font-medium underline" type="button" onClick={() => void openCertificate(event.work_completion_id as string, "view")}>Certificate: {job.work_completions.find((item) => item.id === event.work_completion_id)?.certificate_number ?? "View"}</button>
+                ) : null}
               </div>
             </div>
           ))}
@@ -430,40 +517,25 @@ export default function JobDetailPage() {
         </CardContent>
       </Card>
 
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) setPendingStatus("");
-        }}
-      >
+      {completionOpen ? <JobCompletionDialog jobId={job.id} jobNumber={job.job_number} open onOpenChange={setCompletionOpen} onCompleted={() => setRefresh((value) => value + 1)} /> : null}
+      {editCompletionOpen && completion ? <JobCompletionDialog
+        initialCompletion={completion as EditableCompletion}
+        jobId={job.id}
+        jobNumber={job.job_number}
+        open
+        onOpenChange={setEditCompletionOpen}
+        onCompleted={() => setRefresh((value) => value + 1)}
+      /> : null}
+      <Dialog open={reopenOpen} onOpenChange={(open) => !reopening && setReopenOpen(open)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm production status</DialogTitle>
-            <DialogDescription>
-              Change {job.job_number} from {title(job.job_status)} to{" "}
-              {title(pendingStatus)}?
-            </DialogDescription>
+            <DialogTitle>Reopen Job</DialogTitle>
+            <DialogDescription>The original certificate remains preserved. The job will return to PO Received as Work in Progress.</DialogDescription>
           </DialogHeader>
+          <div className="space-y-2"><Label htmlFor="reopen-reason">Reason for Reopening</Label><Textarea className="min-h-28" id="reopen-reason" placeholder="Customer requested additional modification." required value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} /></div>
           <DialogFooter>
-            <Button
-              disabled={updating}
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setDialogOpen(false);
-                setPendingStatus("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={updating || !pendingStatus}
-              type="button"
-              onClick={() => void confirmStatus()}
-            >
-              {updating ? "Updating..." : "Yes, Update Status"}
-            </Button>
+            <Button disabled={reopening} type="button" variant="outline" onClick={() => setReopenOpen(false)}>Cancel</Button>
+            <Button disabled={reopening || !reopenReason.trim()} type="button" onClick={() => void reopenJob()}>{reopening ? "Reopening..." : "Reopen Job"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

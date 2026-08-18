@@ -255,6 +255,12 @@ function collectorFixtures(): Record<string, FixtureRow[]> {
     ],
     job_purchase_order_documents: [],
     invoice_request_documents: [],
+    job_work_completions: [{
+      id: "completion-a", org_id: organizationA, job_id: "job-a",
+      certificate_number: "WC-260001", certificate_file_name: "WC-260001.pdf",
+      certificate_storage_path: "a/jobs/job-a/WC-260001.pdf", certificate_file_size: 1,
+      certificate_generated_at: "2026-08-09T12:00:00.000Z", generation_status: "generated",
+    }],
     job_invoice_documents: [{
       id: "old-quote-new-invoice", org_id: organizationA, invoice_id: "invoice-a",
       file_name: "invoice.pdf", file_path: "a/invoice.pdf", file_size: 1,
@@ -278,7 +284,7 @@ describe("organization-scoped collection", () => {
       session,
       parseExportWindow({ type: "full" }, "2026-08-12T00:00:00.000Z"),
     );
-    expect(collection.documents).toHaveLength(5);
+    expect(collection.documents).toHaveLength(6);
     expect(collection.documents.every((row) => row.customerName === "Organization A Customer")).toBe(true);
     expect(JSON.stringify(collection)).not.toContain("Organization B Customer");
     expect(JSON.stringify(collection)).not.toContain("organization-b-secret");
@@ -294,8 +300,10 @@ describe("organization-scoped collection", () => {
       ),
     );
     expect(collection.documents.map((row) => row.sourceId).sort())
-      .toEqual(["aug-1", "aug-10", "old-quote-new-invoice"]);
+      .toEqual(["aug-1", "aug-10", "completion-a", "old-quote-new-invoice"]);
     expect(collection.documents.find((row) => row.sourceId === "old-quote-new-invoice")?.category)
       .toBe("Invoices");
+    expect(collection.documents.find((row) => row.sourceId === "completion-a")?.category)
+      .toBe("Work_Completion_Acknowledgement");
   });
 });

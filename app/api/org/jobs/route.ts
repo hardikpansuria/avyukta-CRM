@@ -27,6 +27,13 @@ export async function GET(request: Request) {
       : undefined,
     search: searchParams.get("search")?.trim() ?? "",
     customerId: searchParams.get("customer_id")?.trim() || undefined,
+    completionFrom: searchParams.get("completion_from")?.trim() || undefined,
+    completionTo: searchParams.get("completion_to")?.trim() || undefined,
+    customerSearch: searchParams.get("customer")?.trim() || undefined,
+    salespersonSearch: searchParams.get("salesperson")?.trim() || undefined,
+    jobNumber: searchParams.get("job_number")?.trim() || undefined,
+    quotationNumber: searchParams.get("quotation_number")?.trim() || undefined,
+    poNumber: searchParams.get("po_number")?.trim() || undefined,
     page: Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1,
     pageSize:
       Number.isInteger(pageSizeValue) && pageSizeValue > 0 ? pageSizeValue : 20,
@@ -43,7 +50,7 @@ export async function GET(request: Request) {
       page: result.page,
       pageSize: result.pageSize,
       total: result.total,
-      totalPages: Math.max(1, Math.ceil(result.total / result.pageSize)),
+      totalPages: Math.max(1, Math.ceil(result.total / (result.pageSize ?? 20))),
     },
   });
 }

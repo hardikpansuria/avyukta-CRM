@@ -14,6 +14,7 @@ type AllocationInput = {
   job_id?: unknown;
   po_amount_before_tax?: unknown;
   difference_acknowledged?: unknown;
+  scope_ids?: unknown;
 };
 
 function jsonError(error: string, status: number) {
@@ -112,12 +113,16 @@ export async function POST(request: Request) {
     po_amount_before_tax: Number(allocation.po_amount_before_tax),
     difference_acknowledged:
       allocation.difference_acknowledged === true,
+    scope_ids: Array.isArray(allocation.scope_ids)
+      ? Array.from(new Set(allocation.scope_ids.filter((value): value is string => typeof value === "string")))
+      : [],
   }));
 
   if (
     allocations.some(
       (allocation) =>
         !allocation.job_id ||
+        allocation.scope_ids.length === 0 ||
         !Number.isFinite(allocation.po_amount_before_tax) ||
         allocation.po_amount_before_tax < 0,
     )
@@ -150,7 +155,7 @@ export async function POST(request: Request) {
 
   const { data: jobs, error: jobsError } = await admin
     .from("jobs")
-    .select("id,customer_id,job_status")
+    .select("id,customer_id,job_status,latest_accepted_quotation_id")
     .eq("org_id", session.org_id)
     .in("id", jobIds);
 
@@ -163,6 +168,48 @@ export async function POST(request: Request) {
   }
   if (new Set((jobs ?? []).map((job) => job.customer_id)).size !== 1) {
     return jsonError("Combined jobs must belong to the same customer", 400);
+  }
+
+  const requestedScopeIds = allocations.flatMap((allocation) => allocation.scope_ids);
+  const { data: validScopes, error: scopesError } = await admin
+    .from("quotation_scopes")
+    .select("id,quotation_id")
+    .eq("org_id", session.org_id)
+    .in("id", requestedScopeIds);
+  if (scopesError) return jsonError("Unable to validate Work Order scopes", 500);
+  const validScopeQuotation = new Map((validScopes ?? []).map((scope) => [scope.id, scope.quotation_id]));
+  const jobsById = new Map((jobs ?? []).map((job) => [job.id, job]));
+  if (allocations.some((allocation) => allocation.scope_ids.some((scopeId) =>
+    validScopeQuotation.get(scopeId) !== jobsById.get(allocation.job_id)?.latest_accepted_quotation_id,
+  ))) {
+    return jsonError("Each Work Order scope must belong to its accepted quotation", 400);
+  }
+
+  const { data: previousAssignments, error: assignmentsError } = await admin
+    .from("job_scope_assignments")
+    .select("org_id,job_id,quotation_id,scope_id,assigned_by,assigned_at")
+    .eq("org_id", session.org_id)
+    .in("job_id", jobIds);
+  if (assignmentsError) return jsonError("Unable to prepare Work Order scopes", 500);
+  const { error: clearAssignmentsError } = await admin
+    .from("job_scope_assignments")
+    .delete()
+    .eq("org_id", session.org_id)
+    .in("job_id", jobIds);
+  if (clearAssignmentsError) return jsonError("Unable to update Work Order scopes", 500);
+  const replacementAssignments = allocations.flatMap((allocation) =>
+    allocation.scope_ids.map((scopeId) => ({
+      org_id: session.org_id,
+      job_id: allocation.job_id,
+      quotation_id: jobsById.get(allocation.job_id)!.latest_accepted_quotation_id,
+      scope_id: scopeId,
+      assigned_by: session.user.id,
+    })),
+  );
+  const { error: insertAssignmentsError } = await admin.from("job_scope_assignments").insert(replacementAssignments);
+  if (insertAssignmentsError) {
+    if (previousAssignments?.length) await admin.from("job_scope_assignments").insert(previousAssignments);
+    return jsonError("Unable to update Work Order scopes", 500);
   }
 
   // This must be the cookie-authenticated client: the RPC validates auth.uid().
@@ -178,6 +225,8 @@ export async function POST(request: Request) {
   );
 
   if (rpcError) {
+    await admin.from("job_scope_assignments").delete().eq("org_id", session.org_id).in("job_id", jobIds);
+    if (previousAssignments?.length) await admin.from("job_scope_assignments").insert(previousAssignments);
     console.error("create_job_purchase_order failed", {
       code: rpcError.code,
       message: rpcError.message,

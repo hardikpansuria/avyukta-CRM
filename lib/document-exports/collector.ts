@@ -12,6 +12,7 @@ const QUOTATION_BUCKET = "quotation-documents";
 const PO_BUCKET = "job-purchase-order-documents";
 const INVOICE_REQUEST_BUCKET = "invoice-request-documents";
 const INVOICE_BUCKET = "job-invoice-documents";
+const WORK_COMPLETION_BUCKET = "work-completion-acknowledgements";
 
 export class DocumentCollectionError extends Error {}
 
@@ -43,6 +44,15 @@ type InvoiceRequestRow = {
   purchase_order_id: string;
   quotation_number_snapshot: string;
   revision_number_snapshot: number;
+};
+type WorkCompletionRow = {
+  id: string;
+  job_id: string;
+  certificate_number: string;
+  certificate_file_name: string;
+  certificate_storage_path: string;
+  certificate_file_size: number | null;
+  certificate_generated_at: string;
 };
 
 function numericSize(value: unknown) {
@@ -123,12 +133,21 @@ export async function collectOrganizationDocuments(
     .select("id,invoice_id,file_name,file_path,file_size,mime_type,uploaded_at")
     .eq("org_id", session.org_id)
     .lte("uploaded_at", window.snapshotAt);
+  const workCompletionQuery = admin
+    .from("job_work_completions")
+    .select("id,job_id,certificate_number,certificate_file_name,certificate_storage_path,certificate_file_size,certificate_generated_at")
+    .eq("org_id", session.org_id)
+    .eq("generation_status", "generated")
+    .lte("certificate_generated_at", window.snapshotAt);
 
   if (window.fromUtc && window.toUtc) {
     generatedQuery.gte("generated_at", window.fromUtc).lte("generated_at", window.toUtc);
     poDocumentQuery.gte("uploaded_at", window.fromUtc).lte("uploaded_at", window.toUtc);
     requestDocumentQuery.gte("uploaded_at", window.fromUtc).lte("uploaded_at", window.toUtc);
     invoiceDocumentQuery.gte("uploaded_at", window.fromUtc).lte("uploaded_at", window.toUtc);
+    workCompletionQuery
+      .gte("certificate_generated_at", window.fromUtc)
+      .lte("certificate_generated_at", window.toUtc);
   }
 
   const [
@@ -145,6 +164,7 @@ export async function collectOrganizationDocuments(
     poDocumentResult,
     requestDocumentResult,
     invoiceDocumentResult,
+    workCompletionResult,
   ] = await Promise.all([
     admin.from("customers").select("id,company_name,customer_code").eq("org_id", session.org_id),
     admin.from("quotations").select("id,customer_id,quotation_number,revision_number").eq("org_id", session.org_id),
@@ -159,12 +179,14 @@ export async function collectOrganizationDocuments(
     poDocumentQuery,
     requestDocumentQuery,
     invoiceDocumentQuery,
+    workCompletionQuery,
   ]);
 
   const results = [
     customersResult, quotationsResult, jobsResult, purchaseOrdersResult, allocationsResult,
     invoicesResult, invoiceRequestsResult, materialResult, scopeResult, generatedResult,
     poDocumentResult, requestDocumentResult, invoiceDocumentResult,
+    workCompletionResult,
   ];
   const queryError = results.find((result) => result.error)?.error;
   if (queryError) {
@@ -265,6 +287,25 @@ export async function collectOrganizationDocuments(
       poNumber: po.po_number, invoiceNumber: invoice.invoice_number, category: "Invoices",
       originalFilename: row.file_name, bucket: INVOICE_BUCKET, storagePath: row.file_path,
       documentDate: row.uploaded_at, fileSize: numericSize(row.file_size), mimeType: row.mime_type,
+    }));
+  }
+  for (const row of (workCompletionResult.data ?? []) as WorkCompletionRow[]) {
+    const job = requireRelation(jobs.get(row.job_id), "a work completion certificate's job");
+    const customer = requireRelation(customers.get(job.customer_id), "a work completion certificate's customer");
+    const allocation = allocationByJob.get(job.id);
+    const po = allocation ? purchaseOrders.get(allocation.purchase_order_id) : undefined;
+    documents.push(documentBase(row.id, customer, {
+      quotationNumber: allocation?.quotation_number_snapshot ?? null,
+      revisionNumber: allocation?.revision_number_snapshot ?? null,
+      jobNumber: job.job_number,
+      poNumber: po?.po_number ?? null,
+      category: "Work_Completion_Acknowledgement",
+      originalFilename: row.certificate_file_name || `${row.certificate_number}.pdf`,
+      bucket: WORK_COMPLETION_BUCKET,
+      storagePath: row.certificate_storage_path,
+      documentDate: row.certificate_generated_at,
+      fileSize: numericSize(row.certificate_file_size),
+      mimeType: "application/pdf",
     }));
   }
 

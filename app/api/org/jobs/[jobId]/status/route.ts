@@ -4,7 +4,7 @@ import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const allowedStatuses = new Set(["work_in_process", "work_completed"]);
+const allowedStatuses = new Set(["work_in_process"]);
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -28,6 +28,9 @@ export async function PATCH(
     typeof (body as Record<string, unknown>).status === "string"
       ? String((body as Record<string, unknown>).status)
       : "";
+  if (status === "work_completed") {
+    return jsonError("Use Complete Job to provide the required completion information and generate the certificate", 409);
+  }
   if (!allowedStatuses.has(status)) return jsonError("Invalid job status", 400);
 
   const { jobId } = await context.params;
@@ -42,6 +45,9 @@ export async function PATCH(
   if (!job) return jsonError("Job not found", 404);
   if (job.job_status === "po_pending") {
     return jsonError("A PO Pending job cannot enter production", 409);
+  }
+  if (job.job_status === "work_completed") {
+    return jsonError("Only an authorized Manager or Admin can reopen a completed job", 403);
   }
   if (job.job_status === status) return NextResponse.json({ job });
 

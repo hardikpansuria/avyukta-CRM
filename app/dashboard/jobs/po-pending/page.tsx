@@ -153,6 +153,13 @@ export default function PoPendingPage() {
         >
           PO Received
         </Button>
+        <Button
+          nativeButton={false}
+          render={<Link href="/dashboard/jobs/completed" />}
+          variant="ghost"
+        >
+          Job Completed
+        </Button>
       </div>
 
       <Card>

@@ -35,5 +35,23 @@ export type JobListItem = {
   quotation: QuotationSummary | null;
   customer: CustomerSummary | null;
   salesperson: ProfileSummary | null;
+  purchase_order: {
+    id: string;
+    po_number: string;
+    po_received_date: string;
+  } | null;
+  completion: {
+    id: string;
+    certificate_number: string;
+    completion_date: string;
+    completed_at: string;
+    completion_status: "completed" | "completed_with_outstanding_items";
+  } | null;
+  assigned_scopes: Array<{
+    id: string;
+    quotation_id: string;
+    scope_title: string;
+    scope_description?: string | null;
+    sort_order?: number | null;
+  }>;
 };
-

@@ -28,6 +28,7 @@ const dashboardLinks: DashboardLink[] = [
       children: [
         { href: "/dashboard/jobs/po-pending", label: "PO Pending", module: "jobs" },
         { href: "/dashboard/jobs/purchase-orders", label: "PO Received", module: "purchase_orders" },
+        { href: "/dashboard/jobs/completed", label: "Job Completed", module: "jobs" },
       ],
     },
     {
