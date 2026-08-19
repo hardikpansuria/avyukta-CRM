@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import sanitizeHtml from "sanitize-html";
 
-import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
+import { isOrgScopedStoragePath } from "../supabase/storage-path";
 
 export type CustomerQuotationItemInput = {
   id?: string;
@@ -10,6 +10,8 @@ export type CustomerQuotationItemInput = {
   scope_title_snapshot?: string | null;
   description_html?: string | null;
   description_text?: string | null;
+  notes_html?: string | null;
+  notes_text?: string | null;
   imported_scope_amount?: number | string | null;
   estimation_quantity?: number | string | null;
   quantity?: number | string | null;
@@ -346,6 +348,8 @@ function defaultItems(source: SourceContext) {
       scope_title_snapshot: title,
       description_html: `<p>${escapeHtml(title)}</p>`,
       description_text: title,
+      notes_html: null,
+      notes_text: null,
       ...pricingFromScope(scope),
     };
   });
@@ -498,6 +502,8 @@ export function normalizeCustomerQuotationDraft(
 
   const items = input.items.map((item, index) => {
     const descriptionHtml = sanitizeCustomerQuotationHtml(item.description_html);
+    const notesHtml = sanitizeCustomerQuotationHtml(item.notes_html);
+    const notesText = richTextToPlainText(notesHtml);
     return {
       id: text(item.id) || undefined,
       scope_id: text(item.scope_id) || null,
@@ -507,6 +513,8 @@ export function normalizeCustomerQuotationDraft(
       description_html: descriptionHtml,
       description_text:
         richTextToPlainText(descriptionHtml) || text(item.description_text) || null,
+      notes_html: notesText ? notesHtml : null,
+      notes_text: notesText || null,
     };
   });
 

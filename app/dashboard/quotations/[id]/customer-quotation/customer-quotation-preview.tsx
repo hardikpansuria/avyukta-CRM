@@ -134,6 +134,17 @@ export function CustomerQuotationPreview({
                     __html: String(item.description_html || ""),
                   }}
                 />
+                {String(item.notes_text || "").trim() ? (
+                  <div className="mt-3 border-t border-zinc-200 pt-2">
+                    <p className="font-bold">Notes</p>
+                    <div
+                      className="mt-1 leading-5 [&_h2]:text-base [&_h2]:font-bold [&_h3]:text-sm [&_h3]:font-bold [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
+                      dangerouslySetInnerHTML={{
+                        __html: String(item.notes_html || ""),
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
               <span className="border-r border-zinc-300 p-2 text-right">
                 {money(item.price_each)}

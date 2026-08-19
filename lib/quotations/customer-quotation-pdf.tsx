@@ -8,7 +8,7 @@ import {
   renderToBuffer,
 } from "@react-pdf/renderer";
 import { parseDocument } from "htmlparser2";
-import type { ReactNode } from "react";
+import React, { type ReactNode } from "react";
 
 import { sanitizeCustomerQuotationHtml } from "./customer-quotation";
 
@@ -62,6 +62,8 @@ export type CustomerQuotationPdfData = {
     id?: string;
     scope_title_snapshot?: string | null;
     description_html?: string | null;
+    notes_html?: string | null;
+    notes_text?: string | null;
     quantity?: number | string | null;
     price_each?: number | string | null;
     price_ext?: number | string | null;
@@ -214,6 +216,16 @@ const styles = StyleSheet.create({
   },
   scopeTitle: {
     marginBottom: 3,
+    fontFamily: "Helvetica-Bold",
+  },
+  scopeNotes: {
+    marginTop: 5,
+    paddingTop: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: "#d4d4d8",
+  },
+  scopeNotesLabel: {
+    marginBottom: 2,
     fontFamily: "Helvetica-Bold",
   },
   richParagraph: {
@@ -741,6 +753,12 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
                   {item.scope_title_snapshot || `Scope of Work ${index + 1}`}
                 </Text>
                 {richBlocks(item.description_html, `item-${index}`)}
+                {item.notes_text?.trim() ? (
+                  <View style={styles.scopeNotes}>
+                    <Text style={styles.scopeNotesLabel}>Notes</Text>
+                    {richBlocks(item.notes_html, `item-notes-${index}`)}
+                  </View>
+                ) : null}
               </View>
               <Text style={styles.moneyCell}>{money(item.price_each)}</Text>
               <Text style={styles.lastMoneyCell}>{money(item.price_ext)}</Text>

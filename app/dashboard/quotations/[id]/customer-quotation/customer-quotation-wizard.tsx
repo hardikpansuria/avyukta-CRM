@@ -59,6 +59,8 @@ type CustomerItem = {
   scope_title_snapshot: string;
   description_html: string;
   description_text: string;
+  notes_html: string;
+  notes_text: string;
   imported_scope_amount: number;
   estimation_quantity: number;
   quantity: number;
@@ -168,6 +170,8 @@ function hydrateItems(values: Array<Record<string, unknown>>): CustomerItem[] {
       stringValue(value.scope_title_snapshot) || `Scope of Work ${index + 1}`,
     description_html: stringValue(value.description_html),
     description_text: stringValue(value.description_text),
+    notes_html: stringValue(value.notes_html),
+    notes_text: stringValue(value.notes_text),
     imported_scope_amount: numberValue(value.imported_scope_amount),
     estimation_quantity: numberValue(value.estimation_quantity, 1) || 1,
     quantity: numberValue(value.quantity, 1) || 1,
@@ -278,6 +282,8 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         scope_title_snapshot: item.scope_title_snapshot,
         description_html: item.description_html,
         description_text: item.description_text,
+        notes_html: item.notes_html,
+        notes_text: item.notes_text,
       })),
     };
   }
@@ -654,6 +660,25 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                           updateItem(index, {
                             description_html: html,
                             description_text: plainText,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <Label className="text-xs font-medium">Notes</Label>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      Optional notes shown beneath this scope on the customer quotation.
+                    </p>
+                    <div className="mt-2">
+                      <RichTextEditor
+                        readOnly={readOnly}
+                        value={item.notes_html}
+                        onChange={(html, plainText) =>
+                          updateItem(index, {
+                            notes_html: html,
+                            notes_text: plainText,
                           })
                         }
                       />

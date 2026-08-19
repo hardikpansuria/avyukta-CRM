@@ -36,7 +36,7 @@ function itemsBelongToQuotation(
   );
 }
 
-async function saveDescriptions({
+async function saveItemContent({
   admin,
   orgId,
   quotationId,
@@ -55,6 +55,8 @@ async function saveDescriptions({
       .update({
         description_html: item.description_html,
         description_text: item.description_text,
+        notes_html: item.notes_html,
+        notes_text: item.notes_text,
       })
       .eq("org_id", orgId)
       .eq("quotation_id", quotationId)
@@ -189,7 +191,7 @@ export async function POST(
     return jsonError("Unable to synchronize customer quotation pricing", 500);
   }
 
-  const itemsResult = await saveDescriptions({
+  const itemsResult = await saveItemContent({
     admin,
     orgId: session.org_id,
     quotationId: id,
@@ -270,7 +272,7 @@ export async function PATCH(
     return jsonError("Unable to update customer quotation draft", 500);
   }
 
-  const itemsResult = await saveDescriptions({
+  const itemsResult = await saveItemContent({
     admin,
     orgId: session.org_id,
     quotationId: id,
