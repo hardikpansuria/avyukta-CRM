@@ -10,6 +10,7 @@ export default function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPreparing, setIsPreparing] = useState(true);
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
 
@@ -18,9 +19,27 @@ export default function ResetPasswordPage() {
 
     async function prepareResetSession() {
       const supabase = createClient();
+      const queryParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams(
         window.location.hash.replace(/^#/, ""),
       );
+      const authErrorCode =
+        queryParams.get("error_code") ?? hashParams.get("error_code");
+      const authErrorDescription =
+        queryParams.get("error_description") ??
+        hashParams.get("error_description");
+
+      if (authErrorCode || authErrorDescription) {
+        if (isMounted) {
+          setError(
+            authErrorDescription ??
+              "Password reset link is invalid or has expired.",
+          );
+          setIsPreparing(false);
+        }
+        return;
+      }
+
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
 
@@ -33,6 +52,7 @@ export default function ResetPasswordPage() {
         if (sessionError) {
           if (isMounted) {
             setError("Password reset link is invalid or expired.");
+            setIsPreparing(false);
           }
           return;
         }
@@ -47,13 +67,20 @@ export default function ResetPasswordPage() {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (!session && isMounted) {
-          setError("Password reset session is missing. Please request a new reset link.");
+        if (!session) {
+          if (isMounted) {
+            setError(
+              "Password reset session is missing. Please request a new reset link.",
+            );
+            setIsPreparing(false);
+          }
+          return;
         }
       }
 
       if (isMounted) {
         setIsSessionReady(true);
+        setIsPreparing(false);
       }
     }
 
@@ -126,8 +153,18 @@ export default function ResetPasswordPage() {
         ) : (
           <>
             {error ? (
-              <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
+              <div className="mb-6 space-y-3">
+                <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+                {!isSessionReady ? (
+                  <Link
+                    className="flex h-11 w-full items-center justify-center rounded-md border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50"
+                    href="/forgot-password"
+                  >
+                    Request a new reset link
+                  </Link>
+                ) : null}
               </div>
             ) : null}
 
@@ -167,9 +204,9 @@ export default function ResetPasswordPage() {
               <button
                 className="flex h-11 w-full items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
                 type="submit"
-                disabled={isLoading || !isSessionReady}
+                disabled={isLoading || isPreparing || !isSessionReady}
               >
-                {!isSessionReady
+                {isPreparing
                   ? "Preparing..."
                   : isLoading
                     ? "Updating..."
