@@ -527,6 +527,7 @@ async function getCustomerTaxInfo(
   admin: SupabaseClient,
   orgId: string,
   customerId: string,
+  effectiveDate?: string | null,
 ): Promise<CustomerTaxInfo> {
   const { data: customer } = await admin
     .from("customers")
@@ -574,11 +575,15 @@ async function getCustomerTaxInfo(
     };
   }
 
+  const taxDate = effectiveDate || new Date().toISOString().slice(0, 10);
   const { data: taxRate } = await admin
     .from("tax_rates")
     .select("tax_name, combined_rate")
+    .eq("country_code", "CA")
     .eq("province_code", provinceCode)
     .eq("status", "active")
+    .lte("effective_from", taxDate)
+    .or(`effective_to.is.null,effective_to.gte.${taxDate}`)
     .order("effective_from", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -1134,8 +1139,14 @@ export async function calculateFinalQuotationTotals(
   finalDiscountType: string | null | undefined,
   finalDiscountValue: number | string | null | undefined,
   finalAdjustments: FinalAdjustmentInput[],
+  effectiveDate?: string | null,
 ) {
-  const taxInfo = await getCustomerTaxInfo(admin, orgId, customerId);
+  const taxInfo = await getCustomerTaxInfo(
+    admin,
+    orgId,
+    customerId,
+    effectiveDate,
+  );
   const totals = calculateFinalTotals({
     scopeTotals,
     finalDiscountType,
@@ -1455,6 +1466,7 @@ export async function getQuotationDetail(
     admin,
     orgId,
     quotationRow.customer_id,
+    quotationRow.quote_date,
   );
   const materialsByScope = new Map<string, MaterialWithDocument[]>();
   const labourByScope = new Map<string, LabourRow[]>();

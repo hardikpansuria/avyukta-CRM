@@ -342,6 +342,9 @@ export async function PATCH(
     finalDiscountType,
     finalDiscountValue,
     adjustmentsForCalculation,
+    input.quote_date !== undefined
+      ? (quoteDate.value ?? null)
+      : ((existingQuotation.quote_date as string | null) ?? null),
   );
   updates.final_discount_type = finalTotalsResult.totals.final_discount_type;
   updates.final_discount_value = finalTotalsResult.totals.final_discount_value;
