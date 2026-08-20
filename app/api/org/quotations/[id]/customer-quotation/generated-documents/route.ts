@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
+import { isCustomerDocumentType } from "@/lib/quotations/customer-document-type";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
@@ -12,7 +13,7 @@ function jsonError(error: string, status: number) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: RouteContext<"/api/org/quotations/[id]/customer-quotation/generated-documents">,
 ) {
   const session = await verifyOrgSession();
@@ -37,16 +38,38 @@ export async function GET(
     ? await admin.from("quotations").select("id").eq("org_id", session.org_id).eq("quotation_series_id", quotation.quotation_series_id)
     : { data: [{ id }] };
   const quotationIds = (seriesRows ?? [{ id }]).map((row) => row.id);
-  const { data: documents, error: documentsError } = await admin
-    .from("latest_quotation_generated_documents")
-    .select("*")
-    .eq("org_id", session.org_id)
-    .in("quotation_id", quotationIds)
-    .order("generated_at", { ascending: false });
+  const latestByType =
+    new URL(request.url).searchParams.get("latest_by_type") === "true";
+  const documentsQuery = latestByType
+    ? admin
+        .from("quotation_generated_documents")
+        .select("*")
+        .eq("org_id", session.org_id)
+        .in("quotation_id", quotationIds)
+        .order("generated_at", { ascending: false })
+        .order("id", { ascending: false })
+    : admin
+        .from("latest_quotation_generated_documents")
+        .select("*")
+        .eq("org_id", session.org_id)
+        .in("quotation_id", quotationIds)
+        .order("generated_at", { ascending: false });
+  const { data: queriedDocuments, error: documentsError } = await documentsQuery;
 
   if (documentsError) {
     return jsonError("Unable to fetch generated documents", 500);
   }
+
+  const documents = latestByType
+    ? (queriedDocuments ?? []).filter(
+        (document, index, allDocuments) =>
+          isCustomerDocumentType(document.document_type) &&
+          allDocuments.findIndex(
+            (candidate) =>
+              candidate.document_type === document.document_type,
+          ) === index,
+      )
+    : (queriedDocuments ?? []);
 
   const profileIds = Array.from(
     new Set(

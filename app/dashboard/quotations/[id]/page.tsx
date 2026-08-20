@@ -156,6 +156,7 @@ type Revision = {
 
 type GeneratedCustomerDocument = {
   id: string;
+  document_type?: "quotation" | "work_order" | null;
   revision_number?: number | string | null;
   file_name?: string | null;
   generated_at?: string | null;
@@ -322,7 +323,7 @@ export default function QuotationDetailPage() {
               },
             ),
             fetch(
-              `/api/org/quotations/${quotationId}/customer-quotation/generated-documents`,
+              `/api/org/quotations/${quotationId}/customer-quotation/generated-documents?latest_by_type=true`,
               {
                 cache: "no-store",
                 signal: controller.signal,
@@ -838,7 +839,7 @@ export default function QuotationDetailPage() {
                 Customer Quotation Documents
               </h2>
               <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Customer-ready PDFs generated from the separate sales draft.
+                Latest generated Quotation and Work Order PDFs.
               </p>
             </div>
             <Button
@@ -856,7 +857,7 @@ export default function QuotationDetailPage() {
           </div>
           {generatedCustomerDocuments.length === 0 ? (
             <p className="mt-5 rounded-md border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-              No customer quotation PDFs generated yet.
+              No Quotation or Work Order PDFs generated yet.
             </p>
           ) : (
             <div className="mt-5 divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -870,11 +871,12 @@ export default function QuotationDetailPage() {
                   >
                     <div>
                       <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-                        Revision {document.revision_number ?? 0}
+                        {document.document_type === "work_order"
+                          ? "Work Order"
+                          : "Quotation"}
                       </p>
                       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {formatDateTime(document.generated_at)} ·{" "}
-                        {document.generated_by_name || "System"}
+                        Generated {formatDateTime(document.generated_at)}
                       </p>
                     </div>
                     {signedUrl ? (
@@ -893,25 +895,6 @@ export default function QuotationDetailPage() {
                           }
                         >
                           View PDF
-                        </Button>
-                        <Button
-                          className="rounded-md"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            const printWindow = window.open(
-                              signedUrl,
-                              "_blank",
-                              "noopener,noreferrer",
-                            );
-                            printWindow?.addEventListener("load", () =>
-                              printWindow.print(),
-                            );
-                          }}
-                        >
-                          <PrinterIcon className="size-4" />
-                          Print
                         </Button>
                       </div>
                     ) : null}

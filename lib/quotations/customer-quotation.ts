@@ -2,6 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import sanitizeHtml from "sanitize-html";
 
 import { isOrgScopedStoragePath } from "../supabase/storage-path";
+import {
+  isCustomerDocumentType,
+  type CustomerDocumentType,
+} from "./customer-document-type";
 
 export type CustomerQuotationItemInput = {
   id?: string;
@@ -18,6 +22,7 @@ export type CustomerQuotationItemInput = {
 };
 
 export type CustomerQuotationDraftInput = {
+  document_type?: CustomerDocumentType | null;
   quotation_date?: string | null;
   customer_name_snapshot?: string | null;
   address_line_1_snapshot?: string | null;
@@ -290,6 +295,7 @@ function defaultDocument(source: SourceContext) {
     ),
   );
   return {
+    document_type: null,
     document_status: "draft",
     quotation_date:
       dateOnly(source.quotation.quote_date) ??
@@ -488,6 +494,16 @@ export function normalizeCustomerQuotationDraft(
   input: CustomerQuotationDraftInput,
   fallbackDocument: Record<string, unknown>,
 ) {
+  const documentType = isCustomerDocumentType(input.document_type)
+    ? input.document_type
+    : isCustomerDocumentType(fallbackDocument.document_type)
+      ? fallbackDocument.document_type
+      : null;
+
+  if (!documentType) {
+    return { error: "Document type is required" };
+  }
+
   const quotationDate =
     dateOnly(input.quotation_date) ??
     dateOnly(fallbackDocument.quotation_date);
@@ -520,6 +536,7 @@ export function normalizeCustomerQuotationDraft(
 
   return {
     value: {
+      document_type: documentType,
       quotation_date: quotationDate,
       customer_name_snapshot:
         text(input.customer_name_snapshot) ||

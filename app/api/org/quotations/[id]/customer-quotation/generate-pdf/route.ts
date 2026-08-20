@@ -9,6 +9,7 @@ import {
   renderCustomerQuotationPdf,
   type CustomerQuotationPdfData,
 } from "@/lib/quotations/customer-quotation-pdf";
+import { isCustomerDocumentType } from "@/lib/quotations/customer-document-type";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getQuotationLock, lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
 import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
@@ -79,6 +80,10 @@ export async function POST(
   }
 
   const document = result.value.document as Record<string, unknown>;
+  const documentType = document.document_type;
+  if (!isCustomerDocumentType(documentType)) {
+    return jsonError("Select a document type before generating", 400);
+  }
   const customerDocumentId = String(document.id);
   const generatedDocumentId = crypto.randomUUID();
   const revisionNumber = Number(document.revision_number_snapshot ?? 0);
@@ -128,6 +133,7 @@ export async function POST(
       org_id: session.org_id,
       quotation_id: id,
       customer_document_id: customerDocumentId,
+      document_type: documentType,
       revision_number: revisionNumber,
       file_name: fileName,
       file_path: filePath,

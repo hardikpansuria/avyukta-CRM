@@ -11,6 +11,11 @@ import { parseDocument } from "htmlparser2";
 import React, { type ReactNode } from "react";
 
 import { sanitizeCustomerQuotationHtml } from "./customer-quotation";
+import {
+  customerDocumentLabels,
+  isCustomerDocumentType,
+  type CustomerDocumentType,
+} from "./customer-document-type";
 
 type RichNode = {
   type: string;
@@ -35,6 +40,7 @@ export type CustomerQuotationPdfData = {
   };
   logo_data_url?: string | null;
   document: {
+    document_type?: CustomerDocumentType | null;
     quotation_date?: string | null;
     quotation_number_snapshot?: string | null;
     revision_number_snapshot?: number | string | null;
@@ -675,6 +681,10 @@ function TermsChrome({
 
 function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
   const { organization, document, items } = data;
+  const documentType = isCustomerDocumentType(document.document_type)
+    ? document.document_type
+    : "quotation";
+  const labels = customerDocumentLabels(documentType);
   const location = [document.city_snapshot, document.province_snapshot]
     .filter(Boolean)
     .join(", ");
@@ -688,7 +698,7 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
   return (
     <Document
       author={organization.company_name}
-      subject="Customer quotation"
+      subject={labels.name}
       title={document.quotation_number_snapshot ?? "Quotation"}
     >
       <Page size="A4" style={styles.page} wrap>
@@ -718,7 +728,7 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
               </Text>
             </View>
             <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Quotation:</Text>
+              <Text style={styles.metaLabel}>{labels.numberLabel}:</Text>
               <Text style={styles.quotationNumber}>
                 {document.quotation_number_snapshot || "-"}
               </Text>
@@ -732,7 +742,7 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
           </View>
         </View>
 
-        <Text style={styles.title}>Quotation</Text>
+        <Text style={styles.title}>{labels.uppercaseTitle}</Text>
 
         <View style={styles.table}>
           <View style={styles.tableHeader}>

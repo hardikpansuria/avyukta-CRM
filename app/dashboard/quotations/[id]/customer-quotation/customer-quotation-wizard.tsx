@@ -4,8 +4,10 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
+  ClipboardListIcon,
   ExternalLinkIcon,
   FileDownIcon,
+  FileTextIcon,
   SaveIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -19,6 +21,11 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  customerDocumentLabels,
+  isCustomerDocumentType,
+  type CustomerDocumentType,
+} from "@/lib/quotations/customer-document-type";
 import { cn } from "@/lib/utils";
 
 import { CustomerQuotationPreview } from "./customer-quotation-preview";
@@ -26,6 +33,7 @@ import { RichTextEditor } from "./rich-text-editor";
 
 type CustomerDocument = {
   id?: string;
+  document_type: CustomerDocumentType | null;
   document_status?: string;
   quotation_date: string;
   quotation_number_snapshot: string;
@@ -99,15 +107,6 @@ type ApiPayload = {
   error?: string;
 };
 
-const steps = [
-  "Company Branding",
-  "Customer Details",
-  "Quotation Details",
-  "Scope & Pricing",
-  "Commercial Terms",
-  "Preview & Generate PDF",
-];
-
 const inputClass =
   "h-10 rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900";
 
@@ -130,6 +129,9 @@ function money(value: unknown) {
 function hydrateDocument(value: Record<string, unknown>): CustomerDocument {
   return {
     id: stringValue(value.id) || undefined,
+    document_type: isCustomerDocumentType(value.document_type)
+      ? value.document_type
+      : null,
     document_status: stringValue(value.document_status) || "draft",
     quotation_date: stringValue(value.quotation_date),
     quotation_number_snapshot: stringValue(value.quotation_number_snapshot),
@@ -265,6 +267,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
     if (!document) return null;
 
     return {
+      document_type: document.document_type,
       quotation_date: document.quotation_date,
       customer_name_snapshot: document.customer_name_snapshot,
       address_line_1_snapshot: document.address_line_1_snapshot,
@@ -319,7 +322,16 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         hydrateDocument({ ...saved.document, ...saved.pricing_summary }),
       );
       setItems(hydrateItems(saved.items ?? []));
-      if (showSuccess) setSuccess("Customer quotation draft saved.");
+      if (showSuccess) {
+        const savedDocument = hydrateDocument({
+          ...saved.document,
+          ...saved.pricing_summary,
+        });
+        const savedName = savedDocument.document_type
+          ? customerDocumentLabels(savedDocument.document_type).name
+          : "Customer document";
+        setSuccess(`${savedName} draft saved.`);
+      }
       return true;
     } catch {
       setError("Unable to save customer quotation draft.");
@@ -330,6 +342,8 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
   }
 
   async function generatePdf() {
+    if (!document) return;
+    const documentType = document.document_type;
     const saved = await saveDraft(false);
     if (!saved) return;
 
@@ -359,7 +373,10 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
             Number(payload.document!.revision_number ?? 0),
         ),
       ]);
-      setSuccess("Customer quotation PDF generated.");
+      const documentName = documentType
+        ? customerDocumentLabels(documentType).name
+        : "Customer document";
+      setSuccess(`${documentName} PDF generated.`);
 
       if (payload.document.signed_url) {
         window.open(payload.document.signed_url, "_blank", "noopener,noreferrer");
@@ -390,6 +407,19 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
   }
 
   const previewDocument = document;
+  const labels = document.document_type
+    ? customerDocumentLabels(document.document_type)
+    : null;
+  const documentName = labels?.name ?? "Customer Document";
+  const workflowSteps = [
+    "Document Type",
+    "Company Branding",
+    "Customer Details",
+    `${labels?.title ?? "Document"} Details`,
+    "Scope & Pricing",
+    "Commercial Terms",
+    "Preview & Generate PDF",
+  ];
 
   return (
     <div className="mx-auto max-w-7xl pb-24">
@@ -404,7 +434,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
           </Link>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">
-              Customer Quotation
+              {documentName}
             </h1>
             <Badge variant="outline">
               {readOnly ? "Locked revision" : exists ? "Draft saved" : "New draft"}
@@ -416,7 +446,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         </div>
         {!readOnly ? <Button
           className="rounded-md"
-          disabled={isSaving}
+          disabled={isSaving || !document.document_type}
           type="button"
           variant="outline"
           onClick={() => void saveDraft()}
@@ -427,11 +457,11 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
       </div>
 
       <nav
-        aria-label="Customer quotation steps"
+        aria-label="Customer document steps"
         className="mt-6 overflow-x-auto rounded-lg border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
       >
         <ol className="flex min-w-max items-center">
-          {steps.map((step, index) => (
+          {workflowSteps.map((step, index) => (
             <li className="flex items-center" key={step}>
               <button
                 className={cn(
@@ -441,6 +471,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                     : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50",
                 )}
                 type="button"
+                disabled={!document.document_type && index > 0}
                 onClick={() => setActiveStep(index)}
               >
                 <span
@@ -457,7 +488,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                 </span>
                 {step}
               </button>
-              {index < steps.length - 1 ? (
+              {index < workflowSteps.length - 1 ? (
                 <span className="mx-1 h-px w-5 bg-zinc-200 dark:bg-zinc-800" />
               ) : null}
             </li>
@@ -479,6 +510,34 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
       <main className="mt-6">
         <fieldset disabled={readOnly}>
         {activeStep === 0 ? (
+          <StepCard
+            description="Choose the customer-facing document terminology. The workflow, data, pricing, and quotation number remain shared."
+            title="What would you like to create?"
+          >
+            <div
+              aria-label="Document type"
+              className="grid gap-4 md:grid-cols-2"
+              role="group"
+            >
+              <DocumentTypeOption
+                description="Use the existing customer quotation terminology."
+                icon={<FileTextIcon className="size-5" />}
+                label="Customer Quotation"
+                selected={document.document_type === "quotation"}
+                onSelect={() => updateDocument({ document_type: "quotation" })}
+              />
+              <DocumentTypeOption
+                description="Use the same document with Work Order title and number label."
+                icon={<ClipboardListIcon className="size-5" />}
+                label="Work Order"
+                selected={document.document_type === "work_order"}
+                onSelect={() => updateDocument({ document_type: "work_order" })}
+              />
+            </div>
+          </StepCard>
+        ) : null}
+
+        {activeStep === 1 ? (
           <StepCard
             description="Organization-wide quotation branding is reused for every customer document."
             title="Company Branding"
@@ -524,9 +583,9 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
           </StepCard>
         ) : null}
 
-        {activeStep === 1 ? (
+        {activeStep === 2 ? (
           <StepCard
-            description="These values are snapshots for this customer quotation and do not update the customer record."
+            description={`These values are snapshots for this ${documentName.toLowerCase()} and do not update the customer record.`}
             title="Customer Details"
           >
             <div className="grid gap-5 md:grid-cols-2">
@@ -583,21 +642,21 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
           </StepCard>
         ) : null}
 
-        {activeStep === 2 ? (
+        {activeStep === 3 ? (
           <StepCard
             description="Quotation number and revision come from the internal quotation and remain read-only."
-            title="Quotation Details"
+            title={`${labels?.title ?? "Document"} Details`}
           >
             <div className="grid gap-5 md:grid-cols-3">
               <TextField
                 required
-                label="Quotation Date"
+                label={`${labels?.numberLabel ?? "Document"} Date`}
                 type="date"
                 value={document.quotation_date}
                 onChange={(value) => updateDocument({ quotation_date: value })}
               />
               <ReadOnlyField
-                label="Quotation Number"
+                label={`${labels?.numberLabel ?? "Document"} Number`}
                 value={document.quotation_number_snapshot}
               />
               <ReadOnlyField
@@ -608,7 +667,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
           </StepCard>
         ) : null}
 
-        {activeStep === 3 ? (
+        {activeStep === 4 ? (
           <StepCard
             description="Each internal scope becomes one synchronized customer-facing line. Internal cost details remain private."
             title="Scope & Pricing"
@@ -669,7 +728,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                   <div className="mt-4">
                     <Label className="text-xs font-medium">Notes</Label>
                     <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      Optional notes shown beneath this scope on the customer quotation.
+                      Optional notes shown beneath this scope on the {documentName.toLowerCase()}.
                     </p>
                     <div className="mt-2">
                       <RichTextEditor
@@ -717,9 +776,9 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
           </StepCard>
         ) : null}
 
-        {activeStep === 4 ? (
+        {activeStep === 5 ? (
           <StepCard
-            description="Complete the commercial details shown below the quotation table."
+            description={`Complete the commercial details shown below the ${labels?.title.toLowerCase() ?? "document"} table.`}
             title="Commercial Terms"
           >
             <div className="space-y-5">
@@ -758,7 +817,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
           </StepCard>
         ) : null}
 
-        {activeStep === 5 ? (
+        {activeStep === 6 ? (
           <div className="space-y-6">
             <StepCard
               description="Review the A4 customer document before generating an immutable PDF version."
@@ -865,7 +924,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
           <div className="flex items-center gap-2">
             {!readOnly ? <Button
               className="hidden rounded-md sm:inline-flex"
-              disabled={isSaving}
+              disabled={isSaving || !document.document_type}
               type="button"
               variant="outline"
               onClick={() => void saveDraft()}
@@ -873,12 +932,15 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
               <SaveIcon className="size-4" />
               Save Draft
             </Button> : null}
-            {activeStep < steps.length - 1 ? (
+            {activeStep < workflowSteps.length - 1 ? (
               <Button
                 className="rounded-md"
+                disabled={activeStep === 0 && !document.document_type}
                 type="button"
                 onClick={() =>
-                  setActiveStep((step) => Math.min(steps.length - 1, step + 1))
+                  setActiveStep((step) =>
+                    Math.min(workflowSteps.length - 1, step + 1),
+                  )
                 }
               >
                 Next
@@ -900,6 +962,44 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
       </div>
 
     </div>
+  );
+}
+
+function DocumentTypeOption({
+  label,
+  description,
+  icon,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={selected}
+      className={cn(
+        "rounded-lg border p-5 text-left transition",
+        selected
+          ? "border-zinc-950 bg-zinc-50 ring-2 ring-zinc-950/10 dark:border-zinc-50 dark:bg-zinc-900 dark:ring-zinc-50/10"
+          : "border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-900",
+      )}
+      type="button"
+      onClick={onSelect}
+    >
+      <span className="flex items-center gap-3 font-semibold">
+        <span className="flex size-9 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
+          {icon}
+        </span>
+        {label}
+      </span>
+      <span className="mt-3 block text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+        {description}
+      </span>
+    </button>
   );
 }
 

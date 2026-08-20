@@ -2,6 +2,11 @@
 
 import Image from "next/image";
 
+import {
+  customerDocumentLabels,
+  isCustomerDocumentType,
+} from "@/lib/quotations/customer-document-type";
+
 type PreviewData = {
   organization: {
     company_name: string;
@@ -42,6 +47,10 @@ export function CustomerQuotationPreview({
   data: PreviewData;
 }) {
   const { organization, document, items } = data;
+  const documentType = isCustomerDocumentType(document.document_type)
+    ? document.document_type
+    : "quotation";
+  const labels = customerDocumentLabels(documentType);
   const footer =
     organization.footer_text ||
     [
@@ -95,7 +104,7 @@ export function CustomerQuotationPreview({
             <dd className="text-right">
               {dateText(document.quotation_date)}
             </dd>
-            <dt>Quotation:</dt>
+            <dt>{labels.numberLabel}:</dt>
             <dd className="text-right font-bold">
               {String(document.quotation_number_snapshot || "-")}
             </dd>
@@ -106,7 +115,9 @@ export function CustomerQuotationPreview({
           </dl>
         </div>
 
-        <h1 className="mt-8 text-center text-2xl font-bold">Quotation</h1>
+        <h1 className="mt-8 text-center text-2xl font-bold">
+          {labels.uppercaseTitle}
+        </h1>
         <div className="mt-4 overflow-hidden border border-zinc-400">
           <div className="grid grid-cols-[55px_1fr_110px_110px] bg-zinc-100 text-xs font-bold">
             <span className="border-r border-zinc-300 p-2 text-center">Qty.</span>
