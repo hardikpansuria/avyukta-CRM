@@ -63,7 +63,7 @@ async function getInvoiceRelations(admin: SupabaseClient, orgId: string) {
         .order("invoice_date", { ascending: false }),
       admin
         .from("job_purchase_orders")
-        .select("id,customer_id,po_number,currency,combined_po_total")
+        .select("id,customer_id,po_number,currency,combined_po_total,current_po_total")
         .eq("org_id", orgId),
       admin
         .from("jobs")
@@ -207,7 +207,7 @@ export async function getInvoiceDetail(
         .maybeSingle(),
       admin
         .from("job_purchase_orders")
-        .select("id,customer_id,po_number,currency,combined_po_total")
+        .select("id,customer_id,po_number,currency,combined_po_total,current_po_total")
         .eq("id", invoice.purchase_order_id)
         .eq("org_id", orgId)
         .maybeSingle(),

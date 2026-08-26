@@ -21,6 +21,8 @@ export type QuotationSummary = {
   grand_total_before_tax?: number | string | null;
   tax_name?: string | null;
   tax_rate?: number | string | null;
+  quote_date?: string | null;
+  currency?: string | null;
 };
 
 export type JobListItem = {

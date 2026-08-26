@@ -290,7 +290,8 @@ function EmptyPriceRow({ colSpan, text, permissions, materialId }: { colSpan: nu
 }
 
 function SimpleSelect({ value, onChange, all, options, allValue = "all" }: { value: string; onChange: (value: string) => void; all: string; options: string[][]; allValue?: string }) {
-  return <Select value={value} onValueChange={(next) => onChange(String(next))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value={allValue}>{all}</SelectItem>{options.map(([option, label]) => <SelectItem key={option} value={option}>{label}</SelectItem>)}</SelectContent></Select>;
+  const selectedLabel = value === allValue ? all : options.find(([option]) => option === value)?.[1] ?? all;
+  return <Select value={value} onValueChange={(next) => onChange(String(next))}><SelectTrigger className="w-full"><SelectValue>{selectedLabel}</SelectValue></SelectTrigger><SelectContent><SelectItem value={allValue}>{all}</SelectItem>{options.map(([option, label]) => <SelectItem key={option} value={option}>{label}</SelectItem>)}</SelectContent></Select>;
 }
 
 function formatDate(value: string | null | undefined) { return value ? new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(new Date(`${value}${value.length === 10 ? "T12:00:00" : ""}`)) : "—"; }

@@ -445,12 +445,16 @@ function RevisionSelect({
   revisions: Revision[];
   onChange: (value: string) => void;
 }) {
+  const selectedRevision = revisions.find((revision) => revision.id === value);
+  const selectedRevisionLabel = selectedRevision
+    ? `${selectedRevision.quotation_number ?? "Quotation"} · Rev ${selectedRevision.revision_number ?? 0} · ${formatStatus(selectedRevision.status)}`
+    : "Select revision";
   return (
     <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
       {label}
       <Select value={value} onValueChange={(next) => onChange(String(next))}>
         <SelectTrigger className="mt-2 w-full" aria-label={label}>
-          <SelectValue placeholder="Select revision" />
+          <SelectValue>{selectedRevisionLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           {revisions.map((revision) => (

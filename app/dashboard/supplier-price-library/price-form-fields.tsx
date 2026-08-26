@@ -60,6 +60,9 @@ export function PriceFormFields({
   materialLabel?: string;
 }) {
   const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const selectedSupplier = suppliers.find(
+    (supplier) => supplier.id === draft.supplier_id,
+  );
 
   function update(key: keyof SupplierPriceDraft, value: string) {
     onChange({ ...draft, [key]: value });
@@ -87,7 +90,9 @@ export function PriceFormFields({
             }}
           >
             <SelectTrigger className="mt-2 w-full">
-              <SelectValue placeholder="Select supplier" />
+              <SelectValue>
+                {selectedSupplier?.company_name ?? "Select supplier"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {suppliers.map((supplier) => (

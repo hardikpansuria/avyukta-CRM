@@ -11,6 +11,8 @@ type PurchaseOrderRow = {
   combined_tax_amount: number | string;
   combined_po_total: number | string;
   difference_amount: number | string;
+  current_revision_number: number | string;
+  current_po_total: number | string;
   internal_remarks?: string | null;
   created_at?: string | null;
 };
@@ -45,6 +47,13 @@ type JobRow = {
 type CustomerRow = {
   id: string;
   company_name: string;
+};
+
+type CompletionRow = {
+  job_id: string;
+  completion_status: string;
+  completion_date: string;
+  completed_at: string;
 };
 
 function numeric(value: number | string | null | undefined) {
@@ -178,7 +187,7 @@ export async function listPurchaseOrders(
         job_count: allocations.length,
         jobs: includedJobs,
         ...totals,
-        remaining_uninvoiced: numeric(po.combined_po_total) - totals.invoiced,
+        remaining_uninvoiced: numeric(po.current_po_total) - totals.invoiced,
         production_summary: Array.from(statuses.entries()).map(
           ([status, count]) => ({ status, count }),
         ),
@@ -240,18 +249,104 @@ export async function getPurchaseOrder(
     data.invoices!.filter((invoice) => invoice.purchase_order_id === po.id),
   );
 
+  const { data: revisionRows, error: revisionError } = await admin
+    .from("job_purchase_order_revisions")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("purchase_order_id", po.id)
+    .order("revision_number", { ascending: false });
+  if (revisionError) return { error: revisionError };
+
+  const revisionIds = (revisionRows ?? []).map((revision) => revision.id);
+  const creatorIds = Array.from(
+    new Set(
+      (revisionRows ?? [])
+        .map((revision) => revision.created_by)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const [itemResult, creatorResult, completionResult] = await Promise.all([
+    revisionIds.length
+      ? admin
+          .from("job_purchase_order_revision_items")
+          .select("*")
+          .eq("org_id", orgId)
+          .in("revision_id", revisionIds)
+          .order("quotation_number_snapshot")
+      : Promise.resolve({ data: [], error: null }),
+    creatorIds.length
+      ? admin.from("profiles").select("id,full_name,email").in("id", creatorIds)
+      : Promise.resolve({ data: [], error: null }),
+    allocations.length
+      ? admin
+          .from("job_work_completions")
+          .select("job_id,completion_status,completion_date,completed_at")
+          .eq("org_id", orgId)
+          .eq("generation_status", "generated")
+          .in("job_id", allocations.map((allocation) => allocation.job_id))
+          .order("completed_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (itemResult.error || creatorResult.error || completionResult.error) {
+    return { error: itemResult.error ?? creatorResult.error ?? completionResult.error };
+  }
+  const creators = new Map((creatorResult.data ?? []).map((row) => [row.id, row]));
+  const completionByJob = new Map<string, CompletionRow>();
+  for (const completion of (completionResult.data ?? []) as CompletionRow[]) {
+    if (!completionByJob.has(completion.job_id)) {
+      completionByJob.set(completion.job_id, completion);
+    }
+  }
+  const documents = data.documents!.filter(
+    (document) => document.purchase_order_id === po.id,
+  );
+  const documentById = new Map(documents.map((document) => [document.id, document]));
+  const revisions = (revisionRows ?? []).map((revision) => ({
+    ...revision,
+    created_by_profile: revision.created_by
+      ? (creators.get(revision.created_by) ?? null)
+      : null,
+    document: revision.document_id
+      ? (documentById.get(revision.document_id) ?? null)
+      : null,
+    items: (itemResult.data ?? [])
+      .filter((item) => item.revision_id === revision.id)
+      .map((item) => ({
+        ...item,
+        current_job_status: jobs.get(item.job_id)?.job_status ?? item.job_status_snapshot,
+        current_job_number: jobs.get(item.job_id)?.job_number ?? item.job_number_snapshot,
+        current_completion: completionByJob.get(item.job_id) ?? null,
+      })),
+  }));
+  const currentAllocationIds = new Set(
+    (revisions[0]?.items ?? [])
+      .filter((item: { is_included: boolean }) => item.is_included)
+      .map((item: { allocation_id: string }) => item.allocation_id),
+  );
+  const { data: primaryContact, error: contactError } = await admin
+    .from("customer_contacts")
+    .select("id,first_name,last_name,email,mobile_number,office_phone")
+    .eq("org_id", orgId)
+    .eq("customer_id", po.customer_id)
+    .eq("status", "active")
+    .eq("is_primary", true)
+    .maybeSingle();
+  if (contactError) return { error: contactError };
+
   return {
     error: null,
     purchaseOrder: {
       ...po,
       customer: customer ?? null,
-      allocations,
-      documents: data.documents!.filter(
-        (document) => document.purchase_order_id === po.id,
-      ),
+      customer_contact: primaryContact ?? null,
+      allocations: allocations.map((allocation) => ({
+        ...allocation,
+        is_currently_included: currentAllocationIds.has(allocation.id),
+      })),
+      documents,
+      revisions,
       ...totals,
-      remaining_uninvoiced: numeric(po.combined_po_total) - totals.invoiced,
+      remaining_uninvoiced: numeric(po.current_po_total) - totals.invoiced,
     },
   };
 }
-

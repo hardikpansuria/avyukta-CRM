@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type { JobListItem } from "@/lib/jobs/types";
+import { PoDuplicateDialog } from "../po-duplicate-dialog";
 
 type Selection = { selected: boolean; amount: string; acknowledged: boolean; scopeIds: string[] };
 
@@ -62,6 +63,24 @@ export default function CombinePurchaseOrderPage() {
     jobs?: Array<{ job_number?: string | null }>;
     document_warning?: string | null;
   } | null>(null);
+  const [existingPo, setExistingPo] = useState<{ id: string; po_number: string } | null>(null);
+
+  async function checkDuplicate() {
+    if (!customerId || !poNumber.trim()) return;
+    const params = new URLSearchParams({
+      customer_id: customerId,
+      po_number: poNumber.trim(),
+    });
+    const response = await fetch(`/api/org/job-purchase-orders?${params}`, {
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | { existing_purchase_order?: { id: string; po_number: string } | null }
+      | null;
+    if (response.ok && payload?.existing_purchase_order) {
+      setExistingPo(payload.existing_purchase_order);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -99,6 +118,7 @@ export default function CombinePurchaseOrderPage() {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [jobs]);
   const customerJobs = jobs.filter((job) => job.customer_id === customerId);
+  const selectedCustomer = customers.find((customer) => customer.id === customerId);
   const selectedJobs = customerJobs.filter(
     (job) => selections[job.id]?.selected,
   );
@@ -170,14 +190,20 @@ export default function CombinePurchaseOrderPage() {
         body: form,
       });
       const payload = (await response.json().catch(() => null)) as
-        | {
+          | {
             purchase_order_id?: string;
             jobs?: Array<{ job_number?: string | null }>;
             document_warning?: string | null;
             error?: string;
+            code?: string;
+            existing_purchase_order?: { id: string; po_number: string };
           }
         | null;
       if (!response.ok || !payload?.purchase_order_id) {
+        if (payload?.code === "PO_EXISTS" && payload.existing_purchase_order) {
+          setExistingPo(payload.existing_purchase_order);
+          return;
+        }
         setError(payload?.error ?? "Unable to create combined PO.");
         return;
       }
@@ -231,6 +257,11 @@ export default function CombinePurchaseOrderPage() {
 
   return (
     <form className="mx-auto max-w-7xl space-y-6" onSubmit={submit}>
+      <PoDuplicateDialog
+        existingPo={existingPo}
+        jobIds={selectedJobs.map((job) => job.id)}
+        onClose={() => setExistingPo(null)}
+      />
       <Button
         nativeButton={false}
         render={<Link href="/dashboard/jobs/po-pending" />}
@@ -265,7 +296,9 @@ export default function CombinePurchaseOrderPage() {
               }}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select customer" />
+                <SelectValue>
+                  {selectedCustomer?.name ?? "Select customer"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {customers.map((customer) => (
@@ -282,6 +315,7 @@ export default function CombinePurchaseOrderPage() {
               id="combine-number"
               required
               value={poNumber}
+              onBlur={() => void checkDuplicate()}
               onChange={(event) => setPoNumber(event.target.value)}
             />
           </div>

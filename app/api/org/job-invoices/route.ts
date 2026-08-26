@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   const denied = await requireOrgPermission(session, "invoices", "view");
   if (denied) return denied;
   const params = new URL(request.url).searchParams;
-  const [result, canCreate] = await Promise.all([
+  const [result, canCreate, canViewRequests] = await Promise.all([
     listInvoices(createAdminClient(), session.org_id, {
       customer: params.get("customer")?.trim() ?? "",
       po: params.get("po")?.trim() ?? "",
@@ -31,11 +31,15 @@ export async function GET(request: Request) {
       aging: params.get("aging")?.trim() ?? "",
     }),
     hasOrgPermission(session, "invoices", "create"),
+    hasOrgPermission(session, "invoice_requests", "view"),
   ]);
   if (result.error) return jsonError("Unable to fetch invoices", 500);
   return NextResponse.json({
     groups: result.groups ?? [],
-    permissions: { can_create: canCreate },
+    permissions: {
+      can_create: canCreate,
+      can_view_requests: canViewRequests,
+    },
   });
 }
 

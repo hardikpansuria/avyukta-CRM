@@ -120,7 +120,9 @@ export function NewPriceForm({ initialMaterialId }: { initialMaterialId: string 
                 <Label>Material *</Label>
                 <Select value={materialId} onValueChange={(value) => setMaterialId(String(value))}>
                   <SelectTrigger className="mt-2 w-full">
-                    <SelectValue placeholder="Select material" />
+                    <SelectValue>
+                      {material ? materialLabel(material) : "Select material"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {materials.map((item) => (

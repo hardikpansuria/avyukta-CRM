@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { JobListItem } from "@/lib/jobs/types";
+import { PoDuplicateDialog } from "../../po-duplicate-dialog";
 
 type CreateResult = {
   purchase_order_id?: string;
@@ -25,6 +26,8 @@ type CreateResult = {
   jobs?: Array<{ id: string; job_number?: string | null }>;
   document_warning?: string | null;
   error?: string;
+  code?: string;
+  existing_purchase_order?: { id: string; po_number: string };
 };
 
 function amount(value: string) {
@@ -66,6 +69,24 @@ export default function AttachPurchaseOrderPage() {
   const [result, setResult] = useState<CreateResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [existingPo, setExistingPo] = useState<{ id: string; po_number: string } | null>(null);
+
+  async function checkDuplicate() {
+    if (!job?.customer_id || !poNumber.trim()) return;
+    const params = new URLSearchParams({
+      customer_id: job.customer_id,
+      po_number: poNumber.trim(),
+    });
+    const response = await fetch(`/api/org/job-purchase-orders?${params}`, {
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | { existing_purchase_order?: { id: string; po_number: string } | null }
+      | null;
+    if (response.ok && payload?.existing_purchase_order) {
+      setExistingPo(payload.existing_purchase_order);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -151,6 +172,10 @@ export default function AttachPurchaseOrderPage() {
         | CreateResult
         | null;
       if (!response.ok || !payload?.purchase_order_id) {
+        if (payload?.code === "PO_EXISTS" && payload.existing_purchase_order) {
+          setExistingPo(payload.existing_purchase_order);
+          return;
+        }
         setError(payload?.error ?? "Unable to create purchase order.");
         return;
       }
@@ -219,6 +244,11 @@ export default function AttachPurchaseOrderPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      <PoDuplicateDialog
+        existingPo={existingPo}
+        jobIds={[jobId]}
+        onClose={() => setExistingPo(null)}
+      />
       <Button
         nativeButton={false}
         render={<Link href="/dashboard/jobs/po-pending" />}
@@ -302,7 +332,8 @@ export default function AttachPurchaseOrderPage() {
                   <Input
                     id="po-number"
                     required
-                    value={poNumber}
+              value={poNumber}
+              onBlur={() => void checkDuplicate()}
                     onChange={(event) => setPoNumber(event.target.value)}
                   />
                 </div>

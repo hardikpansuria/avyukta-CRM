@@ -109,7 +109,7 @@ export async function listJobs(
       ? admin
           .from("quotations")
           .select(
-            "id,quotation_number,revision_number,project_name,grand_total_after_tax,grand_total_before_tax,tax_name,tax_rate",
+            "id,quotation_number,revision_number,project_name,grand_total_after_tax,grand_total_before_tax,tax_name,tax_rate,quote_date,currency",
           )
           .eq("org_id", orgId)
           .in("id", quotationIds)

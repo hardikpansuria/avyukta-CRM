@@ -6,7 +6,6 @@ import {
   BriefcaseBusinessIcon,
   FileCheck2Icon,
   FileTextIcon,
-  ClipboardListIcon,
   ReceiptTextIcon,
   LayoutDashboardIcon,
   UsersIcon,
@@ -26,7 +25,6 @@ const iconByHref = {
   "/dashboard/jobs/po-pending": FileCheck2Icon,
   "/dashboard/jobs/purchase-orders": ReceiptTextIcon,
   "/dashboard/invoices": ReceiptTextIcon,
-  "/dashboard/invoice-requests": ClipboardListIcon,
   "/dashboard/employees": ContactRoundIcon,
   "/dashboard/calendar": CalendarDaysIcon,
   "/dashboard/supplier-price-library": LibraryIcon,
@@ -55,10 +53,16 @@ export function DashboardNavigation({
         const Icon =
           iconByHref[link.href as keyof typeof iconByHref] ??
           LayoutDashboardIcon;
+        const isInvoiceSection =
+          link.href === "/dashboard/invoices" &&
+          (pathname === "/dashboard/invoice-requests" ||
+            pathname.startsWith("/dashboard/invoice-requests/"));
         const isActive =
           link.href === "/dashboard"
             ? pathname === link.href
-            : pathname === link.href || pathname.startsWith(`${link.href}/`);
+            : isInvoiceSection ||
+              pathname === link.href ||
+              pathname.startsWith(`${link.href}/`);
 
         return (
           <div key={link.href}>

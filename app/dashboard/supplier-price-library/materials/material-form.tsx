@@ -86,6 +86,9 @@ export function MaterialForm({
   const [existing, setExisting] = useState<string | null>(null);
   const [customUnit, setCustomUnit] = useState(false);
   const [creatingCategory, setCreatingCategory] = useState(false);
+  const selectedCategory = categories.find(
+    (category) => category.id === form.category_id,
+  );
 
   useEffect(() => {
     Promise.all([
@@ -237,9 +240,11 @@ export function MaterialForm({
                     }
                     update("category_id", String(value));
                   }}
-                >
+                  >
                   <SelectTrigger className="mt-2 w-full">
-                    <SelectValue placeholder="Select category" />
+                    <SelectValue>
+                      {selectedCategory?.category_name ?? "Select category"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((category) => (

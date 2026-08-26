@@ -9,6 +9,7 @@ import {
   ExternalLinkIcon,
   FileIcon,
   UploadIcon,
+  PlusIcon,
 } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -35,7 +36,7 @@ import {
 
 type Document = {
   id: string;
-  document_type: "purchase_order" | "supporting_document";
+  document_type: "purchase_order" | "supporting_document" | "po_revision";
   file_name: string;
   file_size?: number | string | null;
   mime_type?: string | null;
@@ -54,6 +55,7 @@ type Allocation = {
   invoiced: number;
   paid: number;
   outstanding: number;
+  is_currently_included: boolean;
   job?: {
     id: string;
     job_number?: string | null;
@@ -69,6 +71,8 @@ type PurchaseOrder = {
   combined_quotation_total: number | string;
   combined_po_total: number | string;
   difference_amount: number | string;
+  current_revision_number: number | string;
+  current_po_total: number | string;
   internal_remarks?: string | null;
   customer?: { company_name?: string | null } | null;
   allocations: Allocation[];
@@ -76,6 +80,25 @@ type PurchaseOrder = {
   invoiced: number;
   paid: number;
   outstanding: number;
+  revisions: Array<{
+    id: string;
+    revision_number: number | string;
+    revision_date: string;
+    previous_po_amount: number | string;
+    revised_po_amount: number | string;
+    difference_amount: number | string;
+    change_percentage?: number | string | null;
+    created_by_profile?: { full_name?: string | null; email?: string | null } | null;
+    document?: Document | null;
+    items: Array<{
+      allocation_id: string;
+      quotation_number_snapshot: string;
+      project_name_snapshot?: string | null;
+      po_amount_snapshot: number | string;
+      change_type: "original" | "carried" | "added" | "removed";
+      is_included: boolean;
+    }>;
+  }>;
 };
 
 function money(value: number | string, currency: string) {
@@ -121,6 +144,7 @@ export default function PurchaseOrderDetailPage() {
   const [uploadType, setUploadType] =
     useState<"purchase_order" | "supporting_document">("supporting_document");
   const [uploading, setUploading] = useState(false);
+  const [viewingRevisionId, setViewingRevisionId] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -169,6 +193,11 @@ export default function PurchaseOrderDetailPage() {
     }
     window.open(payload.signed_url, "_blank", "noopener,noreferrer");
   }
+
+  const viewingRevision = po?.revisions.find((revision) => revision.id === viewingRevisionId);
+  const currentAllocations = po?.allocations.filter(
+    (allocation) => allocation.is_currently_included,
+  ) ?? [];
 
   async function upload() {
     if (!uploadFile || uploading) return;
@@ -227,7 +256,20 @@ export default function PurchaseOrderDetailPage() {
             {po.customer?.company_name ?? "-"} · Received {po.po_received_date}
           </p>
         </div>
-        <Badge variant="outline">{po.allocations.length} Jobs</Badge>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline">
+            {Number(po.current_revision_number) > 0
+              ? `Revision ${po.current_revision_number}`
+              : "Original"}
+          </Badge>
+          <Button
+            nativeButton={false}
+            render={<Link href={`/dashboard/jobs/purchase-orders/${po.id}/revisions/new`} />}
+            size="sm"
+          >
+            <PlusIcon /> Create PO Revision
+          </Button>
+        </div>
       </div>
       {error ? (
         <Alert>
@@ -236,8 +278,8 @@ export default function PurchaseOrderDetailPage() {
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Summary
-          label="Combined PO Total"
-          value={money(po.combined_po_total, po.currency)}
+          label="Current PO Amount"
+          value={money(po.current_po_total, po.currency)}
         />
         <Summary
           label="Difference"
@@ -277,8 +319,10 @@ export default function PurchaseOrderDetailPage() {
                   </p>
                   <p className="text-xs text-zinc-500">
                     {document.document_type === "purchase_order"
-                      ? "PO PDF"
-                      : "Supporting Document"}
+                      ? "Original PO"
+                      : document.document_type === "po_revision"
+                        ? "PO Revision"
+                        : "Supporting Document"}
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -360,7 +404,73 @@ export default function PurchaseOrderDetailPage() {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Included Jobs</CardTitle>
+          <CardTitle>PO Revision History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Revision</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Added Quotation(s)</TableHead>
+                <TableHead>Removed Quotation(s)</TableHead>
+                <TableHead>PO Amount</TableHead>
+                <TableHead>Change</TableHead>
+                <TableHead>Created By</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {po.revisions.map((revision) => (
+                <TableRow key={revision.id}>
+                  <TableCell className="font-medium">
+                    {Number(revision.revision_number) === 0
+                      ? "Original"
+                      : `Rev. ${revision.revision_number}`}
+                  </TableCell>
+                  <TableCell>{revision.revision_date}</TableCell>
+                  <TableCell>
+                    {revision.items.filter((item) => item.change_type === "added").map((item) => item.quotation_number_snapshot).join(", ") || "—"}
+                  </TableCell>
+                  <TableCell>
+                    {revision.items.filter((item) => item.change_type === "removed").map((item) => item.quotation_number_snapshot).join(", ") || "—"}
+                  </TableCell>
+                  <TableCell>{money(revision.revised_po_amount, po.currency)}</TableCell>
+                  <TableCell>{Number(revision.revision_number) === 0 ? "—" : `${Number(revision.difference_amount) > 0 ? "+" : ""}${money(revision.difference_amount, po.currency)}`}</TableCell>
+                  <TableCell>{revision.created_by_profile?.full_name ?? revision.created_by_profile?.email ?? "—"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" onClick={() => setViewingRevisionId(revision.id)}>View Revision</Button>
+                      {revision.document ? <Button size="sm" variant="ghost" onClick={() => void openDocument(revision.document!)}>View PO Document</Button> : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      {viewingRevision ? (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>{Number(viewingRevision.revision_number) === 0 ? "Original PO Snapshot" : `PO Revision ${viewingRevision.revision_number}`}</CardTitle>
+            <Button size="sm" variant="ghost" onClick={() => setViewingRevisionId(null)}>Close</Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Summary label="Previous PO Amount" value={money(viewingRevision.previous_po_amount, po.currency)} />
+              <Summary label="Revised PO Amount" value={money(viewingRevision.revised_po_amount, po.currency)} />
+              <Summary label="PO Revision Impact" value={`${Number(viewingRevision.difference_amount) > 0 ? "+" : ""}${money(viewingRevision.difference_amount, po.currency)}`} />
+            </div>
+            <Table><TableHeader><TableRow><TableHead>Quotation</TableHead><TableHead>Project</TableHead><TableHead>PO Amount</TableHead><TableHead>Change</TableHead><TableHead>Included</TableHead></TableRow></TableHeader><TableBody>
+              {viewingRevision.items.map((item) => <TableRow key={item.allocation_id}><TableCell>{item.quotation_number_snapshot}</TableCell><TableCell>{item.project_name_snapshot ?? "—"}</TableCell><TableCell>{money(item.po_amount_snapshot, po.currency)}</TableCell><TableCell><Badge variant="outline">{title(item.change_type)}</Badge></TableCell><TableCell>{item.is_included ? "Yes" : "No"}</TableCell></TableRow>)}
+            </TableBody></Table>
+          </CardContent>
+        </Card>
+      ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>Currently Included Jobs</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -380,7 +490,7 @@ export default function PurchaseOrderDetailPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {po.allocations.map((allocation) => (
+              {currentAllocations.map((allocation) => (
                 <TableRow key={allocation.id}>
                   <TableCell className="font-medium">
                     <Link

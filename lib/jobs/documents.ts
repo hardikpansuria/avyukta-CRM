@@ -38,7 +38,7 @@ export function sanitizeFileName(fileName: string) {
 
 export function validateDocument(
   file: File,
-  options: { pdfOnly?: boolean } = {},
+  options: { pdfOnly?: boolean; poRevision?: boolean } = {},
 ) {
   if (file.size <= 0) return "The selected file is empty.";
   if (file.size > MAX_FILE_SIZE) return "Each document must be 15 MB or less.";
@@ -46,6 +46,12 @@ export function validateDocument(
   const expectedMimeType = allowedDocumentTypes.get(extension);
   if (options.pdfOnly && (extension !== "pdf" || file.type !== "application/pdf")) {
     return "The selected document must be a PDF.";
+  }
+  if (
+    options.poRevision &&
+    !["pdf", "jpg", "jpeg", "png"].includes(extension)
+  ) {
+    return "The revised PO document must be a PDF, JPG, or PNG file.";
   }
   if (!options.pdfOnly && (!expectedMimeType || file.type !== expectedMimeType)) {
     return "Supporting documents must be PDF, JPEG, PNG, DOCX, or XLSX files.";
@@ -88,7 +94,7 @@ export async function uploadPurchaseOrderDocument(args: {
   purchaseOrderId: string;
   actorId: string;
   file: File;
-  documentType: "purchase_order" | "supporting_document";
+  documentType: "purchase_order" | "supporting_document" | "po_revision";
 }) {
   const id = crypto.randomUUID();
   const safeName = sanitizeFileName(args.file.name);

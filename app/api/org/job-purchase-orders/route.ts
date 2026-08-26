@@ -46,6 +46,19 @@ export async function GET(request: Request) {
   const denied = await requireOrgPermission(session, "purchase_orders", "view");
   if (denied) return denied;
   const { searchParams } = new URL(request.url);
+  const poNumber = searchParams.get("po_number")?.trim();
+  const customerId = searchParams.get("customer_id")?.trim();
+  if (poNumber && customerId) {
+    const { data, error } = await createAdminClient()
+      .from("job_purchase_orders")
+      .select("id,po_number,customer_id,current_revision_number,current_po_total")
+      .eq("org_id", session.org_id)
+      .eq("customer_id", customerId)
+      .eq("po_number", poNumber)
+      .maybeSingle();
+    if (error) return jsonError("Unable to check the PO number", 500);
+    return NextResponse.json({ existing_purchase_order: data ?? null });
+  }
   const search = searchParams.get("search")?.trim() ?? "";
   const parsedPage = Number(searchParams.get("page") ?? 1);
   const parsedPageSize = Number(searchParams.get("pageSize") ?? 20);
@@ -168,6 +181,26 @@ export async function POST(request: Request) {
   }
   if (new Set((jobs ?? []).map((job) => job.customer_id)).size !== 1) {
     return jsonError("Combined jobs must belong to the same customer", 400);
+  }
+
+  const customerId = jobs![0].customer_id;
+  const { data: duplicate, error: duplicateError } = await admin
+    .from("job_purchase_orders")
+    .select("id,po_number")
+    .eq("org_id", session.org_id)
+    .eq("customer_id", customerId)
+    .eq("po_number", poNumber)
+    .maybeSingle();
+  if (duplicateError) return jsonError("Unable to check the PO number", 500);
+  if (duplicate) {
+    return NextResponse.json(
+      {
+        error: `${poNumber} already exists for this customer.`,
+        code: "PO_EXISTS",
+        existing_purchase_order: duplicate,
+      },
+      { status: 409 },
+    );
   }
 
   const requestedScopeIds = allocations.flatMap((allocation) => allocation.scope_ids);

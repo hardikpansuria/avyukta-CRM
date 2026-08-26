@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { FilePlus2Icon, ReceiptTextIcon, SearchIcon } from "lucide-react";
+import {
+  ClipboardListIcon,
+  FilePlus2Icon,
+  ReceiptTextIcon,
+  SearchIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +49,7 @@ type Group = {
     po_number: string;
     currency: string;
     combined_po_total: number | string;
+    current_po_total: number | string;
   };
   customer?: { company_name?: string | null } | null;
   invoices: Invoice[];
@@ -82,6 +88,7 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [canCreate, setCanCreate] = useState(false);
+  const [canViewRequests, setCanViewRequests] = useState(false);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebounced(filters), 350);
@@ -107,7 +114,14 @@ export default function InvoicesPage() {
           { cache: "no-store", signal: controller.signal },
         );
         const payload = (await response.json().catch(() => null)) as
-          | { groups?: Group[]; permissions?: { can_create?: boolean }; error?: string }
+          | {
+              groups?: Group[];
+              permissions?: {
+                can_create?: boolean;
+                can_view_requests?: boolean;
+              };
+              error?: string;
+            }
           | null;
         if (!response.ok) {
           setError(payload?.error ?? "Unable to load invoices.");
@@ -115,6 +129,9 @@ export default function InvoicesPage() {
         }
         setGroups(payload?.groups ?? []);
         setCanCreate(payload?.permissions?.can_create === true);
+        setCanViewRequests(
+          payload?.permissions?.can_view_requests === true,
+        );
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
           setError("Unable to load invoices.");
@@ -143,7 +160,17 @@ export default function InvoicesPage() {
             Invoices grouped by customer purchase order.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {canViewRequests ? (
+            <Button
+              nativeButton={false}
+              render={<Link href="/dashboard/invoice-requests" />}
+              variant="outline"
+            >
+              <ClipboardListIcon />
+              Invoice Requests
+            </Button>
+          ) : null}
           <Button
             nativeButton={false}
             render={<Link href="/dashboard/invoices/outstanding" />}
@@ -267,7 +294,7 @@ export default function InvoicesPage() {
                       <p className="text-zinc-500">PO Total</p>
                       <p className="font-medium">
                         {money(
-                          group.purchase_order.combined_po_total,
+                          group.purchase_order.current_po_total,
                           group.purchase_order.currency,
                         )}
                       </p>
