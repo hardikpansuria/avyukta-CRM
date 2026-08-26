@@ -266,7 +266,7 @@ export default function InvoiceDetailPage() {
               }
             }}
           >
-            <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-52"><SelectValue>{title(pendingStatus ?? invoice.status)}</SelectValue></SelectTrigger>
             <SelectContent>
               {statusOptions.map((status) => <SelectItem key={status} value={status}>{title(status)}</SelectItem>)}
             </SelectContent>
@@ -461,7 +461,7 @@ export default function InvoiceDetailPage() {
           {pendingStatus === "payment_received" ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="payment-date">Payment Date</Label>
+                <Label htmlFor="payment-date" required>Payment Date</Label>
                 <Input
                   id="payment-date"
                   required

@@ -366,7 +366,9 @@ export default function PurchaseOrderDetailPage() {
                 }
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {uploadType === "purchase_order" ? "PO PDF" : "Supporting"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="purchase_order">PO PDF</SelectItem>

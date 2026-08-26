@@ -78,7 +78,7 @@ export function PriceFormFields({
           </div>
         ) : null}
         <div className="sm:col-span-2">
-          <Label>Supplier *</Label>
+          <Label required>Supplier</Label>
           <Select
             value={draft.supplier_id}
             onValueChange={(value) => {
@@ -186,10 +186,7 @@ function Field({
 } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange">) {
   return (
     <div>
-      <Label>
-        {label}
-        {props.required ? " *" : ""}
-      </Label>
+      <Label required={props.required}>{label}</Label>
       <Input
         className="mt-2"
         value={value}

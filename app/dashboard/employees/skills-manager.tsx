@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { EmployeeSkill } from "@/lib/employees/types";
 
 type ManagedSkill = EmployeeSkill & { created_at?: string | null; updated_at?: string | null };
@@ -125,11 +126,14 @@ export function SkillsManager({ open, onOpenChange, onChanged }: {
             <DialogTitle>Manage Skills</DialogTitle>
             <DialogDescription>Add, rename, deactivate, or remove skills for this organization.</DialogDescription>
           </DialogHeader>
-          <form className="flex gap-2" onSubmit={addSkill}>
-            <Input aria-label="New skill name" placeholder="Add a skill" value={newSkill} onChange={(event) => setNewSkill(event.target.value)} />
-            <Button disabled={workingId === "new" || !newSkill.trim()} type="submit">
-              {workingId === "new" ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />} Add
-            </Button>
+          <form className="space-y-2" onSubmit={addSkill}>
+            <Label htmlFor="new-skill-name" required>Skill Name</Label>
+            <div className="flex gap-2">
+              <Input id="new-skill-name" placeholder="Add a skill" required value={newSkill} onChange={(event) => setNewSkill(event.target.value)} />
+              <Button disabled={workingId === "new" || !newSkill.trim()} type="submit">
+                {workingId === "new" ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />} Add
+              </Button>
+            </div>
           </form>
           {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{error}</div> : null}
           <div className="divide-y rounded-xl border">
@@ -139,7 +143,10 @@ export function SkillsManager({ open, onOpenChange, onChanged }: {
               <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center" key={skill.id}>
                 <div className="min-w-0 flex-1">
                   {editingId === skill.id ? (
-                    <Input autoFocus value={editingName} onChange={(event) => setEditingName(event.target.value)} />
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`skill-name-${skill.id}`} required>Skill Name</Label>
+                      <Input id={`skill-name-${skill.id}`} autoFocus required value={editingName} onChange={(event) => setEditingName(event.target.value)} />
+                    </div>
                   ) : (
                     <div className="flex items-center gap-2">
                       <span className="truncate font-medium">{skill.skill_name}</span>

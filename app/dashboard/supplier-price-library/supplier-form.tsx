@@ -180,10 +180,7 @@ function Field({
 } & Omit<React.ComponentProps<typeof Input>, "value" | "onChange">) {
   return (
     <div className={className}>
-      <Label>
-        {label}
-        {props.required ? " *" : ""}
-      </Label>
+      <Label required={props.required}>{label}</Label>
       <Input
         className="mt-2"
         value={value}

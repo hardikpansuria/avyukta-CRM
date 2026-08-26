@@ -222,11 +222,12 @@ function EditCategoryDialog({ category, onClose, onSaved }: { category: Supplier
       const payload = await response.json(); if (!response.ok) throw new Error(payload.error); onSaved();
     } catch (submitError) { setError(submitError instanceof Error ? submitError.message : "Unable to save category"); } finally { setSaving(false); }
   }
-  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent><form className="space-y-5" onSubmit={submit}><DialogHeader><DialogTitle>Edit Category</DialogTitle><DialogDescription>Rename this material category.</DialogDescription></DialogHeader><div><Label>Category Name *</Label><Input className="mt-2" required value={name} onChange={(event) => setName(event.target.value)} /></div>{error ? <p className="text-sm text-destructive">{error}</p> : null}<DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save Category"}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent><form className="space-y-5" onSubmit={submit}><DialogHeader><DialogTitle>Edit Category</DialogTitle><DialogDescription>Rename this material category.</DialogDescription></DialogHeader><div><Label required>Category Name</Label><Input className="mt-2" required value={name} onChange={(event) => setName(event.target.value)} /></div>{error ? <p className="text-sm text-destructive">{error}</p> : null}<DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save Category"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function CategorySelect({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: string[][] }) {
-  return <Select value={value} onValueChange={(next) => onChange(String(next))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{options.map(([option, label]) => <SelectItem key={option} value={option}>{label}</SelectItem>)}</SelectContent></Select>;
+  const selectedLabel = options.find(([option]) => option === value)?.[1] ?? "Select category";
+  return <Select value={value} onValueChange={(next) => onChange(String(next))}><SelectTrigger className="w-full"><SelectValue>{selectedLabel}</SelectValue></SelectTrigger><SelectContent>{options.map(([option, label]) => <SelectItem key={option} value={option}>{label}</SelectItem>)}</SelectContent></Select>;
 }
 
 function formatDate(value: string) { return new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(new Date(value)); }

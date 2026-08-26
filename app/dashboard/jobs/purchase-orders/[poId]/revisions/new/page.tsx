@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -347,7 +347,7 @@ export default function NewPurchaseOrderRevisionPage() {
               <span><span className="block font-medium">Administrator customer override</span><span className="block text-xs">Show PO-pending quotations from other customers. Cross-customer additions are exceptional and will remain visible in the revision audit trail.</span></span>
             </label>
           ) : null}
-          <Table><TableHeader><TableRow><TableHead>Select</TableHead><TableHead>Quotation</TableHead><TableHead>Customer</TableHead><TableHead>Project</TableHead><TableHead>Scopes</TableHead><TableHead>Quotation Amount</TableHead><TableHead>Sales Representative</TableHead><TableHead>Quotation Date</TableHead><TableHead>PO Before Tax</TableHead><TableHead>Acknowledge</TableHead></TableRow></TableHeader><TableBody>
+          <Table><TableHeader><TableRow><TableHead>Select <RequiredMark /></TableHead><TableHead>Quotation</TableHead><TableHead>Customer</TableHead><TableHead>Project</TableHead><TableHead>Scopes</TableHead><TableHead>Quotation Amount</TableHead><TableHead>Sales Representative</TableHead><TableHead>Quotation Date</TableHead><TableHead>PO Before Tax <RequiredMark /></TableHead><TableHead>Acknowledge</TableHead></TableRow></TableHeader><TableBody>
             {filteredJobs.map((job) => {
               const selected = selections[job.id]?.selected ?? false;
               const calculation = calculations.find((row) => row.job.id === job.id);
@@ -359,7 +359,7 @@ export default function NewPurchaseOrderRevisionPage() {
         </CardContent>
       </Card>
 
-      {selectedJobs.map((job) => <Card key={job.id}><CardHeader><CardTitle>Work Order Scopes · {job.quotation?.quotation_number}</CardTitle></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2">
+      {selectedJobs.map((job) => <Card key={job.id}><CardHeader><CardTitle>Work Order Scopes <RequiredMark /> · {job.quotation?.quotation_number}</CardTitle></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2">
         {job.assigned_scopes.map((scope) => <label className="flex gap-2 rounded-lg border p-3 text-sm" key={scope.id}><Checkbox checked={selections[job.id]?.scopeIds.includes(scope.id) ?? false} onChange={(event) => updateSelection(job, { scopeIds: event.target.checked ? [...(selections[job.id]?.scopeIds ?? []), scope.id] : (selections[job.id]?.scopeIds ?? []).filter((id) => id !== scope.id) })} /><span><span className="block font-medium">{scope.scope_title}</span>{scope.scope_description ? <span className="text-xs text-zinc-500">{scope.scope_description}</span> : null}</span></label>)}
       </CardContent></Card>)}
 
@@ -368,8 +368,8 @@ export default function NewPurchaseOrderRevisionPage() {
       </CardContent></Card>
 
       <Card><CardHeader><CardTitle>Revised PO Document</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2"><Label htmlFor="revision-date">Revision Date</Label><Input id="revision-date" required type="date" value={revisionDate} onChange={(event) => setRevisionDate(event.target.value)} /></div>
-        <div className="space-y-2"><Label htmlFor="revision-document">Upload Revised PO</Label><Input accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" id="revision-document" required type="file" onChange={(event) => setDocument(event.target.files?.[0] ?? null)} /><p className="text-xs text-zinc-500">Required · PDF, JPG, or PNG · Maximum 15 MB</p></div>
+        <div className="space-y-2"><Label htmlFor="revision-date" required>Revision Date</Label><Input id="revision-date" required type="date" value={revisionDate} onChange={(event) => setRevisionDate(event.target.value)} /></div>
+        <div className="space-y-2"><Label htmlFor="revision-document" required>Upload Revised PO</Label><Input accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" id="revision-document" required type="file" onChange={(event) => setDocument(event.target.files?.[0] ?? null)} /><p className="text-xs text-zinc-500">Required · PDF, JPG, or PNG · Maximum 15 MB</p></div>
         <div className="space-y-2 md:col-span-2"><Label htmlFor="revision-remarks">Internal Remarks</Label><Textarea id="revision-remarks" value={remarks} onChange={(event) => setRemarks(event.target.value)} /></div>
       </CardContent></Card>
 

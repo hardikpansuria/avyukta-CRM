@@ -204,9 +204,9 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
             <Field label="Contact Number">
               <Input value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} />
             </Field>
-            <Field label="Role">
+            <Field label="Role" required>
               <Select value={role} onValueChange={(value) => setRole(value as EmployeeDirectoryRole)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue>{roleOptions.find(([value]) => value === role)?.[1] ?? "Select role"}</SelectValue></SelectTrigger>
                 <SelectContent align="start">
                   {roleOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
                 </SelectContent>
@@ -217,9 +217,9 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
                 </p>
               ) : null}
             </Field>
-            <Field label="Status">
+            <Field label="Status" required>
               <Select value={status} onValueChange={(value) => setStatus(value as EmployeeDirectoryStatus)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue>{status === "active" ? "Active" : "Inactive"}</SelectValue></SelectTrigger>
                 <SelectContent align="start">
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
@@ -277,7 +277,7 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <Label className="mb-2 block">{label}{required ? <span className="text-destructive"> *</span> : null}</Label>
+      <Label className="mb-2 block" required={required}>{label}</Label>
       {children}
     </div>
   );

@@ -325,7 +325,7 @@ export function NewInvoiceForm({
         <Card>
           <CardContent className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Customer</Label>
+              <Label required>Customer</Label>
               <Select
                 value={selectedCustomerId}
                 onValueChange={(value) => {
@@ -351,7 +351,7 @@ export function NewInvoiceForm({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Select Job</Label>
+              <Label required>Select Job</Label>
               <Select
                 disabled={!selectedCustomerId}
                 value={jobId}
@@ -423,7 +423,7 @@ export function NewInvoiceForm({
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="invoice-number">Invoice Number</Label>
+                <Label htmlFor="invoice-number" required>Invoice Number</Label>
                 <Input
                   id="invoice-number"
                   required
@@ -432,7 +432,7 @@ export function NewInvoiceForm({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="invoice-date">Invoice Date</Label>
+                <Label htmlFor="invoice-date" required>Invoice Date</Label>
                 <Input
                   id="invoice-date"
                   required
@@ -442,7 +442,7 @@ export function NewInvoiceForm({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="invoice-amount">Invoice Amount</Label>
+                <Label htmlFor="invoice-amount" required>Invoice Amount</Label>
                 <Input
                   id="invoice-amount"
                   min="0"
@@ -457,7 +457,7 @@ export function NewInvoiceForm({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="invoice-pdf">Invoice PDF</Label>
+                <Label htmlFor="invoice-pdf" required>Invoice PDF</Label>
                 <Input
                   accept="application/pdf"
                   id="invoice-pdf"

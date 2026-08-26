@@ -435,10 +435,12 @@ function ListSelect({
   onChange: (value: string) => void;
   options: string[][];
 }) {
+  const selectedLabel = options.find(([option]) => option === value)?.[1] ?? "Select option";
+
   return (
     <Select value={value} onValueChange={(next) => onChange(String(next))}>
       <SelectTrigger className="w-full">
-        <SelectValue />
+        <SelectValue>{selectedLabel}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map(([option, label]) => (

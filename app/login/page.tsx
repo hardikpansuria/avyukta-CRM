@@ -162,6 +162,7 @@ export default function LoginPage() {
               <Label
                 className="text-sm font-medium text-zinc-800 dark:text-zinc-200"
                 htmlFor="org-code"
+                required
               >
                 Organization Code
               </Label>
@@ -184,6 +185,7 @@ export default function LoginPage() {
               <Label
                 className="text-sm font-medium text-zinc-800 dark:text-zinc-200"
                 htmlFor="email"
+                required
               >
                 Email Address
               </Label>
@@ -208,6 +210,7 @@ export default function LoginPage() {
                 <Label
                   className="text-sm font-medium text-zinc-800 dark:text-zinc-200"
                   htmlFor="password"
+                  required
                 >
                   Password
                 </Label>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
+import { RequiredMark } from "@/components/ui/label";
 import {
   CUSTOMER_INDUSTRIES,
   OTHER_INDUSTRY_VALUE,
@@ -405,7 +406,7 @@ export default function NewCustomerPage() {
           </h2>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label>
-              <span className={labelClass}>Company Name</span>
+              <span className={labelClass}>Company Name <RequiredMark /></span>
               <input
                 className={inputClass}
                 value={companyName}
@@ -461,7 +462,7 @@ export default function NewCustomerPage() {
             </label>
             {industry === OTHER_INDUSTRY_VALUE ? (
               <label>
-                <span className={labelClass}>Specify Industry</span>
+                <span className={labelClass}>Specify Industry <RequiredMark /></span>
                 <input
                   className={inputClass}
                   placeholder="Enter industry type"
@@ -587,9 +588,13 @@ export default function NewCustomerPage() {
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <label>
-                      <span className={labelClass}>First Name</span>
+                      <span className={labelClass}>
+                        First Name
+                        {hasContactValue(contact) ? <RequiredMark /> : null}
+                      </span>
                       <input
                         className={inputClass}
+                        required={hasContactValue(contact)}
                         value={contact.first_name}
                         onChange={(event) =>
                           updateContact(

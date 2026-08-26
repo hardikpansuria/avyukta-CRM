@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { JobListItem } from "@/lib/jobs/types";
 import { PoDuplicateDialog } from "../../po-duplicate-dialog";
@@ -309,7 +309,7 @@ export default function AttachPurchaseOrderPage() {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle>Work Order Scope</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Work Order Scope <RequiredMark /></CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-zinc-500">Select only the quotation scope(s) covered by this Work Order. The completion acknowledgement will use this exact selection.</p>
                 {job.assigned_scopes.map((scope) => (
@@ -328,7 +328,7 @@ export default function AttachPurchaseOrderPage() {
               </CardHeader>
               <CardContent className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="po-number">Purchase Order Number</Label>
+                  <Label htmlFor="po-number" required>Purchase Order Number</Label>
                   <Input
                     id="po-number"
                     required
@@ -338,7 +338,7 @@ export default function AttachPurchaseOrderPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="po-date">Purchase Order Received Date</Label>
+                  <Label htmlFor="po-date" required>Purchase Order Received Date</Label>
                   <Input
                     id="po-date"
                     required
@@ -348,7 +348,7 @@ export default function AttachPurchaseOrderPage() {
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="po-amount">PO Amount Before Tax</Label>
+                  <Label htmlFor="po-amount" required>PO Amount Before Tax</Label>
                   <Input
                     id="po-amount"
                     min="0"

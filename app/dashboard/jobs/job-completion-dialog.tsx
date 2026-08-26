@@ -137,9 +137,9 @@ export function JobCompletionDialog({ jobId, jobNumber, open, initialCompletion,
         <div className="space-y-5">
           <section className="space-y-4">
             <div><h3 className="text-sm font-semibold">Required Information</h3><p className="text-xs text-zinc-500">All required fields must be completed.</p></div>
-            <div className="space-y-2"><Label htmlFor={`completion-date-${jobId}`}>Completion Date</Label><Input id={`completion-date-${jobId}`} max={new Date().toISOString().slice(0, 10)} required type="date" value={completionDate} onChange={(event) => setCompletionDate(event.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor={`completion-date-${jobId}`} required>Completion Date</Label><Input id={`completion-date-${jobId}`} max={new Date().toISOString().slice(0, 10)} required type="date" value={completionDate} onChange={(event) => setCompletionDate(event.target.value)} /></div>
             <div className="space-y-2">
-              <Label>Technician(s)</Label>
+              <Label required>Technician(s)</Label>
               <div className="relative"><SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" /><Input className="pl-9" placeholder="Search Employee List" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
               <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border p-2">
                 {loadingEmployees ? <p className="p-2 text-sm text-zinc-500">Loading employees...</p> : null}
@@ -158,8 +158,8 @@ export function JobCompletionDialog({ jobId, jobNumber, open, initialCompletion,
           <section className="space-y-4 border-t pt-5">
             <h3 className="text-sm font-semibold">Optional Information</h3>
             <div className="space-y-2"><Label htmlFor={`completion-notes-${jobId}`}>Completion Notes</Label><Textarea className="min-h-24" id={`completion-notes-${jobId}`} value={notes} onChange={(event) => setNotes(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor={`outstanding-items-${jobId}`}>Outstanding Items</Label><Textarea className="min-h-24" id={`outstanding-items-${jobId}`} required={completionStatus === "completed_with_outstanding_items"} value={outstandingItems} onChange={(event) => setOutstandingItems(event.target.value)} /></div>
-            <div className="space-y-2"><Label>Completion Status</Label><Select value={completionStatus} onValueChange={(value) => setCompletionStatus(value === "completed_with_outstanding_items" ? value : "completed")}><SelectTrigger className="w-full"><SelectValue>{completionStatus === "completed_with_outstanding_items" ? "Completed with Outstanding Items" : "Completed"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="completed">Completed</SelectItem><SelectItem value="completed_with_outstanding_items">Completed with Outstanding Items</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor={`outstanding-items-${jobId}`} required={completionStatus === "completed_with_outstanding_items"}>Outstanding Items</Label><Textarea className="min-h-24" id={`outstanding-items-${jobId}`} required={completionStatus === "completed_with_outstanding_items"} value={outstandingItems} onChange={(event) => setOutstandingItems(event.target.value)} /></div>
+            <div className="space-y-2"><Label required>Completion Status</Label><Select value={completionStatus} onValueChange={(value) => setCompletionStatus(value === "completed_with_outstanding_items" ? value : "completed")}><SelectTrigger className="w-full"><SelectValue>{completionStatus === "completed_with_outstanding_items" ? "Completed with Outstanding Items" : "Completed"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="completed">Completed</SelectItem><SelectItem value="completed_with_outstanding_items">Completed with Outstanding Items</SelectItem></SelectContent></Select></div>
           </section>
           {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
         </div>

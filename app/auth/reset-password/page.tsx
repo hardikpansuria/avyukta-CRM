@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
+import { RequiredMark } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 
 export default function ResetPasswordPage() {
@@ -171,7 +172,7 @@ export default function ResetPasswordPage() {
             <form className="space-y-5" onSubmit={handleSubmit}>
               <label className="block">
                 <span className="text-sm font-medium text-zinc-800">
-                  New password
+                  New password <RequiredMark />
                 </span>
                 <input
                   className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10"
@@ -187,7 +188,7 @@ export default function ResetPasswordPage() {
 
               <label className="block">
                 <span className="text-sm font-medium text-zinc-800">
-                  Confirm password
+                  Confirm password <RequiredMark />
                 </span>
                 <input
                   className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10"

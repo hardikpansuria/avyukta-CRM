@@ -16,7 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
 
 type Props = {
   canDateRangeExport: boolean;
@@ -105,7 +105,7 @@ export function DownloadDocumentsDialog({ canDateRangeExport, canFullBackup }: P
 
         <fieldset className="space-y-3" disabled={downloading}>
           <legend className="mb-2 text-sm font-medium text-zinc-950 dark:text-zinc-50">
-            Backup type
+            Backup type <RequiredMark />
           </legend>
           <label className="flex cursor-pointer gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <input
@@ -144,11 +144,11 @@ export function DownloadDocumentsDialog({ canDateRangeExport, canFullBackup }: P
         {type === "date_range" ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="document-export-from">From Date</Label>
+              <Label htmlFor="document-export-from" required>From Date</Label>
               <Input id="document-export-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} disabled={downloading} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="document-export-to">To Date</Label>
+              <Label htmlFor="document-export-to" required>To Date</Label>
               <Input id="document-export-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} disabled={downloading} />
             </div>
           </div>

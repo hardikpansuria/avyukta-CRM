@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -569,7 +569,7 @@ export function ScopeBuilder({
                           }
                         />
                       </Field>
-                      <Field label="Quantity">
+                      <Field label="Quantity" required>
                         <NumberInput
                           className="max-w-48"
                           required
@@ -885,6 +885,13 @@ function MaterialSection({
                       key={header || "actions"}
                     >
                       {header}
+                      {[
+                        "Description",
+                        "Qty",
+                        "Unit Cost",
+                        "Profit Type",
+                        "Profit Value",
+                      ].includes(header) ? <RequiredMark /> : null}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -1047,7 +1054,7 @@ function MaterialSection({
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="sm:col-span-2">
-                      <Field label="Material Description">
+                      <Field label="Material Description" required>
                         <Input
                           className={inputClass}
                           value={item.material_description ?? ""}
@@ -1092,7 +1099,7 @@ function MaterialSection({
                         }
                       />
                     </Field>
-                    <Field label="Quantity">
+                    <Field label="Quantity" required>
                       <NumberInput
                         value={item.quantity}
                         onChange={(value) =>
@@ -1100,7 +1107,7 @@ function MaterialSection({
                         }
                       />
                     </Field>
-                    <Field label="Unit Cost">
+                    <Field label="Unit Cost" required>
                       <NumberInput
                         value={item.unit_cost}
                         onChange={(value) =>
@@ -1108,7 +1115,7 @@ function MaterialSection({
                         }
                       />
                     </Field>
-                    <Field label="Profit Type">
+                    <Field label="Profit Type" required>
                       <CompactSelect
                         options={[
                           ["percentage", "Percentage"],
@@ -1130,6 +1137,7 @@ function MaterialSection({
                           ? "Profit Amount"
                           : "Profit %"
                       }
+                      required
                     >
                       <NumberInput
                         value={item.profit_value}
@@ -1274,7 +1282,7 @@ function LabourSection({
               <TableHeader className="bg-zinc-50 dark:bg-zinc-900/80">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="h-10 px-2 text-xs text-zinc-500">
-                    Description
+                    Description <RequiredMark />
                   </TableHead>
                   {isCrew ? (
                     <>
@@ -1472,7 +1480,7 @@ function LabourMobileCard({
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <Field label="Labour Description">
+          <Field label="Labour Description" required>
             <Input
               className={inputClass}
               value={item.labour_description ?? ""}
@@ -1587,6 +1595,12 @@ function ChargesSection({
                       key={header || "actions"}
                     >
                       {header}
+                      {[
+                        "Description",
+                        "Base Amount",
+                        "Profit Type",
+                        "Profit Value",
+                      ].includes(header) ? <RequiredMark /> : null}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -1708,7 +1722,7 @@ function ChargesSection({
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="sm:col-span-2">
-                      <Field label="Description">
+                      <Field label="Description" required>
                         <Input
                           className={inputClass}
                           placeholder="e.g. Freight, crane rental, travel"
@@ -1721,7 +1735,7 @@ function ChargesSection({
                         />
                       </Field>
                     </div>
-                    <Field label="Base Amount">
+                    <Field label="Base Amount" required>
                       <NumberInput
                         value={charge.amount}
                         onChange={(value) =>
@@ -1729,7 +1743,7 @@ function ChargesSection({
                         }
                       />
                     </Field>
-                    <Field label="Profit Type">
+                    <Field label="Profit Type" required>
                       <CompactSelect
                         options={[
                           ["percentage", "Percentage"],
@@ -1751,6 +1765,7 @@ function ChargesSection({
                           ? "Profit Amount"
                           : "Profit %"
                       }
+                      required
                     >
                       <NumberInput
                         value={charge.profit_value}
@@ -1955,21 +1970,23 @@ function EmptyTabState({
 function Field({
   label,
   mobileOnlyLabel,
+  required,
   children,
 }: {
   label?: string;
   mobileOnlyLabel?: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <div>
       {label ? (
-        <Label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+        <Label className="text-xs font-medium text-zinc-600 dark:text-zinc-300" required={required}>
           {label}
         </Label>
       ) : null}
       {mobileOnlyLabel ? (
-        <Label className="mb-2 block text-xs font-medium text-zinc-600 dark:text-zinc-300 md:hidden">
+        <Label className="mb-2 block text-xs font-medium text-zinc-600 dark:text-zinc-300 md:hidden" required={required}>
           {mobileOnlyLabel}
         </Label>
       ) : null}
@@ -2030,7 +2047,9 @@ function CompactSelect({
         aria-label={ariaLabel}
         className="h-9 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
       >
-        <SelectValue />
+        <SelectValue>
+          {options.find(([optionValue]) => optionValue === value)?.[1] ?? "Select option"}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent align="start">
         {options.map(([optionValue, optionLabel]) => (

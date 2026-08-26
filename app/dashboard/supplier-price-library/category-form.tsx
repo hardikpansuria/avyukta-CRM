@@ -71,7 +71,7 @@ export function CreateCategoryDialog({
             </DialogDescription>
           </DialogHeader>
           <div>
-            <Label>Category Name *</Label>
+            <Label required>Category Name</Label>
             <Input
               autoFocus
               className="mt-2"

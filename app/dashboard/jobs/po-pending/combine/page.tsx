@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -287,7 +287,7 @@ export default function CombinePurchaseOrderPage() {
       <Card>
         <CardContent className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-2">
-            <Label>Customer</Label>
+            <Label required>Customer</Label>
             <Select
               value={customerId}
               onValueChange={(value) => {
@@ -310,7 +310,7 @@ export default function CombinePurchaseOrderPage() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="combine-number">Purchase Order Number</Label>
+            <Label htmlFor="combine-number" required>Purchase Order Number</Label>
             <Input
               id="combine-number"
               required
@@ -320,7 +320,7 @@ export default function CombinePurchaseOrderPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="combine-date">PO Received Date</Label>
+            <Label htmlFor="combine-date" required>PO Received Date</Label>
             <Input
               id="combine-date"
               required
@@ -370,12 +370,12 @@ export default function CombinePurchaseOrderPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Select</TableHead>
+                  <TableHead>Select <RequiredMark /></TableHead>
                   <TableHead>Quotation</TableHead>
                   <TableHead>Revision</TableHead>
                   <TableHead>Project</TableHead>
                   <TableHead>Quotation Total</TableHead>
-                  <TableHead>PO Before Tax</TableHead>
+                  <TableHead>PO Before Tax <RequiredMark /></TableHead>
                   <TableHead>Tax</TableHead>
                   <TableHead>PO Total</TableHead>
                   <TableHead>Difference</TableHead>
@@ -472,7 +472,7 @@ export default function CombinePurchaseOrderPage() {
 
       {selectedJobs.length ? (
         <Card>
-          <CardHeader><CardTitle>Work Order Scopes</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Work Order Scopes <RequiredMark /></CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-zinc-500">Choose the scope(s) covered by each Work Order. Only these scopes will appear on its completion acknowledgement.</p>
             {selectedJobs.map((job) => <div className="rounded-lg border p-4" key={job.id}><p className="mb-3 text-sm font-semibold">{job.quotation?.quotation_number ?? job.job_number ?? "Job"} - {job.quotation?.project_name ?? "No project name"}</p><div className="grid gap-2 sm:grid-cols-2">{job.assigned_scopes.map((scope) => <label className="flex items-start gap-2 rounded-md border p-3 text-sm" key={scope.id}><Checkbox checked={selections[job.id]?.scopeIds.includes(scope.id) ?? false} onChange={(event) => updateSelection(job.id, { scopeIds: event.target.checked ? [...(selections[job.id]?.scopeIds ?? []), scope.id] : (selections[job.id]?.scopeIds ?? []).filter((id) => id !== scope.id) })} /><span><span className="block font-medium">{scope.scope_title}</span>{scope.scope_description ? <span className="block text-xs text-zinc-500">{scope.scope_description}</span> : null}</span></label>)}</div>{!job.assigned_scopes.length ? <p className="text-sm text-red-600">This quotation has no available scopes.</p> : null}</div>)}

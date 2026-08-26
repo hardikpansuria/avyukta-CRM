@@ -117,7 +117,7 @@ export function NewPriceForm({ initialMaterialId }: { initialMaterialId: string 
           ) : (
             <form className="space-y-6" onSubmit={submit}>
               <div>
-                <Label>Material *</Label>
+                <Label required>Material</Label>
                 <Select value={materialId} onValueChange={(value) => setMaterialId(String(value))}>
                   <SelectTrigger className="mt-2 w-full">
                     <SelectValue>

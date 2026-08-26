@@ -808,10 +808,7 @@ function FieldShell({
 }) {
   return (
     <div>
-      <Label className={labelClass}>
-        {label}
-        {required ? <span className="text-red-600">*</span> : null}
-      </Label>
+      <Label className={labelClass} required={required}>{label}</Label>
       <div className="mt-2">{children}</div>
     </div>
   );

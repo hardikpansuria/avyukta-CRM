@@ -230,7 +230,7 @@ export function MaterialForm({
                 />
               </div>
               <div>
-                <Label>Category *</Label>
+                <Label required>Category</Label>
                 <Select
                   value={form.category_id}
                   onValueChange={(value) => {
@@ -260,7 +260,7 @@ export function MaterialForm({
                 </Select>
               </div>
               <div className="sm:col-span-2">
-                <Label>Material Description *</Label>
+                <Label required>Material Description</Label>
                 <Input
                   className="mt-2"
                   required
@@ -281,7 +281,7 @@ export function MaterialForm({
                 onChange={(value) => update("grade_material_type", value)}
               />
               <div>
-                <Label>Unit of Measure *</Label>
+                <Label required>Unit of Measure</Label>
                 {customUnit ? (
                   <div className="mt-2 flex gap-2">
                     <Input
@@ -316,7 +316,9 @@ export function MaterialForm({
                     }}
                   >
                     <SelectTrigger className="mt-2 w-full">
-                      <SelectValue />
+                      <SelectValue>
+                        {form.unit_of_measure || "Select unit of measure"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {units.map((unit) => (

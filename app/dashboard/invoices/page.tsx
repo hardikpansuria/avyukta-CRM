@@ -72,6 +72,22 @@ function title(value: string) {
     .join(" ");
 }
 
+const invoiceStatusLabels: Record<string, string> = {
+  all: "All statuses",
+  draft: "Draft",
+  sent: "Sent",
+  payment_received: "Payment Received",
+};
+
+const agingBucketLabels: Record<string, string> = {
+  all: "All aging buckets",
+  current: "Current / Not Sent",
+  "1_30": "1–30 days",
+  "31_60": "31–60 days",
+  "61_90": "61–90 days",
+  "91_plus": "91+ days",
+};
+
 export default function InvoicesPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [filters, setFilters] = useState({
@@ -217,7 +233,9 @@ export default function InvoicesPage() {
             }
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="All statuses" />
+              <SelectValue>
+                {invoiceStatusLabels[filters.status || "all"]}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
@@ -233,7 +251,9 @@ export default function InvoicesPage() {
             }
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="All aging buckets" />
+              <SelectValue>
+                {agingBucketLabels[filters.aging || "all"]}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All aging buckets</SelectItem>

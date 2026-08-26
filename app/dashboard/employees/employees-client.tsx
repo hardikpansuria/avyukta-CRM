@@ -87,15 +87,15 @@ export function EmployeesClient() {
             <Input className="pl-9" placeholder="Search employee name or email" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
           </div>
           <Select value={role} onValueChange={(value) => resetPage(() => setRole(String(value)))}>
-            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue>{role === "all" ? "All roles" : roleLabels[role as EmployeeDirectoryRole]}</SelectValue></SelectTrigger>
             <SelectContent><SelectItem value="all">All roles</SelectItem>{Object.entries(roleLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
           </Select>
           <Select value={status} onValueChange={(value) => resetPage(() => setStatus(String(value)))}>
-            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue>{status === "all" ? "All statuses" : statusLabels[status as EmployeeDirectoryStatus]}</SelectValue></SelectTrigger>
             <SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
           </Select>
           <Select value={sort} onValueChange={(value) => resetPage(() => setSort(value as "employee_name" | "created_at"))}>
-            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue>{sort === "employee_name" ? "Employee name" : "Date added"}</SelectValue></SelectTrigger>
             <SelectContent><SelectItem value="employee_name"><ArrowDownAZIcon /> Employee name</SelectItem><SelectItem value="created_at"><CalendarDaysIcon /> Date added</SelectItem></SelectContent>
           </Select>
           <Button variant="outline" onClick={() => resetPage(() => setDirection((current) => current === "asc" ? "desc" : "asc"))}>

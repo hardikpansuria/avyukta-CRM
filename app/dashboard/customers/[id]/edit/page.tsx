@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { RequiredMark } from "@/components/ui/label";
 import {
   CUSTOMER_INDUSTRIES,
   isStandardIndustry,
@@ -510,7 +511,10 @@ function TextField({
 }) {
   return (
     <label>
-      <span className={labelClass}>{label}</span>
+      <span className={labelClass}>
+        {label}
+        {required ? <RequiredMark /> : null}
+      </span>
       <input
         className={inputClass}
         min={min}

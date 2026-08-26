@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import { RequiredMark } from "@/components/ui/label";
+
 type Organization = {
   id: string;
   name: string;
@@ -185,7 +187,7 @@ export default function SuperAdminOrganizationsPage() {
         >
           <label className="block">
             <span className="text-sm font-medium text-zinc-800">
-              Organization Name
+              Organization Name <RequiredMark />
             </span>
             <input
               className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10"
@@ -196,7 +198,9 @@ export default function SuperAdminOrganizationsPage() {
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium text-zinc-800">Org Code</span>
+            <span className="text-sm font-medium text-zinc-800">
+              Org Code <RequiredMark />
+            </span>
             <input
               className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10"
               pattern="[a-z0-9]+"
@@ -208,7 +212,7 @@ export default function SuperAdminOrganizationsPage() {
 
           <label className="block">
             <span className="text-sm font-medium text-zinc-800">
-              First Admin Email
+              First Admin Email <RequiredMark />
             </span>
             <input
               className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10"
@@ -221,7 +225,7 @@ export default function SuperAdminOrganizationsPage() {
 
           <label className="block">
             <span className="text-sm font-medium text-zinc-800">
-              First Admin Full Name
+              First Admin Full Name <RequiredMark />
             </span>
             <input
               className="mt-2 h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10"

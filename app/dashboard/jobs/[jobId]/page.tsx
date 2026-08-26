@@ -532,7 +532,7 @@ export default function JobDetailPage() {
             <DialogTitle>Reopen Job</DialogTitle>
             <DialogDescription>The original certificate remains preserved. The job will return to PO Received as Work in Progress.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2"><Label htmlFor="reopen-reason">Reason for Reopening</Label><Textarea className="min-h-28" id="reopen-reason" placeholder="Customer requested additional modification." required value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} /></div>
+          <div className="space-y-2"><Label htmlFor="reopen-reason" required>Reason for Reopening</Label><Textarea className="min-h-28" id="reopen-reason" placeholder="Customer requested additional modification." required value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} /></div>
           <DialogFooter>
             <Button disabled={reopening} type="button" variant="outline" onClick={() => setReopenOpen(false)}>Cancel</Button>
             <Button disabled={reopening || !reopenReason.trim()} type="button" onClick={() => void reopenJob()}>{reopening ? "Reopening..." : "Reopen Job"}</Button>

@@ -53,6 +53,13 @@ function money(value: number, currency: string) {
   return new Intl.NumberFormat("en-CA", { style: "currency", currency }).format(value);
 }
 
+function title(value: string) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -179,7 +186,7 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
       {!initialJobId ? (
         <Card><CardHeader><CardTitle>Select billing job</CardTitle></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>Customer</Label>
+            <Label required>Customer</Label>
             <Select
               value={customerId}
               onValueChange={(value) => {
@@ -205,7 +212,7 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Job with PO Received</Label>
+            <Label required>Job with PO Received</Label>
             <Select
               disabled={!customerId || jobsLoading}
               value={jobId}
@@ -262,11 +269,11 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
           ].map(([label, value]) => <div key={label}><p className="text-xs uppercase tracking-wide text-zinc-500">{label}</p><p className="mt-1 text-sm font-medium">{value}</p></div>)}
         </CardContent></Card>
         <Card><CardHeader><CardTitle>Billing instructions</CardTitle></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">
-          <div className="space-y-2"><Label>Invoice Type</Label><Select value={invoiceType} onValueChange={(value) => setInvoiceType(String(value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["deposit", "progress", "final", "change_order", "credit_note"].map((value) => <SelectItem key={value} value={value}>{value.split("_").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ")}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-2"><Label>Amount Method</Label><Select value={amountType} onValueChange={(value) => setAmountType(String(value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="percentage">Percentage of PO</SelectItem><SelectItem value="remaining_balance">Remaining Balance</SelectItem><SelectItem value="fixed_amount">Fixed Amount</SelectItem></SelectContent></Select></div>
-          {amountType !== "remaining_balance" ? <div className="space-y-2"><Label htmlFor="request-amount">{amountType === "percentage" ? "Percentage" : "Fixed Amount"}</Label><Input id="request-amount" min="0" max={amountType === "percentage" ? "100" : undefined} required step="0.01" type="number" value={amountValue} onChange={(event) => setAmountValue(event.target.value)} /></div> : null}
+          <div className="space-y-2"><Label required>Invoice Type</Label><Select value={invoiceType} onValueChange={(value) => setInvoiceType(String(value))}><SelectTrigger className="w-full"><SelectValue>{title(invoiceType)}</SelectValue></SelectTrigger><SelectContent>{["deposit", "progress", "final", "change_order", "credit_note"].map((value) => <SelectItem key={value} value={value}>{title(value)}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label required>Amount Method</Label><Select value={amountType} onValueChange={(value) => setAmountType(String(value))}><SelectTrigger className="w-full"><SelectValue>{amountType === "percentage" ? "Percentage of PO" : amountType === "remaining_balance" ? "Remaining Balance" : "Fixed Amount"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="percentage">Percentage of PO</SelectItem><SelectItem value="remaining_balance">Remaining Balance</SelectItem><SelectItem value="fixed_amount">Fixed Amount</SelectItem></SelectContent></Select></div>
+          {amountType !== "remaining_balance" ? <div className="space-y-2"><Label htmlFor="request-amount" required>{amountType === "percentage" ? "Percentage" : "Fixed Amount"}</Label><Input id="request-amount" min="0" max={amountType === "percentage" ? "100" : undefined} required step="0.01" type="number" value={amountValue} onChange={(event) => setAmountValue(event.target.value)} /></div> : null}
           <div className="rounded-md bg-zinc-50 p-4"><p className="text-xs uppercase tracking-wide text-zinc-500">Calculated request</p><p className="mt-2 text-xl font-semibold">{money(calculated, currency)}</p></div>
-          <div className="space-y-2 sm:col-span-2"><Label htmlFor="billing-description">Billing Description</Label><Textarea id="billing-description" required placeholder="e.g. Deposit for fabrication" value={description} onChange={(event) => setDescription(event.target.value)} /></div>
+          <div className="space-y-2 sm:col-span-2"><Label htmlFor="billing-description" required>Billing Description</Label><Textarea id="billing-description" required placeholder="e.g. Deposit for fabrication" value={description} onChange={(event) => setDescription(event.target.value)} /></div>
           <div className="space-y-3 sm:col-span-2"><Label>Items to Include</Label><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{itemOptions.map(([value, label]) => <label className="flex items-center gap-2 text-sm" key={value}><Checkbox checked={items.includes(value)} onChange={(event) => setItems((current) => event.target.checked ? [...current, value] : current.filter((item) => item !== value))} />{label}</label>)}</div></div>
           <div className="space-y-2 sm:col-span-2"><Label htmlFor="supporting-documents">Supporting Documents</Label><Input accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" id="supporting-documents" multiple type="file" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} /><p className="text-xs text-zinc-500">Delivery slips, site reports, photos, completion approvals, and packing slips. Maximum 15 MB each.</p></div>
           <div className="space-y-2 sm:col-span-2"><Label htmlFor="accounts-comments">Comments for Accounts</Label><Textarea id="accounts-comments" placeholder="e.g. Customer requested invoice before Friday." value={comments} onChange={(event) => setComments(event.target.value)} /></div>

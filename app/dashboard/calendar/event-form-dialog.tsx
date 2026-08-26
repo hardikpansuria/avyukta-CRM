@@ -356,5 +356,5 @@ function ConflictList({ conflicts }: { conflicts: CalendarConflict[] }) {
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return <div><Label className="mb-2 block">{label}{required ? <span className="text-destructive"> *</span> : null}</Label>{children}</div>;
+  return <div><Label className="mb-2 block" required={required}>{label}</Label>{children}</div>;
 }

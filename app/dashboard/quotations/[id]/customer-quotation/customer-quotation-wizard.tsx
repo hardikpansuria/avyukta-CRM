@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -512,7 +512,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         {activeStep === 0 ? (
           <StepCard
             description="Choose the customer-facing document terminology. The workflow, data, pricing, and quotation number remain shared."
-            title="What would you like to create?"
+            title={<>What would you like to create? <RequiredMark /></>}
           >
             <div
               aria-label="Document type"
@@ -1008,7 +1008,7 @@ function StepCard({
   description,
   children,
 }: {
-  title: string;
+  title: React.ReactNode;
   description: string;
   children: React.ReactNode;
 }) {
@@ -1041,10 +1041,7 @@ function TextField({
 }) {
   return (
     <div>
-      <Label>
-        {label}
-        {required ? <span className="ml-1 text-red-500">*</span> : null}
-      </Label>
+      <Label required={required}>{label}</Label>
       <Input
         className={cn(inputClass, "mt-2")}
         required={required}

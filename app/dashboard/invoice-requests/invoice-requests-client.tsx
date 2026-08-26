@@ -118,7 +118,7 @@ export function InvoiceRequestsClient({ canCreate }: { canCreate: boolean }) {
             onChange={(event) => setSearch(event.target.value)}
           />
           <Select value={status} onValueChange={(value) => setStatus(String(value))}>
-            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue>{status === "all" ? "All statuses" : title(status)}</SelectValue></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               {[

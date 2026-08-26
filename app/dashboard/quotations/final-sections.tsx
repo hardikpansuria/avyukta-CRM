@@ -1,5 +1,6 @@
 "use client";
 
+import { RequiredMark } from "@/components/ui/label";
 import {
   calculateFinalTotals,
   calculateQuotationTotals,
@@ -178,41 +179,55 @@ export function FinalSections({
                 className="grid gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800 md:grid-cols-[1fr_160px_160px_auto]"
                 key={adjustment.id ?? index}
               >
-                <input
-                  className={inputClass}
-                  placeholder="Description"
-                  value={adjustment.description ?? ""}
-                  onChange={(event) =>
-                    updateAdjustment(index, {
-                      description: event.target.value,
-                    })
-                  }
-                />
-                <select
-                  className={inputClass}
-                  value={adjustment.calculation_type ?? "amount"}
-                  onChange={(event) =>
-                    updateAdjustment(index, {
-                      calculation_type: event.target.value,
-                    })
-                  }
-                >
-                  <option value="amount">Amount</option>
-                  <option value="percentage">Percentage</option>
-                </select>
-                <input
-                  className={inputClass}
-                  inputMode="decimal"
-                  type="text"
-                  value={String(adjustment.value ?? "")}
-                  onChange={(event) => {
-                    const value = decimalValue(event.target.value);
-
-                    if (value !== null) {
-                      updateAdjustment(index, { value });
+                <label>
+                  <span className="mb-2 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    Description <RequiredMark />
+                  </span>
+                  <input
+                    className={inputClass}
+                    value={adjustment.description ?? ""}
+                    onChange={(event) =>
+                      updateAdjustment(index, {
+                        description: event.target.value,
+                      })
                     }
-                  }}
-                />
+                  />
+                </label>
+                <label>
+                  <span className="mb-2 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    Calculation Type <RequiredMark />
+                  </span>
+                  <select
+                    className={inputClass}
+                    value={adjustment.calculation_type ?? "amount"}
+                    onChange={(event) =>
+                      updateAdjustment(index, {
+                        calculation_type: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="amount">Amount</option>
+                    <option value="percentage">Percentage</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-2 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    Value <RequiredMark />
+                  </span>
+                  <input
+                    className={inputClass}
+                    inputMode="decimal"
+                    type="text"
+                    value={String(adjustment.value ?? "")}
+                    onChange={(event) => {
+                      const value = decimalValue(event.target.value);
+
+                      if (value !== null) {
+                        updateAdjustment(index, { value });
+                      }
+                    }}
+                  />
+                </label>
                 <button
                   className="text-sm font-medium text-zinc-500 hover:text-red-600 dark:text-zinc-400"
                   type="button"
