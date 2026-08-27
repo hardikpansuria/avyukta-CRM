@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { buildAuthRedirectUrl } from "@/lib/auth/auth-redirect-url";
 import { findAuthUserByEmail } from "@/lib/auth/find-auth-user-by-email";
+import { isPendingInvitation } from "@/lib/auth/invitation-status";
 import { authorizeOrgRequest } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -60,8 +62,35 @@ export async function GET() {
     return jsonError("Unable to fetch employees", 500);
   }
 
+  const invitationStates = new Map<
+    string,
+    { pending: boolean; invitedAt: string | null }
+  >();
+
+  await Promise.all(
+    ((data ?? []) as MembershipRow[]).map(async (membership) => {
+      const { data: authUserData, error: authUserError } =
+        await admin.auth.admin.getUserById(membership.user_id);
+
+      if (authUserError || !authUserData.user) {
+        console.error("Unable to load employee invitation status", {
+          membershipId: membership.id,
+          code: authUserError?.code,
+          message: authUserError?.message,
+        });
+        return;
+      }
+
+      invitationStates.set(membership.user_id, {
+        pending: isPendingInvitation(authUserData.user),
+        invitedAt: authUserData.user.invited_at ?? null,
+      });
+    }),
+  );
+
   const employees = ((data ?? []) as MembershipRow[]).map((membership) => {
     const profile = getProfile(membership.profiles ?? null);
+    const invitation = invitationStates.get(membership.user_id);
 
     return {
       id: membership.id,
@@ -71,10 +100,15 @@ export async function GET() {
       role: membership.role,
       status: membership.status,
       member_since: membership.created_at ?? null,
+      invitation_pending: invitation?.pending === true,
+      invited_at: invitation?.invitedAt ?? null,
     };
   });
 
-  return NextResponse.json({ employees });
+  return NextResponse.json({
+    employees,
+    can_manage_admins: session.role === "admin",
+  });
 }
 
 export async function POST(request: Request) {
@@ -122,7 +156,7 @@ export async function POST(request: Request) {
       const { data: inviteData, error: inviteError } =
         await admin.auth.admin.inviteUserByEmail(email, {
           data: { full_name: fullName },
-          redirectTo: `${siteUrl}/auth/reset-password`,
+          redirectTo: buildAuthRedirectUrl(siteUrl, "/auth/reset-password"),
         });
 
       if (inviteError || !inviteData.user) {

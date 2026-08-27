@@ -21,6 +21,7 @@ import { Label, RequiredMark } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   customerDocumentLabels,
   isCustomerDocumentType,
@@ -29,7 +30,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import { CustomerQuotationPreview } from "./customer-quotation-preview";
-import { RichTextEditor } from "./rich-text-editor";
 
 type CustomerDocument = {
   id?: string;
@@ -77,6 +77,7 @@ type CustomerItem = {
 };
 
 type Organization = {
+  branding_version_id: string | null;
   company_name: string;
   phone: string;
   fax: string;
@@ -84,7 +85,10 @@ type Organization = {
   terms_html: string;
   terms_text: string;
   logo_signed_url: string | null;
+  logo_storage_path: string | null;
   has_logo: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
 };
 
 type GeneratedDocument = {
@@ -182,7 +186,11 @@ function hydrateItems(values: Array<Record<string, unknown>>): CustomerItem[] {
   }));
 }
 
-export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boolean }) {
+export function CustomerQuotationWizard({
+  readOnly = false,
+}: {
+  readOnly?: boolean;
+}) {
   const params = useParams<{ id: string }>();
   const quotationId = params.id;
   const [activeStep, setActiveStep] = useState(0);
@@ -322,6 +330,7 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
         hydrateDocument({ ...saved.document, ...saved.pricing_summary }),
       );
       setItems(hydrateItems(saved.items ?? []));
+      setOrganization(saved.organization);
       if (showSuccess) {
         const savedDocument = hydrateDocument({
           ...saved.document,
@@ -539,9 +548,22 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
 
         {activeStep === 1 ? (
           <StepCard
-            description="Organization-wide quotation branding is reused for every customer document."
+            description="Branding is selected by the quotation date and captured with the customer document. Later versions do not change this document."
             title="Company Branding"
           >
+            <div className="mb-5 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+              <Badge variant="outline">
+                {exists ? "Captured for this document" : "Effective version"}
+              </Badge>
+              {organization.effective_from ? (
+                <span>
+                  Effective {new Date(`${organization.effective_from}T00:00:00Z`).toLocaleDateString("en-CA", { timeZone: "UTC" })}
+                  {organization.effective_to
+                    ? ` to ${new Date(`${organization.effective_to}T00:00:00Z`).toLocaleDateString("en-CA", { timeZone: "UTC" })}`
+                    : " onward"}
+                </span>
+              ) : null}
+            </div>
             <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
               <div className="flex min-h-40 items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900/50">
                 {organization.logo_signed_url ? (
@@ -569,14 +591,18 @@ export function CustomerQuotationWizard({ readOnly = false }: { readOnly?: boole
                   value={organization.footer_text || "-"}
                 />
                 <div className="sm:col-span-2">
-                  <ReadOnlyField
-                    label="Terms and Conditions"
-                    value={
-                      organization.terms_html || organization.terms_text
-                        ? "Configured"
-                        : "Not configured"
-                    }
-                  />
+                  <Label className="text-xs text-zinc-500">Terms and Conditions</Label>
+                  <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6">
+                    {organization.terms_html ? (
+                      <div
+                        dangerouslySetInnerHTML={{ __html: organization.terms_html }}
+                      />
+                    ) : organization.terms_text ? (
+                      <p className="whitespace-pre-wrap">{organization.terms_text}</p>
+                    ) : (
+                      <p className="text-zinc-500">Not configured</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

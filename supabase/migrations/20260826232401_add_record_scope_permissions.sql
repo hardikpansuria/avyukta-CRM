@@ -15,7 +15,6 @@ on conflict (module_id, action_key) do update set
   sort_order = excluded.sort_order,
   is_active = true,
   updated_at = now();
-
 insert into public.role_default_permissions (role_key, permission_id, allowed)
 select roles.role_key, pd.id, roles.role_key = 'admin'
 from (values ('admin'), ('sales'), ('accountant')) roles(role_key)

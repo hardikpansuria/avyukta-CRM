@@ -5,6 +5,7 @@ import { requireOrgPermission } from "@/lib/auth/permissions";
 import {
   getCustomerQuotationData,
   normalizeCustomerQuotationDraft,
+  type CustomerQuotationData,
   type CustomerQuotationDraftInput,
 } from "@/lib/quotations/customer-quotation";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -34,6 +35,21 @@ function itemsBelongToQuotation(
     submittedScopeIds.every((scopeId) => scopeIds.has(scopeId)) &&
     new Set(submittedScopeIds).size === submittedScopeIds.length
   );
+}
+
+function brandingSnapshot(
+  organization: CustomerQuotationData["organization"],
+) {
+  return {
+    branding_version_id: organization.branding_version_id,
+    organization_name_snapshot: organization.company_name,
+    organization_logo_path_snapshot: organization.logo_storage_path,
+    organization_phone_snapshot: organization.phone || null,
+    organization_fax_snapshot: organization.fax || null,
+    organization_footer_snapshot: organization.footer_text || null,
+    organization_terms_html_snapshot: organization.terms_html || null,
+    organization_terms_text_snapshot: organization.terms_text || null,
+  };
 }
 
 async function saveItemContent({
@@ -151,6 +167,16 @@ export async function POST(
     return jsonError("Customer quotation contains an invalid scope", 400);
   }
 
+  const datedBrandingResult = await getCustomerQuotationData(
+    admin,
+    session.org_id,
+    id,
+    { brandingDate: draft.quotation_date },
+  );
+  if (datedBrandingResult.error || !datedBrandingResult.value) {
+    return jsonError("Unable to select quotation branding", 500);
+  }
+
   const { data: document, error: documentError } = await admin
     .from("quotation_customer_documents")
     .insert({
@@ -171,6 +197,7 @@ export async function POST(
       pricing_synced_at: new Date().toISOString(),
       generated_pdf_storage_path: null,
       generated_at: null,
+      ...brandingSnapshot(datedBrandingResult.value.organization),
       created_by: session.user.id,
       updated_by: session.user.id,
     })
@@ -261,6 +288,7 @@ export async function PATCH(
     .from("quotation_customer_documents")
     .update({
       ...draft,
+      ...brandingSnapshot(sourceResult.value.organization),
       document_status: "draft",
       updated_by: session.user.id,
     })

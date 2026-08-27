@@ -14,6 +14,7 @@ export default function ResetPasswordPage() {
   const [isPreparing, setIsPreparing] = useState(true);
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [isInvitation, setIsInvitation] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -29,6 +30,11 @@ export default function ResetPasswordPage() {
       const authErrorDescription =
         queryParams.get("error_description") ??
         hashParams.get("error_description");
+      const authType = queryParams.get("type") ?? hashParams.get("type");
+
+      if (authType === "invite" && isMounted) {
+        setIsInvitation(true);
+      }
 
       if (authErrorCode || authErrorDescription) {
         if (isMounted) {
@@ -132,17 +138,21 @@ export default function ResetPasswordPage() {
       <section className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-8 shadow-sm">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-zinc-950">
-            Set new password
+            {isInvitation ? "Create your password" : "Set new password"}
           </h1>
           <p className="mt-2 text-sm text-zinc-600">
-            Choose a new password for your account.
+            {isInvitation
+              ? "Create a password to finish setting up your Avyukta CRM account."
+              : "Choose a new password for your account."}
           </p>
         </div>
 
         {isComplete ? (
           <div className="space-y-6">
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              Your password has been updated.
+              {isInvitation
+                ? "Your account password has been created."
+                : "Your password has been updated."}
             </div>
             <Link
               className="flex h-11 w-full items-center justify-center rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800"
@@ -211,7 +221,9 @@ export default function ResetPasswordPage() {
                   ? "Preparing..."
                   : isLoading
                     ? "Updating..."
-                    : "Update password"}
+                    : isInvitation
+                      ? "Create password"
+                      : "Update password"}
               </button>
             </form>
           </>
