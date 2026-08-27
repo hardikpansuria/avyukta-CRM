@@ -1,481 +1,130 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
-  ArrowRightIcon,
-  ArrowUpRightIcon,
-  CircleDollarSignIcon,
-  ClockIcon,
-  FilePlusIcon,
-  FileTextIcon,
-  PlusIcon,
-  UsersIcon,
-  ClipboardListIcon,
-  BellIcon,
+  AlertTriangleIcon, ArrowRightIcon, BellIcon, BriefcaseBusinessIcon,
+  CalendarDaysIcon, CheckCircle2Icon, CircleDollarSignIcon, Clock3Icon,
+  FileTextIcon, ReceiptTextIcon, TrendingUpIcon, UsersIcon,
 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getEffectivePermissionKeys, hasOrgPermission } from "@/lib/auth/permissions";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { hasOrgPermission } from "@/lib/auth/permissions";
+import { dashboardKindForRole, visibleDashboardWidgets, type DashboardKind } from "@/lib/dashboard/config";
+import { resolveDashboardDateRange } from "@/lib/dashboard/date-range";
+import { getDashboardData, type DashboardData, type DashboardJob } from "@/lib/dashboard/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import {
-  formatCurrency,
-  formatPlainDate,
-  QuotationStatusBadge,
-} from "./quotations/quotation-ui";
+import { DashboardDateFilter } from "./dashboard-date-filter";
+import { DashboardSearch } from "./dashboard-search";
 import { DownloadDocumentsDialog } from "./download-documents-dialog";
+import { FloatingQuickActions, type FloatingQuickAction } from "./floating-quick-actions";
 
-type RecentQuotation = {
-  id: string;
-  quotation_number?: string | null;
-  project_name?: string | null;
-  status?: string | null;
-  quote_date?: string | null;
-  expiry_date?: string | null;
-  grand_total_after_tax?: number | string | null;
-  grand_total_before_tax?: number | string | null;
-};
+type PageProps = { searchParams: Promise<{ period?: string; from?: string; to?: string }> };
+const money = (value: number) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(value);
+const shortDate = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${value.slice(0, 10)}T12:00:00Z`)) : "—";
+const title = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-const openStatuses = ["draft", "pending_approval", "sent"];
+function SectionHeading({ title: heading, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+  return <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end"><div><h2 className="text-lg font-semibold tracking-tight">{heading}</h2>{description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}</div>{action}</div>;
+}
 
-export default async function DashboardPage() {
+function KpiCard({ label, value, detail, href, icon: Icon, tone = "neutral" }: { label: string; value: string; detail: string; href: string; icon: React.ComponentType<{ className?: string }>; tone?: "neutral" | "warning" | "danger" | "success" }) {
+  const tones = { neutral: "bg-muted text-muted-foreground", warning: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300", danger: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300", success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" };
+  return <Link aria-label={`${label}: ${value}. ${detail}`} className="group block" href={href}><Card className="h-full transition hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div className={`flex size-10 items-center justify-center rounded-lg ${tones[tone]}`}><Icon className="size-5" /></div><ArrowRightIcon className="size-4 text-muted-foreground opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" /></div><p className="mt-5 text-sm font-medium text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></CardContent></Card></Link>;
+}
+
+function AttentionItem({ label, count, href, level }: { label: string; count: number; href: string; level: "urgent" | "attention" | "on-track" }) {
+  const styles = { urgent: "border-red-200 bg-red-50/70 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200", attention: "border-amber-200 bg-amber-50/70 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200", "on-track": "border-emerald-200 bg-emerald-50/70 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200" };
+  return <Link className={`flex items-center justify-between gap-3 rounded-lg border p-3.5 transition hover:shadow-sm ${styles[level]}`} href={href}><span className="flex items-center gap-3"><span className="flex size-8 items-center justify-center rounded-full bg-background/70 text-sm font-bold tabular-nums">{count}</span><span><span className="block text-sm font-semibold">{label}</span><span className="block text-xs opacity-75">{level === "urgent" ? "Urgent" : level === "attention" ? "Needs attention" : "On track"}</span></span></span><ArrowRightIcon className="size-4" /></Link>;
+}
+
+function Pipeline({ rows, invoice = false }: { rows: Array<{ key: string; label: string; count: number; value: number }>; invoice?: boolean }) {
+  const maximum = Math.max(1, ...rows.map((row) => row.value));
+  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">{rows.map((row) => <Link className="rounded-lg border bg-card p-4 transition hover:border-foreground/20 hover:shadow-sm" href={invoice ? `/dashboard/invoices?status=${row.key}` : `/dashboard/quotations?status=${row.key}`} key={row.key}><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold">{row.label}</span><Badge variant="secondary">{row.count}</Badge></div><p className="mt-3 text-lg font-semibold tabular-nums">{money(row.value)}</p><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(row.value ? 8 : 0, Math.round((row.value / maximum) * 100))}%` }} /></div></Link>)}</div>;
+}
+
+function JobsTable({ jobs, ready = false }: { jobs: DashboardJob[]; ready?: boolean }) {
+  if (!jobs.length) return <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No jobs match this section right now.</div>;
+  return <div className="overflow-hidden rounded-lg border"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-muted/60 text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Job</th><th className="px-4 py-3 font-medium">Customer / Project</th><th className="px-4 py-3 font-medium">PO</th><th className="px-4 py-3 font-medium">Salesperson</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 text-right font-medium">{ready ? "Action" : "Started"}</th></tr></thead><tbody className="divide-y">{jobs.map((job) => <tr className="bg-card hover:bg-muted/30" key={job.id}><td className="px-4 py-3"><Link className="font-semibold hover:underline" href={`/dashboard/jobs/${job.id}`}>{job.number}</Link></td><td className="px-4 py-3"><span className="block font-medium">{job.customer}</span><span className="block max-w-64 truncate text-xs text-muted-foreground">{job.project}</span></td><td className="px-4 py-3">{job.poNumber}</td><td className="px-4 py-3">{job.salesperson}</td><td className="px-4 py-3"><Badge variant="outline">{ready ? "Ready to Invoice" : title(job.status)}</Badge></td><td className="px-4 py-3 text-right">{ready ? <Button nativeButton={false} render={<Link href={`/dashboard/invoices/new?jobId=${job.id}`} />} size="sm">Create Invoice</Button> : shortDate(job.startedAt)}</td></tr>)}</tbody></table></div></div>;
+}
+
+function quickActions(kind: DashboardKind, permissions: ReadonlySet<string>): FloatingQuickAction[] {
+  const actions = [
+    permissions.has("customers.create") && { label: "New Customer", href: "/dashboard/customers/new", icon: "customer" },
+    permissions.has("quotations.create") && { label: "New Quotation", href: "/dashboard/quotations/new", icon: "quotation" },
+    permissions.has("purchase_orders.attach_po") && { label: "Attach PO", href: "/dashboard/jobs/po-pending", icon: "po" },
+    permissions.has("invoices.create") && { label: "Create Invoice", href: "/dashboard/invoices/new", icon: "invoice" },
+    permissions.has("invoices.record_payment") && { label: "Record Payment", href: "/dashboard/invoices?status=sent", icon: "payment" },
+    permissions.has("calendar.view") && { label: kind === "accountant" ? "View Calendar" : "Open Calendar", href: "/dashboard/calendar", icon: "calendar" },
+  ];
+  return actions.filter(Boolean) as FloatingQuickAction[];
+}
+
+function Header({ firstName, kind, range, notificationCount }: { firstName: string; kind: DashboardKind; range: ReturnType<typeof resolveDashboardDateRange>; notificationCount: number }) {
+  const copy = kind === "owner" ? "Here is what is happening across your company." : kind === "sales" ? "Your sales priorities and the company operation at a glance." : kind === "accountant" ? "What needs to be invoiced, collected, and followed up." : "Your company workspace at a glance.";
+  return <><div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-sm font-medium text-muted-foreground">{new Intl.DateTimeFormat("en-CA", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date())}</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Good morning, {firstName}</h1><p className="mt-2 text-sm text-muted-foreground">{copy}</p></div><div className="flex items-center gap-2"><DashboardDateFilter range={range} /><Button aria-label={`${notificationCount} notifications`} className="relative size-10" size="icon" variant="outline"><BellIcon className="size-4" />{notificationCount ? <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">{Math.min(notificationCount, 9)}</span> : null}</Button></div></div><div className="mt-5 max-w-3xl"><DashboardSearch /></div></>;
+}
+
+function OwnerDashboard({ data, permissions }: { data: DashboardData; permissions: ReadonlySet<string> }) {
+  const t = data.totals;
+  return <div className="mt-8 space-y-9">
+    <section><SectionHeading title="Executive Summary" description="A clear view of the whole company." /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><KpiCard detail={`${t.openQuoteCount} open quotations`} href="/dashboard/quotations" icon={TrendingUpIcon} label="Open Quotation Value" value={money(t.openQuoteValue)} /><KpiCard detail={`${t.poCount} received in selected period`} href="/dashboard/jobs/purchase-orders" icon={FileTextIcon} label="PO Received" value={money(t.poValue)} tone="success" /><KpiCard detail="Currently in progress" href="/dashboard/jobs/purchase-orders" icon={BriefcaseBusinessIcon} label="Jobs On The Go" value={String(t.activeJobs)} /><KpiCard detail={`${t.completedMonth} completed this month`} href="/dashboard/jobs/completed" icon={CheckCircle2Icon} label="Jobs Completed" value={String(t.completedJobs)} tone="success" />{permissions.has("invoices.view") ? <><KpiCard detail={`${t.readyToInvoiceCount} completed jobs`} href="/dashboard/invoice-requests" icon={ReceiptTextIcon} label="Ready to Invoice" value={money(t.readyToInvoiceValue)} tone="warning" /><KpiCard detail="Money customers still owe us" href="/dashboard/invoices/outstanding" icon={CircleDollarSignIcon} label="Outstanding Customer Balance" value={money(t.outstanding)} /><KpiCard detail={`${t.overdueCount} invoices over 30 days`} href="/dashboard/invoices/outstanding" icon={Clock3Icon} label="Overdue Amount" value={money(t.overdue)} tone="danger" /></> : null}<KpiCard detail={`${t.newCustomers} new in selected period`} href="/dashboard/customers" icon={UsersIcon} label="Total Customers" value={String(t.customers)} /></div></section>
+    <section><SectionHeading title="Needs Your Attention" description="Items that may hold up sales, work, or cash flow." /><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><AttentionItem count={t.overdueCount} href="/dashboard/invoices/outstanding" label="Overdue Invoices" level={t.overdueCount ? "urgent" : "on-track"} /><AttentionItem count={t.readyToInvoiceCount} href="/dashboard/invoice-requests" label="Jobs Ready to Invoice" level={t.readyToInvoiceCount ? "attention" : "on-track"} /><AttentionItem count={data.pipeline.find((row) => row.key === "sent")?.count ?? 0} href="/dashboard/jobs/po-pending" label="Quotations Waiting for PO" level="attention" /><AttentionItem count={data.revisions.length} href="/dashboard/jobs/purchase-orders" label="Recent PO Revisions" level={data.revisions.length ? "attention" : "on-track"} /></div></section>
+    <section><SectionHeading title="Sales Overview" description="Company quotation pipeline for the selected date range." action={<Button nativeButton={false} render={<Link href="/dashboard/quotations" />} size="sm" variant="outline">View Quotations<ArrowRightIcon /></Button>} /><Pipeline rows={data.pipeline} /></section>
+    {data.salespeople.length ? <section><SectionHeading title="Salesperson Performance" description="Salespeople appear automatically from active organization users." /><div className="overflow-hidden rounded-lg border"><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="bg-muted/60 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Salesperson</th><th className="px-4 py-3 text-right font-medium">Quotes</th><th className="px-4 py-3 text-right font-medium">Quote Value</th><th className="px-4 py-3 text-right font-medium">POs</th><th className="px-4 py-3 text-right font-medium">PO Value</th><th className="px-4 py-3 text-right font-medium">Win Rate</th></tr></thead><tbody className="divide-y">{data.salespeople.map((person) => <tr className="bg-card" key={person.id}><td className="px-4 py-3 font-semibold">{person.name}</td><td className="px-4 py-3 text-right tabular-nums">{person.quotes}</td><td className="px-4 py-3 text-right tabular-nums">{money(person.quoteValue)}</td><td className="px-4 py-3 text-right tabular-nums">{person.poCount}</td><td className="px-4 py-3 text-right tabular-nums">{money(person.poValue)}</td><td className="px-4 py-3 text-right"><Badge variant="outline">{person.winRate}%</Badge></td></tr>)}</tbody></table></div></div></section> : null}
+    <section><SectionHeading title="Jobs Currently On The Go" description="Company-wide active jobs." action={<Button nativeButton={false} render={<Link href="/dashboard/jobs/purchase-orders" />} size="sm" variant="outline">View All Jobs<ArrowRightIcon /></Button>} /><JobsTable jobs={data.activeJobs} /></section>
+    <section className="grid gap-6 xl:grid-cols-2"><Card><CardHeader><CardTitle>Completed Jobs</CardTitle></CardHeader><CardContent className="grid grid-cols-3 gap-3"><MiniMetric label="This Month" value={String(t.completedMonth)} /><MiniMetric label="This Year" value={String(t.completedYear)} /><MiniMetric label="All Time" value={String(t.completedJobs)} /></CardContent></Card><Card><CardHeader><CardTitle>Employee & Scheduling Overview</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4"><MiniMetric label="Working Today" value={String(t.workingToday)} /><MiniMetric label="On Holiday" value={String(t.holidayToday)} /><MiniMetric label="Available" value={String(t.availableToday)} /><MiniMetric label="Scheduled Jobs" value={String(t.scheduledJobs)} /></CardContent></Card></section>
+    {permissions.has("invoices.view") ? <section><SectionHeading title="Financial Overview" description="Simple movement from invoicing to collection." /><Pipeline invoice rows={data.invoicePipeline} /></section> : null}
+    <section className="grid gap-6 xl:grid-cols-2"><RevisionCard rows={data.revisions} /><ActivityCard rows={data.activities} /></section>
+    <section className="grid gap-6 xl:grid-cols-2"><Card><CardHeader><CardTitle>Customer Overview</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3"><MiniMetric label="Total Customers" value={String(t.customers)} /><MiniMetric label="New Customers" value={String(t.newCustomers)} /><MiniMetric label="Open Quotations" value={String(t.openQuoteCount)} /></CardContent></Card><TopCustomers rows={data.topCustomers} /></section>
+  </div>;
+}
+
+function SalesDashboard({ data, userId }: { data: DashboardData; userId: string }) {
+  const t = data.totals, mine = data.my;
+  return <div className="mt-8 space-y-9">
+    <section><SectionHeading title="My Sales" description="Your results for the selected date range." /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><KpiCard detail="Your open opportunities" href="/dashboard/quotations" icon={FileTextIcon} label="My Open Quotations" value={String(mine.openQuoteCount)} /><KpiCard detail={`${mine.quoteCount} quotations created`} href="/dashboard/quotations" icon={TrendingUpIcon} label="My Quotation Value" value={money(mine.quoteValue)} /><KpiCard detail="Waiting for customer PO" href="/dashboard/jobs/po-pending" icon={Clock3Icon} label="My PO Pending" value={String(mine.poPending)} tone="warning" /><KpiCard detail={`${mine.poCount} purchase orders`} href="/dashboard/jobs/purchase-orders" icon={CircleDollarSignIcon} label="My PO Received" value={money(mine.poValue)} tone="success" /><KpiCard detail="Assigned to you" href="/dashboard/jobs/purchase-orders" icon={BriefcaseBusinessIcon} label="My Active Jobs" value={String(mine.activeJobs)} /><KpiCard detail="Selected date range" href="/dashboard/quotations" icon={CheckCircle2Icon} label="My Win Rate" value={`${mine.winRate}%`} /></div></section>
+    <section><SectionHeading title="My Priorities" description="The next sales actions to move work forward." /><div className="grid gap-3 md:grid-cols-3"><AttentionItem count={mine.poPending} href="/dashboard/jobs/po-pending" label="POs Requiring Follow-up" level={mine.poPending ? "attention" : "on-track"} /><AttentionItem count={data.notifications.filter((row) => !row.read).length} href="#notifications" label="Unread Notifications" level={data.notifications.some((row) => !row.read) ? "attention" : "on-track"} /><AttentionItem count={data.revisions.length} href="/dashboard/jobs/purchase-orders" label="Recent PO Revisions" level={data.revisions.length ? "attention" : "on-track"} /></div></section>
+    <section><SectionHeading title="Company Operations" description="Company-wide visibility. Editing still follows your record permissions." /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><KpiCard detail="Company-wide, read only" href="/dashboard/jobs/purchase-orders" icon={BriefcaseBusinessIcon} label="Jobs On The Go" value={String(t.activeJobs)} /><KpiCard detail="Across the company" href="/dashboard/jobs/completed" icon={CheckCircle2Icon} label="Completed This Month" value={String(t.completedMonth)} tone="success" /><KpiCard detail="Across the company" href="/dashboard/jobs/completed" icon={CheckCircle2Icon} label="Completed This Year" value={String(t.completedYear)} /><KpiCard detail="Company history" href="/dashboard/jobs/completed" icon={FileTextIcon} label="All-Time Completed" value={String(t.completedJobs)} /><KpiCard detail="On today’s calendar" href="/dashboard/calendar" icon={CalendarDaysIcon} label="Scheduled Jobs" value={String(t.scheduledJobs)} /><KpiCard detail="On job assignments today" href="/dashboard/calendar" icon={UsersIcon} label="Employees Working" value={String(t.workingToday)} /><KpiCard detail="Today" href="/dashboard/calendar" icon={Clock3Icon} label="Employees on Holiday" value={String(t.holidayToday)} /><KpiCard detail="Available today" href="/dashboard/calendar" icon={UsersIcon} label="Available Employees" value={String(t.availableToday)} /></div></section>
+    <section><SectionHeading title="My Quotation Pipeline" description="Your quotation stages for the selected period." /><Pipeline rows={data.pipeline} /></section>
+    <section><SectionHeading title="My Active Jobs" description="Jobs assigned to you." /><JobsTable jobs={data.activeJobs.filter((job) => job.salespersonId === userId)} /></section>
+    <section><SectionHeading title="Company Jobs On The Go" description="All current jobs are visible here for operational awareness." /><JobsTable jobs={data.activeJobs} /></section>
+    <section><SectionHeading title="Company Quotation Overview" description="Customer-facing values only; internal workings remain permission controlled." /><RecentQuotes rows={data.recentQuotes} /></section>
+    <section className="grid gap-6 xl:grid-cols-2"><RevisionCard rows={data.revisions} /><ActivityCard rows={data.activities} /></section>
+  </div>;
+}
+
+function AccountantDashboard({ data }: { data: DashboardData }) {
+  const t = data.totals;
+  return <div className="mt-8 space-y-9">
+    <section><SectionHeading title="Financial Summary" description="What has been invoiced, collected, and still needs action." /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><KpiCard detail={`${t.readyToInvoiceCount} completed jobs`} href="/dashboard/invoice-requests" icon={ReceiptTextIcon} label="Ready to Invoice" value={money(t.readyToInvoiceValue)} tone="warning" /><KpiCard detail="Selected date range" href="/dashboard/invoices" icon={FileTextIcon} label="Invoiced" value={money(t.invoiced)} /><KpiCard detail="Selected date range" href="/dashboard/invoices?status=payment_received" icon={CheckCircle2Icon} label="Paid" value={money(t.paid)} tone="success" /><KpiCard detail="Sent and not yet paid" href="/dashboard/invoices/outstanding" icon={CircleDollarSignIcon} label="Outstanding" value={money(t.outstanding)} /><KpiCard detail={`${t.overdueCount} invoices over 30 days`} href="/dashboard/invoices/outstanding" icon={AlertTriangleIcon} label="Overdue" value={money(t.overdue)} tone="danger" /><KpiCard detail="Approaching 30 days" href="/dashboard/invoices/outstanding" icon={Clock3Icon} label="Due This Week" value={money(t.dueThisWeek)} tone="warning" /></div></section>
+    <section><SectionHeading title="Needs Your Attention" /><div className="grid gap-3 md:grid-cols-3"><AttentionItem count={t.overdueCount} href="/dashboard/invoices/outstanding" label="Overdue Invoices" level={t.overdueCount ? "urgent" : "on-track"} /><AttentionItem count={t.readyToInvoiceCount} href="/dashboard/invoice-requests" label="Jobs Ready to Invoice" level={t.readyToInvoiceCount ? "attention" : "on-track"} /><AttentionItem count={data.notifications.filter((row) => !row.read).length} href="#notifications" label="Accounts Notifications" level="attention" /></div></section>
+    <section><SectionHeading title="Ready to Invoice" description="Completed work without an invoice. Job and PO details are reused automatically." /><JobsTable jobs={data.readyJobs} ready /></section>
+    <section><SectionHeading title="Invoice Pipeline" description="Click a stage to open the matching invoice records." /><Pipeline invoice rows={data.invoicePipeline} /></section>
+    <section><SectionHeading title="Customers Who Owe Us Money" description="Oldest outstanding invoices first." /><Receivables rows={data.outstandingInvoices} /></section>
+    <section className="grid gap-6 xl:grid-cols-2"><TopCustomers rows={data.topCustomers.slice().sort((a, b) => b.outstanding - a.outstanding)} financial /><ActivityCard rows={data.activities} /></section>
+  </div>;
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) { return <div className="rounded-lg bg-muted/60 p-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-1 text-xl font-semibold tabular-nums">{value}</p></div>; }
+function RevisionCard({ rows }: { rows: DashboardData["revisions"] }) { return <Card><CardHeader className="flex-row items-center justify-between"><CardTitle>Recent PO Revisions</CardTitle><Button nativeButton={false} render={<Link href="/dashboard/jobs/purchase-orders" />} size="sm" variant="ghost">View all<ArrowRightIcon /></Button></CardHeader><CardContent className="space-y-3">{rows.length ? rows.slice(0, 5).map((row) => <Link className="block rounded-lg border p-3 hover:bg-muted/40" href={`/dashboard/jobs/purchase-orders/${row.poId}`} key={row.id}><div className="flex justify-between gap-2"><span className="font-semibold">{row.poNumber} · Revision {row.revision}</span><Badge variant={row.difference > 0 ? "secondary" : "outline"}>{row.difference >= 0 ? "+" : ""}{money(row.difference)}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{row.customer} · {money(row.original)} → {money(row.revised)}</p></Link>) : <p className="py-8 text-center text-sm text-muted-foreground">No recent PO revisions.</p>}</CardContent></Card>; }
+function ActivityCard({ rows }: { rows: DashboardData["activities"] }) { return <Card id="notifications"><CardHeader><CardTitle>Recent Company Activity</CardTitle></CardHeader><CardContent><ol className="space-y-4">{rows.length ? rows.slice(0, 6).map((row) => <li className="relative border-l pl-4" key={row.id}><span className="absolute -left-1 top-1 size-2 rounded-full bg-primary" />{row.href ? <Link className="text-sm font-medium hover:underline" href={row.href}>{row.description}</Link> : <p className="text-sm font-medium">{row.description}</p>}<p className="mt-0.5 text-xs text-muted-foreground">{shortDate(row.date)}</p></li>) : <li className="py-8 text-center text-sm text-muted-foreground">No recent activity.</li>}</ol></CardContent></Card>; }
+function TopCustomers({ rows, financial = false }: { rows: DashboardData["topCustomers"]; financial?: boolean }) { return <Card><CardHeader><CardTitle>{financial ? "Customer Account Summary" : "Top Customers"}</CardTitle></CardHeader><CardContent className="space-y-2">{rows.length ? rows.slice(0, 6).map((row, index) => <Link className="flex items-center justify-between gap-4 rounded-lg p-2 hover:bg-muted/50" href={`/dashboard/customers/${row.id}`} key={row.id}><span className="flex min-w-0 items-center gap-3"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">{index + 1}</span><span className="truncate text-sm font-medium">{row.name}</span></span><span className="text-right"><span className="block text-sm font-semibold tabular-nums">{money(financial ? row.outstanding : row.value)}</span><span className="text-[11px] text-muted-foreground">{financial ? "outstanding" : "PO value"}</span></span></Link>) : <p className="py-8 text-center text-sm text-muted-foreground">No customer totals in this period.</p>}</CardContent></Card>; }
+function RecentQuotes({ rows }: { rows: DashboardData["recentQuotes"] }) { return <div className="overflow-hidden rounded-lg border"><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead className="bg-muted/60 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Quotation</th><th className="px-4 py-3 font-medium">Customer</th><th className="px-4 py-3 font-medium">Salesperson</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 text-right font-medium">Amount</th></tr></thead><tbody className="divide-y">{rows.map((row) => <tr className="bg-card" key={row.id}><td className="px-4 py-3"><Link className="font-semibold hover:underline" href={`/dashboard/quotations/${row.id}`}>{row.number}</Link></td><td className="px-4 py-3">{row.customer}</td><td className="px-4 py-3">{row.salesperson}</td><td className="px-4 py-3"><Badge variant="outline">{title(row.status)}</Badge></td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(row.value)}</td></tr>)}</tbody></table></div></div>; }
+function Receivables({ rows }: { rows: DashboardData["outstandingInvoices"] }) { return <div className="overflow-hidden rounded-lg border"><div className="overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="bg-muted/60 text-left text-xs text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Customer</th><th className="px-4 py-3 font-medium">Invoice</th><th className="px-4 py-3 font-medium">Invoice Date</th><th className="px-4 py-3 font-medium">Age</th><th className="px-4 py-3 text-right font-medium">Amount</th></tr></thead><tbody className="divide-y">{rows.length ? rows.map((row) => <tr className="bg-card" key={row.id}><td className="px-4 py-3 font-medium">{row.customer}</td><td className="px-4 py-3"><Link className="font-semibold hover:underline" href={`/dashboard/invoices/${row.id}`}>{row.number}</Link></td><td className="px-4 py-3">{shortDate(row.date)}</td><td className="px-4 py-3"><Badge variant={row.daysOutstanding > 30 ? "destructive" : "outline"}>{row.daysOutstanding > 30 ? `${row.daysOutstanding - 30} days overdue` : `${30 - row.daysOutstanding} days until due`}</Badge></td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(row.amount)}</td></tr>) : <tr><td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>No outstanding invoices.</td></tr>}</tbody></table></div></div>; }
+
+export default async function DashboardPage({ searchParams }: PageProps) {
   const session = await verifyOrgSession();
-
-  if (!session) {
-    redirect("/login");
-  }
-  if (!(await hasOrgPermission(session, "dashboard", "view"))) {
-    redirect("/dashboard/access-denied?module=dashboard");
-  }
-  const [canViewInvoiceRequests, canViewDocumentExports, canDateRangeExport, canFullBackup] =
-    await Promise.all([
-      hasOrgPermission(session, "invoice_requests", "view"),
-      hasOrgPermission(session, "document_exports", "view"),
-      hasOrgPermission(session, "document_exports", "date_range_export"),
-      hasOrgPermission(session, "document_exports", "full_backup"),
-    ]);
-  const canDownloadDocuments =
-    canViewDocumentExports && (canDateRangeExport || canFullBackup);
-
-  const admin = createAdminClient();
-  const [
-    customersResult,
-    quotationsResult,
-    openQuotesResult,
-    acceptedResult,
-    recentResult,
-    pendingRequestsResult,
-    notificationsResult,
-  ] = await Promise.all([
-    admin
-      .from("customers")
-      .select("id", { count: "exact", head: true })
-      .eq("org_id", session.org_id)
-      .neq("record_status", "deleted"),
-    admin
-      .from("quotations")
-      .select("id", { count: "exact", head: true })
-      .eq("org_id", session.org_id),
-    admin
-      .from("quotations")
-      .select("grand_total_after_tax, grand_total_before_tax")
-      .eq("org_id", session.org_id)
-      .in("status", openStatuses),
-    admin
-      .from("quotations")
-      .select("id", { count: "exact", head: true })
-      .eq("org_id", session.org_id)
-      .eq("status", "accepted"),
-    admin
-      .from("quotations")
-      .select(
-        "id, quotation_number, project_name, status, quote_date, expiry_date, grand_total_after_tax, grand_total_before_tax",
-      )
-      .eq("org_id", session.org_id)
-      .order("created_at", { ascending: false })
-      .limit(6),
-    canViewInvoiceRequests
-      ? admin
-          .from("invoice_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("org_id", session.org_id)
-          .eq("status", "pending")
-      : Promise.resolve({ count: 0 }),
-    admin
-      .from("crm_notifications")
-      .select("id,title,message,href,read_at,created_at")
-      .eq("org_id", session.org_id)
-      .eq("user_id", session.user.id)
-      .order("created_at", { ascending: false })
-      .limit(5),
-  ]);
-  const openQuotes = openQuotesResult.data ?? [];
-  const pipelineTotal = openQuotes.reduce(
-    (sum, quotation) =>
-      sum +
-      Number(
-        quotation.grand_total_after_tax ??
-          quotation.grand_total_before_tax ??
-          0,
-      ),
-    0,
-  );
-  const recentQuotations = (recentResult.data ?? []) as RecentQuotation[];
-  const firstName =
-    session.user.user_metadata?.full_name?.split(" ")[0] ??
-    session.user.email?.split("@")[0] ??
-    "there";
-
-  return (
-    <div className="mx-auto max-w-7xl">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            {session.org_name}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-            Good to see you, {firstName}
-          </h1>
-          <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-            Here is the current state of your customer and quotation work.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {canDownloadDocuments ? (
-            <DownloadDocumentsDialog
-              canDateRangeExport={canDateRangeExport}
-              canFullBackup={canFullBackup}
-            />
-          ) : null}
-          <Button
-            className="h-9 rounded-md"
-            nativeButton={false}
-            render={<Link href="/dashboard/customers/new" />}
-            variant="outline"
-          >
-            <PlusIcon data-icon="inline-start" />
-            New Customer
-          </Button>
-          <Button
-            className="h-9 rounded-md"
-            nativeButton={false}
-            render={<Link href="/dashboard/quotations/new" />}
-          >
-            <FilePlusIcon data-icon="inline-start" />
-            New Quotation
-          </Button>
-        </div>
-      </div>
-
-      <section
-        aria-label="CRM overview"
-        className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        <StatCard
-          description="Active customer records"
-          icon={<UsersIcon />}
-          label="Customers"
-          value={String(customersResult.count ?? 0)}
-        />
-        <StatCard
-          description="Across all statuses"
-          icon={<FileTextIcon />}
-          label="Total Quotations"
-          value={String(quotationsResult.count ?? 0)}
-        />
-        <StatCard
-          description={`${openQuotes.length} open quotations`}
-          icon={<CircleDollarSignIcon />}
-          label="Open Pipeline"
-          value={formatCurrency(pipelineTotal)}
-        />
-        <StatCard
-          description="Accepted quotations"
-          icon={<ClockIcon />}
-          label="Won Quotes"
-          value={String(acceptedResult.count ?? 0)}
-        />
-        {canViewInvoiceRequests ? (
-          <StatCard
-            description="Waiting for Accounts review"
-            icon={<ClipboardListIcon />}
-            label="Pending Invoice Requests"
-            value={String(pendingRequestsResult.count ?? 0)}
-          />
-        ) : null}
-      </section>
-
-      <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex items-center justify-between gap-4 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-            <div>
-              <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-                Recent Quotations
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Your latest quotation activity.
-              </p>
-            </div>
-            <Button
-              className="h-8 rounded-md"
-              nativeButton={false}
-              render={<Link href="/dashboard/quotations" />}
-              size="sm"
-              variant="ghost"
-            >
-              View all
-              <ArrowUpRightIcon data-icon="inline-end" />
-            </Button>
-          </div>
-
-          {recentQuotations.length === 0 ? (
-            <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-              <div className="flex size-10 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                <FileTextIcon className="size-5" />
-              </div>
-              <p className="mt-4 text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-                No quotations yet
-              </p>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Create the first quotation to start tracking activity.
-              </p>
-              <Button
-                className="mt-4 h-8 rounded-md"
-                nativeButton={false}
-                render={<Link href="/dashboard/quotations/new" />}
-                size="sm"
-              >
-                Create Quotation
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-zinc-50 text-xs text-zinc-500 dark:bg-zinc-900/70 dark:text-zinc-400">
-                    <tr>
-                      <th className="px-5 py-3 font-medium">Quotation</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Quote Date</th>
-                      <th className="px-4 py-3 text-right font-medium">Total</th>
-                      <th className="w-12 px-4 py-3">
-                        <span className="sr-only">Open</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                    {recentQuotations.map((quotation) => (
-                      <tr
-                        className="transition hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
-                        key={quotation.id}
-                      >
-                        <td className="px-5 py-3">
-                          <p className="font-medium text-zinc-950 dark:text-zinc-50">
-                            {quotation.quotation_number ?? "Pending"}
-                          </p>
-                          <p className="mt-0.5 max-w-64 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                            {quotation.project_name || "No project name"}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <QuotationStatusBadge status={quotation.status} />
-                        </td>
-                        <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                          {formatPlainDate(quotation.quote_date)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium tabular-nums text-zinc-950 dark:text-zinc-50">
-                          {formatCurrency(
-                            quotation.grand_total_after_tax ??
-                              quotation.grand_total_before_tax,
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Link
-                            aria-label={`Open quotation ${quotation.quotation_number ?? ""}`}
-                            className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-                            href={`/dashboard/quotations/${quotation.id}`}
-                          >
-                            <ArrowRightIcon className="size-4" />
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:hidden">
-                {recentQuotations.map((quotation) => (
-                  <Link
-                    className="block p-4 transition hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
-                    href={`/dashboard/quotations/${quotation.id}`}
-                    key={quotation.id}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium text-zinc-950 dark:text-zinc-50">
-                          {quotation.quotation_number ?? "Pending"}
-                        </p>
-                        <p className="mt-1 truncate text-sm text-zinc-500 dark:text-zinc-400">
-                          {quotation.project_name || "No project name"}
-                        </p>
-                      </div>
-                      <QuotationStatusBadge status={quotation.status} />
-                    </div>
-                    <div className="mt-4 flex items-center justify-between text-sm">
-                      <span className="text-zinc-500 dark:text-zinc-400">
-                        {formatPlainDate(quotation.quote_date)}
-                      </span>
-                      <span className="font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
-                        {formatCurrency(
-                          quotation.grand_total_after_tax ??
-                            quotation.grand_total_before_tax,
-                        )}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        <aside className="space-y-6">
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-            <div className="flex items-center gap-2">
-              <BellIcon className="size-4 text-zinc-500" />
-              <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-                Notifications
-              </h2>
-            </div>
-            <div className="mt-4 space-y-2">
-              {(notificationsResult.data ?? []).map((notification) => (
-                <Link
-                  className="block rounded-md border border-zinc-200 p-3 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
-                  href={notification.href ?? "/dashboard"}
-                  key={notification.id}
-                >
-                  <p className="text-sm font-medium">{notification.title}</p>
-                  {notification.message ? (
-                    <p className="mt-1 text-xs text-zinc-500">{notification.message}</p>
-                  ) : null}
-                </Link>
-              ))}
-              {!notificationsResult.data?.length ? (
-                <p className="text-sm text-zinc-500">No workflow notifications yet.</p>
-              ) : null}
-            </div>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-            <h2 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">
-              Quick Actions
-            </h2>
-            <div className="mt-4 space-y-2">
-              <QuickAction
-                description="Start a new customer record"
-                href="/dashboard/customers/new"
-                icon={<UsersIcon />}
-                label="Add Customer"
-              />
-              {canViewInvoiceRequests ? (
-                <QuickAction
-                  description="Review Sales billing requests"
-                  href="/dashboard/invoice-requests"
-                  icon={<ClipboardListIcon />}
-                  label="Invoice Requests"
-                />
-              ) : null}
-              <QuickAction
-                description="Build and price a new quote"
-                href="/dashboard/quotations/new"
-                icon={<FilePlusIcon />}
-                label="Create Quotation"
-              />
-              <QuickAction
-                description="Review active quotation work"
-                href="/dashboard/quotations"
-                icon={<FileTextIcon />}
-                label="Review Pipeline"
-              />
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-zinc-200 bg-zinc-950 p-5 text-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-            <p className="text-xs font-medium uppercase text-zinc-400">
-              Current workspace
-            </p>
-            <p className="mt-2 text-base font-semibold">{session.org_name}</p>
-            <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-4 text-sm">
-              <span className="text-zinc-400">Your role</span>
-              <span className="capitalize text-zinc-100">{session.role}</span>
-            </div>
-          </div>
-        </aside>
-      </section>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  description,
-  icon,
-}: {
-  label: string;
-  value: string;
-  description: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
-            {value}
-          </p>
-        </div>
-        <div className="flex size-9 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-600 [&_svg]:size-4 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-          {icon}
-        </div>
-      </div>
-      <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-        {description}
-      </p>
-    </div>
-  );
-}
-
-function QuickAction({
-  href,
-  label,
-  description,
-  icon,
-}: {
-  href: string;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Link
-      className="flex items-center gap-3 rounded-md border border-transparent p-3 transition hover:border-zinc-200 hover:bg-zinc-50 dark:hover:border-zinc-800 dark:hover:bg-zinc-900"
-      href={href}
-    >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600 [&_svg]:size-4 dark:bg-zinc-800 dark:text-zinc-300">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-zinc-950 dark:text-zinc-50">
-          {label}
-        </span>
-        <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
-          {description}
-        </span>
-      </span>
-      <ArrowRightIcon className="size-4 shrink-0 text-zinc-400" />
-    </Link>
-  );
+  if (!session) redirect("/login");
+  if (!(await hasOrgPermission(session, "dashboard", "view"))) redirect("/dashboard/access-denied?module=dashboard");
+  const range = resolveDashboardDateRange(await searchParams);
+  const permissions = await getEffectivePermissionKeys(session);
+  const kind = dashboardKindForRole(session.role);
+  const widgets = visibleDashboardWidgets(kind, permissions);
+  const data = await getDashboardData(createAdminClient(), session, range);
+  const firstName = session.user.user_metadata?.full_name?.split(" ")[0] ?? session.user.email?.split("@")[0] ?? "there";
+  const canDownload = permissions.has("document_exports.view") && (permissions.has("document_exports.date_range_export") || permissions.has("document_exports.full_backup"));
+  return <div className="mx-auto max-w-[1480px] pb-16"><Header firstName={firstName} kind={kind} notificationCount={data.notifications.filter((item) => !item.read).length} range={range} /><div className="mt-4 flex items-center justify-between gap-3 border-b pb-4 text-xs text-muted-foreground"><span>{widgets.length} dashboard sections available for your role · {range.label}</span>{canDownload ? <DownloadDocumentsDialog canDateRangeExport={permissions.has("document_exports.date_range_export")} canFullBackup={permissions.has("document_exports.full_backup")} /> : null}</div>{kind === "owner" ? <OwnerDashboard data={data} permissions={permissions} /> : kind === "sales" ? <SalesDashboard data={data} userId={session.user.id} /> : kind === "accountant" ? <AccountantDashboard data={data} /> : <SalesDashboard data={data} userId={session.user.id} />}<FloatingQuickActions actions={quickActions(kind, permissions)} /></div>;
 }

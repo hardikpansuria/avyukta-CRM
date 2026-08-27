@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { requireOrgPermission } from "@/lib/auth/permissions";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
+import { isSalesRole } from "@/lib/auth/data-scope";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type CustomerRow = {
@@ -569,7 +570,11 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
-  const assignedSalesRepId = getOptionalString(body.assigned_sales_rep_id);
+  let assignedSalesRepId = getOptionalString(body.assigned_sales_rep_id);
+  if (isSalesRole(session.role) && assignedSalesRepId !== session.user.id) {
+    const canCreateForOthers = await hasOrgPermission(session, "customers", "edit_all");
+    if (!canCreateForOthers) assignedSalesRepId = session.user.id;
+  }
   const accountManagerId = getOptionalString(body.account_manager_id);
   const assigneeIds = Array.from(
     new Set([assignedSalesRepId, accountManagerId].filter(Boolean)),

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { getWorkCompletionPdfData } from "@/lib/jobs/work-completion";
 import { renderWorkCompletionPdf } from "@/lib/jobs/work-completion-pdf";
@@ -86,6 +87,16 @@ export async function POST(
 
   const { jobId } = await context.params;
   const admin = createAdminClient();
+  const { data: jobOwner, error: ownerError } = await admin
+    .from("jobs")
+    .select("salesperson_id")
+    .eq("id", jobId)
+    .eq("org_id", session.org_id)
+    .maybeSingle();
+  if (ownerError) return jsonError("Unable to validate job ownership", 500, "JOB_LOOKUP_FAILED");
+  if (!jobOwner) return jsonError("Job not found", 404, "JOB_NOT_FOUND");
+  const scopeDenied = await requireOwnedMutation(session, "jobs", [jobOwner.salesperson_id]);
+  if (scopeDenied) return scopeDenied;
   const { data: draftValue, error: draftError } = await admin.rpc("create_job_work_completion_draft", {
     p_org_id: session.org_id,
     p_job_id: jobId,

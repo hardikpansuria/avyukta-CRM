@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { requireOrgPermission } from "@/lib/auth/permissions";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
+import { isSalesRole } from "@/lib/auth/data-scope";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -98,7 +99,11 @@ export async function POST(request: Request) {
     return jsonError("Customer not found", 404);
   }
 
-  const salesRepId = getOptionalString(input.sales_rep_id);
+  let salesRepId = getOptionalString(input.sales_rep_id);
+  if (isSalesRole(session.role) && salesRepId !== session.user.id) {
+    const canCreateForOthers = await hasOrgPermission(session, "quotations", "edit_all");
+    if (!canCreateForOthers) salesRepId = session.user.id;
+  }
   const salesRepResult = await validateSalesRep(
     admin,
     session.org_id,

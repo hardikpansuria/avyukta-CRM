@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { logRevisionAudit } from "@/lib/quotations/revisions";
 import { canTransitionQuotationStatus } from "@/lib/quotations/status-transitions";
@@ -46,6 +47,12 @@ export async function PATCH(
 
   if (existingError) return jsonError("Unable to validate quotation", 500);
   if (!existingQuotation) return jsonError("Quotation not found", 404);
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "quotations",
+    [existingQuotation.sales_rep_id as string | null],
+  );
+  if (scopeDenied) return scopeDenied;
 
   const currentStatus = String(existingQuotation.status ?? "draft");
   if (currentStatus === nextStatus) {

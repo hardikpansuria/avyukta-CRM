@@ -28,6 +28,7 @@ export type PermissionAction =
   | "view"
   | "create"
   | "edit"
+  | "edit_all"
   | "delete"
   | "revise"
   | "attach_po"

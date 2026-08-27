@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { requireOrgPermission } from "@/lib/auth/permissions";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   buildQuotationContactRows,
@@ -170,6 +171,13 @@ export async function PATCH(
     return jsonError("Quotation not found", 404);
   }
 
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "quotations",
+    [existingQuotation.sales_rep_id as string | null],
+  );
+  if (scopeDenied) return scopeDenied;
+
   if (existingQuotation.is_locked === true) {
     return jsonError(lockedRevisionMessage, 409);
   }
@@ -181,6 +189,10 @@ export async function PATCH(
       : undefined;
 
   if (salesRepId !== undefined) {
+    if (session.role === "sales" && salesRepId !== session.user.id) {
+      const canReassign = await hasOrgPermission(session, "quotations", "edit_all");
+      if (!canReassign) return jsonError("You cannot reassign this quotation to another salesperson", 403);
+    }
     const salesRepResult = await validateSalesRep(
       admin,
       session.org_id,

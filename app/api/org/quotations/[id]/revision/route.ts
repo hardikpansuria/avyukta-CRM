@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { getQuotationDetail } from "@/lib/quotations/api";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -39,7 +40,14 @@ export async function POST(
     quotation_number?: string | null;
     revision_number?: number | string | null;
     customer_id: string;
+    sales_rep_id?: string | null;
   };
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "quotations",
+    [quotation.sales_rep_id],
+  );
+  if (scopeDenied) return scopeDenied;
   const revisionNumber = Number(quotation.revision_number ?? 0);
   const quotationNumber = quotation.quotation_number ?? "";
   const { data: revision, error: revisionError } = await admin

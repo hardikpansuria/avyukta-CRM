@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const allowedStatuses = new Set(["work_in_process"]);
@@ -37,12 +38,14 @@ export async function PATCH(
   const admin = createAdminClient();
   const { data: job, error: jobError } = await admin
     .from("jobs")
-    .select("id,job_status")
+    .select("id,job_status,salesperson_id")
     .eq("id", jobId)
     .eq("org_id", session.org_id)
     .maybeSingle();
   if (jobError) return jsonError("Unable to validate job", 500);
   if (!job) return jsonError("Job not found", 404);
+  const scopeDenied = await requireOwnedMutation(session, "jobs", [job.salesperson_id]);
+  if (scopeDenied) return scopeDenied;
   if (job.job_status === "po_pending") {
     return jsonError("A PO Pending job cannot enter production", 409);
   }

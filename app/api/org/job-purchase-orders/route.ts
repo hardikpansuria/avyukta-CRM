@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import {
   uploadPurchaseOrderDocument,
   validateDocument,
@@ -168,7 +169,7 @@ export async function POST(request: Request) {
 
   const { data: jobs, error: jobsError } = await admin
     .from("jobs")
-    .select("id,customer_id,job_status,latest_accepted_quotation_id")
+    .select("id,customer_id,job_status,latest_accepted_quotation_id,salesperson_id")
     .eq("org_id", session.org_id)
     .in("id", jobIds);
 
@@ -179,6 +180,13 @@ export async function POST(request: Request) {
   if ((jobs ?? []).some((job) => job.job_status !== "po_pending")) {
     return jsonError("Every selected job must be PO Pending", 409);
   }
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "purchase_orders",
+    (jobs ?? []).map((job) => job.salesperson_id),
+    "all",
+  );
+  if (scopeDenied) return scopeDenied;
   if (new Set((jobs ?? []).map((job) => job.customer_id)).size !== 1) {
     return jsonError("Combined jobs must belong to the same customer", 400);
   }

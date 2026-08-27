@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
-import { requireOrgPermission } from "@/lib/auth/permissions";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
+import { isSalesRole, requireOwnedMutation } from "@/lib/auth/data-scope";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
@@ -389,7 +390,7 @@ export async function PATCH(
   const admin = createAdminClient();
   const { data: existingCustomer, error: existingError } = await admin
     .from("customers")
-    .select("id")
+    .select("id,assigned_sales_rep_id,account_manager_id")
     .eq("id", id)
     .eq("org_id", session.org_id)
     .neq("record_status", "deleted")
@@ -402,6 +403,13 @@ export async function PATCH(
   if (!existingCustomer) {
     return jsonError("Customer not found", 404);
   }
+
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "customers",
+    [existingCustomer.assigned_sales_rep_id, existingCustomer.account_manager_id],
+  );
+  if (scopeDenied) return scopeDenied;
 
   const companyName =
     body.company_name !== undefined ? getString(body.company_name) : undefined;
@@ -457,6 +465,15 @@ export async function PATCH(
       ? getOptionalString(body.account_manager_id)
       : undefined;
   const assigneeIds = uniqueStrings([assignedSalesRepId, accountManagerId]);
+
+  if (
+    isSalesRole(session.role) &&
+    assignedSalesRepId !== undefined &&
+    assignedSalesRepId !== session.user.id &&
+    !(await hasOrgPermission(session, "customers", "edit_all"))
+  ) {
+    return jsonError("You cannot reassign this customer to another salesperson", 403);
+  }
 
   if (assigneeIds.length > 0) {
     const { data: memberships, error: assigneeError } = await admin

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireOrgPermission, hasOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { listJobs } from "@/lib/jobs/data";
 import {
@@ -152,6 +153,28 @@ export async function POST(
     .maybeSingle();
   if (poError) return jsonError("Unable to validate purchase order", 500);
   if (!purchaseOrder) return jsonError("Purchase order not found", 404);
+
+  const { data: existingAllocations, error: allocationsError } = await admin
+    .from("job_purchase_order_allocations")
+    .select("job_id")
+    .eq("org_id", session.org_id)
+    .eq("purchase_order_id", poId);
+  if (allocationsError) return jsonError("Unable to validate purchase order ownership", 500);
+  const scopedJobIds = Array.from(new Set([
+    ...(existingAllocations ?? []).map((row) => row.job_id as string),
+    ...addedAllocations.map((allocation) => allocation.job_id),
+  ]));
+  const { data: ownedJobs, error: ownersError } = scopedJobIds.length
+    ? await admin.from("jobs").select("salesperson_id").eq("org_id", session.org_id).in("id", scopedJobIds)
+    : { data: [], error: null };
+  if (ownersError) return jsonError("Unable to validate purchase order ownership", 500);
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "purchase_orders",
+    (ownedJobs ?? []).map((job) => job.salesperson_id),
+    "all",
+  );
+  if (scopeDenied) return scopeDenied;
 
   const upload = await uploadPurchaseOrderDocument({
     admin,
