@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import { buildAuthRedirectUrl } from "@/lib/auth/auth-redirect-url";
 import { verifySuperAdmin } from "@/lib/auth/verify-super-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -183,7 +184,7 @@ export async function POST(request: Request) {
 
       const { data: inviteData, error: inviteError } =
         await admin.auth.admin.inviteUserByEmail(adminEmail, {
-          redirectTo: `${siteUrl}/auth/reset-password`,
+          redirectTo: buildAuthRedirectUrl(siteUrl, "/auth/reset-password"),
           data: {
             full_name: adminFullName,
           },

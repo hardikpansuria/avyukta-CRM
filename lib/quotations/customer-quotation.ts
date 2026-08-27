@@ -46,7 +46,6 @@ type SourceContext = {
   preparedBy: Record<string, unknown> | null;
   scopes: Array<Record<string, unknown>>;
   noteSections: Array<Record<string, unknown>>;
-  logoSignedUrl: string | null;
 };
 
 export type CustomerQuotationData = {
@@ -54,6 +53,7 @@ export type CustomerQuotationData = {
   document: Record<string, unknown>;
   items: Array<Record<string, unknown>>;
   organization: {
+    branding_version_id: string | null;
     company_name: string;
     phone: string;
     fax: string;
@@ -61,7 +61,10 @@ export type CustomerQuotationData = {
     terms_html: string;
     terms_text: string;
     logo_signed_url: string | null;
+    logo_storage_path: string | null;
     has_logo: boolean;
+    effective_from: string | null;
+    effective_to: string | null;
   };
   source_scopes: Array<{
     id: unknown;
@@ -145,6 +148,114 @@ function roundMoney(value: number) {
 function dateOnly(value: unknown) {
   const normalized = text(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+}
+
+type BrandingRecord = {
+  id: string | null;
+  company_name: string;
+  phone: string;
+  fax: string;
+  footer_text: string;
+  terms_html: string;
+  terms_text: string;
+  logo_storage_path: string | null;
+  effective_from: string | null;
+  effective_to: string | null;
+};
+
+function fallbackBranding(organization: Record<string, unknown>): BrandingRecord {
+  return {
+    id: null,
+    company_name:
+      text(organization.quotation_company_name) || text(organization.name),
+    phone: text(organization.quotation_phone),
+    fax: text(organization.quotation_fax),
+    footer_text: text(organization.quotation_footer_text),
+    terms_html: sanitizeCustomerQuotationHtml(
+      organization.quotation_terms_html,
+    ),
+    terms_text: text(organization.quotation_terms_text),
+    logo_storage_path: text(organization.logo_storage_path) || null,
+    effective_from: null,
+    effective_to: null,
+  };
+}
+
+async function effectiveBranding(
+  admin: SupabaseClient,
+  orgId: string,
+  effectiveDate: string,
+  organization: Record<string, unknown>,
+) {
+  const fallback = fallbackBranding(organization);
+  const { data, error } = await admin
+    .from("organization_quotation_branding_versions")
+    .select(
+      "id,company_name,phone,fax,footer_text,terms_html,terms_text,logo_storage_path,effective_from,effective_to",
+    )
+    .eq("org_id", orgId)
+    .lte("effective_from", effectiveDate)
+    .or(`effective_to.is.null,effective_to.gte.${effectiveDate}`)
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return { error };
+  if (!data) return { value: fallback };
+
+  return {
+    value: {
+      id: text(data.id) || null,
+      company_name: text(data.company_name) || fallback.company_name,
+      phone: text(data.phone),
+      fax: text(data.fax),
+      footer_text: text(data.footer_text),
+      terms_html: sanitizeCustomerQuotationHtml(data.terms_html),
+      terms_text: text(data.terms_text),
+      logo_storage_path: text(data.logo_storage_path) || null,
+      effective_from: dateOnly(data.effective_from),
+      effective_to: dateOnly(data.effective_to),
+    } satisfies BrandingRecord,
+  };
+}
+
+function snapshottedBranding(
+  document: Record<string, unknown>,
+  fallback: BrandingRecord,
+): BrandingRecord {
+  if (!document.id || !text(document.organization_name_snapshot)) {
+    return fallback;
+  }
+
+  return {
+    id: text(document.branding_version_id) || fallback.id,
+    company_name: text(document.organization_name_snapshot),
+    phone: text(document.organization_phone_snapshot),
+    fax: text(document.organization_fax_snapshot),
+    footer_text: text(document.organization_footer_snapshot),
+    terms_html: sanitizeCustomerQuotationHtml(
+      document.organization_terms_html_snapshot,
+    ),
+    terms_text: text(document.organization_terms_text_snapshot),
+    logo_storage_path:
+      text(document.organization_logo_path_snapshot) || null,
+    effective_from: fallback.effective_from,
+    effective_to: fallback.effective_to,
+  };
+}
+
+async function signedBrandingLogo(
+  admin: SupabaseClient,
+  orgId: string,
+  storagePath: string | null,
+) {
+  if (!storagePath || !isOrgScopedStoragePath(storagePath, orgId)) return null;
+
+  const { data, error } = await admin.storage
+    .from("crm-assets")
+    .createSignedUrl(storagePath, 10 * 60);
+
+  return error ? null : data.signedUrl;
 }
 
 async function getSourceContext(
@@ -255,14 +366,6 @@ async function getSourceContext(
   );
   const address =
     billing && billing.same_as_head_office !== true ? billing : headOffice ?? billing;
-  const logoStoragePath = text(organizationResult.data.logo_storage_path);
-  const { data: signedLogoData } =
-    logoStoragePath && isOrgScopedStoragePath(logoStoragePath, orgId)
-    ? await admin.storage
-        .from("crm-assets")
-        .createSignedUrl(logoStoragePath, 10 * 60)
-    : { data: null };
-
   return {
     value: {
       quotation,
@@ -273,7 +376,6 @@ async function getSourceContext(
       preparedBy: preparedByResult.data,
       scopes: (scopesResult.data ?? []) as Array<Record<string, unknown>>,
       noteSections: (notesResult.data ?? []) as Array<Record<string, unknown>>,
-      logoSignedUrl: signedLogoData?.signedUrl ?? null,
     },
   };
 }
@@ -392,6 +494,7 @@ export async function getCustomerQuotationData(
   admin: SupabaseClient,
   orgId: string,
   quotationId: string,
+  options?: { brandingDate?: string | null },
 ): Promise<{
   value?: CustomerQuotationData;
   error?: unknown;
@@ -420,6 +523,30 @@ export async function getCustomerQuotationData(
 
   if (documentError) return { error: documentError };
 
+  const brandingDate =
+    dateOnly(options?.brandingDate) ??
+    dateOnly(document?.quotation_date) ??
+    dateOnly(source.quotation.quote_date) ??
+    new Date().toISOString().slice(0, 10);
+  const brandingResult = await effectiveBranding(
+    admin,
+    orgId,
+    brandingDate,
+    source.organization,
+  );
+  if (brandingResult.error || !brandingResult.value) {
+    return { error: brandingResult.error };
+  }
+  const branding = snapshottedBranding(
+    (document ?? {}) as Record<string, unknown>,
+    brandingResult.value,
+  );
+  const logoSignedUrl = await signedBrandingLogo(
+    admin,
+    orgId,
+    branding.logo_storage_path,
+  );
+
   const { data: savedItems, error: itemsError } = document
     ? await admin
         .from("quotation_customer_document_items")
@@ -444,18 +571,18 @@ export async function getCustomerQuotationData(
               (savedItems ?? []) as Array<Record<string, unknown>>,
             ),
       organization: {
-        company_name:
-          text(source.organization.quotation_company_name) ||
-          text(source.organization.name),
-        phone: text(source.organization.quotation_phone),
-        fax: text(source.organization.quotation_fax),
-        footer_text: text(source.organization.quotation_footer_text),
-        terms_html: sanitizeCustomerQuotationHtml(
-          source.organization.quotation_terms_html,
-        ),
-        terms_text: text(source.organization.quotation_terms_text),
-        logo_signed_url: source.logoSignedUrl,
-        has_logo: Boolean(source.organization.logo_storage_path),
+        branding_version_id: branding.id,
+        company_name: branding.company_name,
+        phone: branding.phone,
+        fax: branding.fax,
+        footer_text: branding.footer_text,
+        terms_html: branding.terms_html,
+        terms_text: branding.terms_text,
+        logo_signed_url: logoSignedUrl,
+        logo_storage_path: branding.logo_storage_path,
+        has_logo: Boolean(branding.logo_storage_path),
+        effective_from: branding.effective_from,
+        effective_to: branding.effective_to,
       },
       source_scopes: source.scopes.map((scope) => ({
         id: scope.id,

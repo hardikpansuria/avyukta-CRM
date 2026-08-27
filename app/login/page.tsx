@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   Building2Icon,
   CheckIcon,
@@ -29,6 +30,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+
+    if (hashParams.get("type") === "invite") {
+      window.location.replace(`/auth/reset-password${hash}`);
+    }
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,11 +83,16 @@ export default function LoginPage() {
       <section className="relative hidden min-h-screen flex-col justify-between overflow-hidden bg-zinc-950 p-10 text-white lg:flex xl:p-14">
         <div>
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md bg-white text-base font-semibold text-zinc-950">
-              A
-            </div>
+            <Image
+              src="/superlight-crm-logo.png"
+              alt=""
+              width={64}
+              height={64}
+              className="size-16 shrink-0 object-contain"
+              priority
+            />
             <div>
-              <p className="text-base font-semibold">Avyukta CRM</p>
+              <p className="text-base font-semibold">superLight CRM</p>
               <p className="mt-0.5 text-xs text-zinc-400">
                 Customer operations workspace
               </p>
@@ -122,12 +137,17 @@ export default function LoginPage() {
       <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-md">
           <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <div className="flex size-10 items-center justify-center rounded-md bg-zinc-950 text-base font-semibold text-white dark:bg-zinc-50 dark:text-zinc-950">
-              A
-            </div>
+            <Image
+              src="/superlight-crm-logo.png"
+              alt=""
+              width={64}
+              height={64}
+              className="size-16 shrink-0 object-contain"
+              priority
+            />
             <div>
               <p className="font-semibold text-zinc-950 dark:text-zinc-50">
-                Avyukta CRM
+                superLight CRM
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 Customer operations workspace
