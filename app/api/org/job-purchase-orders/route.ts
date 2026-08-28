@@ -203,7 +203,7 @@ export async function POST(request: Request) {
   if (duplicate) {
     return NextResponse.json(
       {
-        error: `${poNumber} already exists for this customer.`,
+        error: `PO No: ${poNumber} already exists for this customer.`,
         code: "PO_EXISTS",
         existing_purchase_order: duplicate,
       },

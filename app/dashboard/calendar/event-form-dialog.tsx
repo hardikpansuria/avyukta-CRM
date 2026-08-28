@@ -288,7 +288,7 @@ function EventForm({ event, selection, filters, onCancel, onSaved }: {
                 <SelectContent align="start"><SelectItem value="__none">Select job</SelectItem>{filters.jobs.map((job) => <SelectItem value={job.id} key={job.id}>#{job.job_number ?? "—"} · {job.customer_name} · {job.project_name ?? "No project"}</SelectItem>)}</SelectContent>
               </Select>
             </Field></div>
-            {selectedJob ? <div className="sm:col-span-2 grid gap-2 rounded-2xl bg-muted p-4 text-sm sm:grid-cols-2"><span><b>PO:</b> {selectedJob.purchase_order_number ?? "Not allocated"}</span><span><b>Customer:</b> {selectedJob.customer_name}</span><span className="sm:col-span-2"><b>Project:</b> {selectedJob.project_name ?? "—"}</span></div> : null}
+            {selectedJob ? <div className="sm:col-span-2 grid gap-2 rounded-2xl bg-muted p-4 text-sm sm:grid-cols-2"><span><b>PO No:</b> {selectedJob.purchase_order_number ?? "Not allocated"}</span><span><b>Customer:</b> {selectedJob.customer_name}</span><span className="sm:col-span-2"><b>Project Name:</b> {selectedJob.project_name ?? "—"}</span></div> : null}
             <Field label="Assignment Date" required><Input type="date" value={assignmentDate} onChange={(e) => setAssignmentDate(e.target.value)} /></Field>
             <div className="grid grid-cols-2 gap-3"><Field label="Start Time" required><Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></Field><Field label="End Time" required><Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></Field></div>
             <div className="sm:col-span-2"><EmployeePicker employees={filters.employees} selected={employeeIds} availability={availability} onToggle={toggleEmployee} /></div>

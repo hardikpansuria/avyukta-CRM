@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
 import { listInvoices, numeric } from "@/lib/invoices/data";
+import { countUnbilledJobs } from "@/lib/invoices/unbilled-jobs";
 import {
   uploadInvoiceDocument,
   validateDocument,
@@ -19,8 +20,9 @@ export async function GET(request: Request) {
   const denied = await requireOrgPermission(session, "invoices", "view");
   if (denied) return denied;
   const params = new URL(request.url).searchParams;
-  const [result, canCreate, canViewRequests] = await Promise.all([
-    listInvoices(createAdminClient(), session.org_id, {
+  const admin = createAdminClient();
+  const [result, unbilledResult, canCreate, canViewRequests] = await Promise.all([
+    listInvoices(admin, session.org_id, {
       customer: params.get("customer")?.trim() ?? "",
       po: params.get("po")?.trim() ?? "",
       job: params.get("job")?.trim() ?? "",
@@ -30,12 +32,20 @@ export async function GET(request: Request) {
       dateTo: params.get("dateTo")?.trim() ?? "",
       aging: params.get("aging")?.trim() ?? "",
     }),
+    countUnbilledJobs(admin, session.org_id),
     hasOrgPermission(session, "invoices", "create"),
     hasOrgPermission(session, "invoice_requests", "view"),
   ]);
   if (result.error) return jsonError("Unable to fetch invoices", 500);
+  if (unbilledResult.error) {
+    console.error("Unable to fetch unbilled job count", {
+      orgId: session.org_id,
+      error: unbilledResult.error,
+    });
+  }
   return NextResponse.json({
     groups: result.groups ?? [],
+    unbilled_count: unbilledResult.count,
     permissions: {
       can_create: canCreate,
       can_view_requests: canViewRequests,

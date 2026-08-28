@@ -204,7 +204,7 @@ export default function AttachPurchaseOrderPage() {
               Purchase Order received
             </h1>
             <p className="mt-2 text-zinc-500">
-              {result.po_number} created Job Number{" "}
+              PO No: {result.po_number} created Job Number{" "}
               <strong className="text-zinc-950 dark:text-zinc-50">
                 {jobNumber}
               </strong>

@@ -435,7 +435,7 @@ export default function JobDetailPage() {
           ) : <p className="text-sm text-zinc-500">No invoice requests submitted.</p>}
         </CardContent>
       </Card>
-      <Card>
+      <Card id="invoices">
         <CardHeader>
           <CardTitle>Invoices</CardTitle>
         </CardHeader>

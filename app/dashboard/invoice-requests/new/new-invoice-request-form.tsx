@@ -172,7 +172,14 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
           <h1 className="mt-4 text-2xl font-semibold">Invoice request submitted</h1>
           <p className="mt-2 text-sm text-zinc-500">IR-{String(result.number).padStart(3, "0")} is waiting for Accounts.</p>
           {result.warnings.length ? <Alert className="mt-5 text-left"><AlertDescription>These files could not be uploaded: {result.warnings.join(", ")}</AlertDescription></Alert> : null}
-          <Button className="mt-6" nativeButton={false} render={<Link href={`/dashboard/invoice-requests/${result.id}`} />}>View Request</Button>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Button nativeButton={false} render={<Link href={`/dashboard/invoice-requests/${result.id}`} />}>View Request</Button>
+            {initialJobId ? (
+              <Button nativeButton={false} render={<Link href="/dashboard/invoices/unbilled-jobs" />} variant="outline">
+                Back to Unbilled Jobs
+              </Button>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
     );
@@ -180,7 +187,22 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
 
   return (
     <form className="mx-auto max-w-5xl space-y-6" onSubmit={submit}>
-      <Button nativeButton={false} render={<Link href="/dashboard/invoice-requests" />} variant="ghost"><ArrowLeftIcon />Back to Requests</Button>
+      <Button
+        nativeButton={false}
+        render={
+          <Link
+            href={
+              initialJobId
+                ? "/dashboard/invoices/unbilled-jobs"
+                : "/dashboard/invoice-requests"
+            }
+          />
+        }
+        variant="ghost"
+      >
+        <ArrowLeftIcon />
+        {initialJobId ? "Back to Unbilled Jobs" : "Back to Requests"}
+      </Button>
       <div><h1 className="text-2xl font-semibold">Request Invoice</h1><p className="mt-1 text-sm text-zinc-500">PO and customer billing data is copied automatically. Complete only the billing instructions.</p></div>
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       {!initialJobId ? (

@@ -31,8 +31,8 @@ export function PoDuplicateDialog({
         <DialogHeader>
           <DialogTitle>PO number already exists</DialogTitle>
           <DialogDescription>
-            {existingPo?.po_number} already exists for this customer. The system
-            found quotations and jobs associated with this PO.
+            PO No: {existingPo?.po_number} already exists for this customer. The
+            system found quotations and jobs associated with this PO.
           </DialogDescription>
         </DialogHeader>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">

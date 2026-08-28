@@ -303,7 +303,7 @@ export default function NewPurchaseOrderRevisionPage() {
       </Button>
       <div>
         <p className="text-sm text-zinc-500">Revised Purchase Order</p>
-        <h1 className="text-2xl font-semibold">{po.po_number} · Revision {numeric(po.current_revision_number) + 1}</h1>
+        <h1 className="text-2xl font-semibold">PO No: {po.po_number} · Revision {numeric(po.current_revision_number) + 1}</h1>
         <p className="mt-1 text-sm text-zinc-500">The original PO and completed jobs will remain unchanged.</p>
       </div>
       {error ? <Alert variant="destructive"><AlertTriangleIcon /><AlertTitle>Unable to continue</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}

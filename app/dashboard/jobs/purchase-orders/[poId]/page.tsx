@@ -251,7 +251,7 @@ export default function PurchaseOrderDetailPage() {
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div>
           <p className="text-sm text-zinc-500">Purchase Order</p>
-          <h1 className="text-2xl font-semibold">{po.po_number}</h1>
+          <h1 className="text-2xl font-semibold">PO No: {po.po_number}</h1>
           <p className="mt-1 text-sm text-zinc-500">
             {po.customer?.company_name ?? "-"} · Received {po.po_received_date}
           </p>

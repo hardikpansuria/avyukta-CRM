@@ -7,6 +7,7 @@ import {
   FilePlus2Icon,
   ReceiptTextIcon,
   SearchIcon,
+  WalletCardsIcon,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -105,6 +106,7 @@ export default function InvoicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [canCreate, setCanCreate] = useState(false);
   const [canViewRequests, setCanViewRequests] = useState(false);
+  const [unbilledCount, setUnbilledCount] = useState<number | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebounced(filters), 350);
@@ -136,6 +138,7 @@ export default function InvoicesPage() {
                 can_create?: boolean;
                 can_view_requests?: boolean;
               };
+              unbilled_count?: number | null;
               error?: string;
             }
           | null;
@@ -144,6 +147,7 @@ export default function InvoicesPage() {
           return;
         }
         setGroups(payload?.groups ?? []);
+        setUnbilledCount(payload?.unbilled_count ?? null);
         setCanCreate(payload?.permissions?.can_create === true);
         setCanViewRequests(
           payload?.permissions?.can_view_requests === true,
@@ -177,6 +181,23 @@ export default function InvoicesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            className="relative"
+            nativeButton={false}
+            render={<Link href="/dashboard/invoices/unbilled-jobs" />}
+            variant="outline"
+          >
+            <WalletCardsIcon />
+            Unbilled Jobs
+            {unbilledCount !== null && unbilledCount > 0 ? (
+              <span
+                aria-label={`${unbilledCount} unbilled jobs`}
+                className="absolute -right-2 -top-2 flex min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white shadow-sm ring-2 ring-background"
+              >
+                {unbilledCount > 99 ? "99+" : unbilledCount}
+              </span>
+            ) : null}
+          </Button>
           {canViewRequests ? (
             <Button
               nativeButton={false}
@@ -264,18 +285,30 @@ export default function InvoicesPage() {
               <SelectItem value="91_plus">91+ days</SelectItem>
             </SelectContent>
           </Select>
-          <Input
-            aria-label="Invoice date from"
-            type="date"
-            value={filters.dateFrom}
-            onChange={(event) => update("dateFrom", event.target.value)}
-          />
-          <Input
-            aria-label="Invoice date to"
-            type="date"
-            value={filters.dateTo}
-            onChange={(event) => update("dateTo", event.target.value)}
-          />
+          <label className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-medium text-zinc-500">
+              From
+            </span>
+            <Input
+              aria-label="Invoice date from"
+              className="pl-16"
+              type="date"
+              value={filters.dateFrom}
+              onChange={(event) => update("dateFrom", event.target.value)}
+            />
+          </label>
+          <label className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm font-medium text-zinc-500">
+              End
+            </span>
+            <Input
+              aria-label="Invoice date end"
+              className="pl-14"
+              type="date"
+              value={filters.dateTo}
+              onChange={(event) => update("dateTo", event.target.value)}
+            />
+          </label>
         </CardContent>
       </Card>
 
@@ -304,9 +337,11 @@ export default function InvoicesPage() {
               <CardHeader>
                 <div className="flex flex-col justify-between gap-3 sm:flex-row">
                   <div>
-                    <CardTitle>{group.purchase_order.po_number}</CardTitle>
+                    <CardTitle>
+                      PO No: {group.purchase_order.po_number}
+                    </CardTitle>
                     <p className="mt-1 text-sm text-zinc-500">
-                      {group.customer?.company_name ?? "-"}
+                      Customer: {group.customer?.company_name ?? "-"}
                     </p>
                   </div>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">

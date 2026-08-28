@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/table";
 import type { JobListItem } from "@/lib/jobs/types";
 
+import { JobStatusTabs } from "../job-status-tabs";
+
 type PageResult = {
   jobs?: JobListItem[];
   error?: string;
@@ -144,23 +146,7 @@ export default function PoPendingPage() {
         </Button>
       </div>
 
-      <div className="flex gap-2 border-b pb-3">
-        <Button variant="secondary">PO Pending</Button>
-        <Button
-          nativeButton={false}
-          render={<Link href="/dashboard/jobs/purchase-orders" />}
-          variant="ghost"
-        >
-          PO Received
-        </Button>
-        <Button
-          nativeButton={false}
-          render={<Link href="/dashboard/jobs/completed" />}
-          variant="ghost"
-        >
-          Job Completed
-        </Button>
-      </div>
+      <JobStatusTabs active="po_pending" />
 
       <Card>
         <CardContent className="space-y-4">

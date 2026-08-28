@@ -13,6 +13,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { JobListItem } from "@/lib/jobs/types";
 
+import { JobStatusTabs } from "../job-status-tabs";
+
 type Filters = { completionFrom: string; completionTo: string; customer: string; salesperson: string; jobNumber: string; quotationNumber: string; poNumber: string };
 const emptyFilters: Filters = { completionFrom: "", completionTo: "", customer: "", salesperson: "", jobNumber: "", quotationNumber: "", poNumber: "" };
 
@@ -63,7 +65,7 @@ export default function JobCompletedPage() {
 
   return <div className="mx-auto max-w-7xl space-y-6">
     <div><div className="flex items-center gap-2 text-sm text-zinc-500"><WorkflowIcon className="size-4" />Job on the Go</div><h1 className="mt-1 text-2xl font-semibold">Job Completed</h1><p className="mt-1 text-sm text-zinc-500">Completed jobs, newest completion first.</p></div>
-    <div className="flex gap-2 border-b pb-3"><Button nativeButton={false} render={<Link href="/dashboard/jobs/po-pending" />} variant="ghost">PO Pending</Button><Button nativeButton={false} render={<Link href="/dashboard/jobs/purchase-orders" />} variant="ghost">PO Received</Button><Button variant="secondary">Job Completed</Button></div>
+    <JobStatusTabs active="po_completed" />
     <Card><CardContent className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-1"><Label>Completion From</Label><Input type="date" value={filters.completionFrom} onChange={(event) => update("completionFrom", event.target.value)} /></div>

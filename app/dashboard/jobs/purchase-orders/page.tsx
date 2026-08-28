@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { JobListItem } from "@/lib/jobs/types";
 
 import { JobCompletionDialog } from "../job-completion-dialog";
+import { JobStatusTabs } from "../job-status-tabs";
 
 type PageResult = { jobs?: JobListItem[]; error?: string; pagination?: { totalPages: number } };
 
@@ -65,11 +66,7 @@ export default function PurchaseOrdersPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div><div className="flex items-center gap-2 text-sm text-zinc-500"><WorkflowIcon className="size-4" />Job on the Go</div><h1 className="mt-1 text-2xl font-semibold">PO Received</h1><p className="mt-1 text-sm text-zinc-500">Active jobs with a received customer PO.</p></div>
-      <div className="flex gap-2 border-b pb-3">
-        <Button nativeButton={false} render={<Link href="/dashboard/jobs/po-pending" />} variant="ghost">PO Pending</Button>
-        <Button variant="secondary">PO Received</Button>
-        <Button nativeButton={false} render={<Link href="/dashboard/jobs/completed" />} variant="ghost">Job Completed</Button>
-      </div>
+      <JobStatusTabs active="po_received" />
       <Card><CardContent className="space-y-4">
         <label className="relative block max-w-xl"><SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" /><Input className="pl-9" placeholder="Search job, PO, quotation, customer, project, or sales rep" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
         {error ? <div className="rounded-lg border border-red-200 p-4 text-sm text-red-700">{error}</div> : null}
