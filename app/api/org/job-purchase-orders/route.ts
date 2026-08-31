@@ -8,6 +8,7 @@ import {
   validateDocument,
 } from "@/lib/jobs/documents";
 import { listPurchaseOrders } from "@/lib/jobs/purchase-orders";
+import { isDuplicatePurchaseOrderNumberError } from "@/lib/jobs/runtime-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -268,6 +269,23 @@ export async function POST(request: Request) {
   if (rpcError) {
     await admin.from("job_scope_assignments").delete().eq("org_id", session.org_id).in("job_id", jobIds);
     if (previousAssignments?.length) await admin.from("job_scope_assignments").insert(previousAssignments);
+    if (isDuplicatePurchaseOrderNumberError(rpcError)) {
+      const { data: existingPurchaseOrder } = await admin
+        .from("job_purchase_orders")
+        .select("id,po_number")
+        .eq("org_id", session.org_id)
+        .eq("customer_id", customerId)
+        .eq("po_number", poNumber)
+        .maybeSingle();
+      return NextResponse.json(
+        {
+          error: `PO No: ${poNumber} already exists for this customer.`,
+          code: "PO_EXISTS",
+          existing_purchase_order: existingPurchaseOrder ?? undefined,
+        },
+        { status: 409 },
+      );
+    }
     console.error("create_job_purchase_order failed", {
       code: rpcError.code,
       message: rpcError.message,

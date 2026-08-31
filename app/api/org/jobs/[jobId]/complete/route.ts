@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireOrgPermission } from "@/lib/auth/permissions";
 import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { workCompletionDraftErrorMessage } from "@/lib/jobs/runtime-errors";
 import { getWorkCompletionPdfData } from "@/lib/jobs/work-completion";
 import { renderWorkCompletionPdf } from "@/lib/jobs/work-completion-pdf";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -25,21 +26,6 @@ function optionalText(value: unknown) {
 function uniqueIds(value: unknown) {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.filter((item): item is string => typeof item === "string" && /^[0-9a-f-]{36}$/i.test(item))));
-}
-
-function draftErrorMessage(message: string | undefined) {
-  const allowed = [
-    "Completion Date is required",
-    "Completion Date cannot be in the future",
-    "Invalid completion status",
-    "Outstanding Items are required for this completion status",
-    "At least one Technician is required",
-    "Job not found",
-    "Only a Work in Progress job can be completed",
-    "One or more selected Technicians are invalid or inactive",
-    "The Work Order has no assigned quotation scope",
-  ];
-  return allowed.find((value) => message?.includes(value)) ?? "Unable to prepare job completion";
 }
 
 export async function POST(
@@ -109,7 +95,7 @@ export async function POST(
   });
   if (draftError) {
     console.error("Unable to create work completion draft", { code: draftError.code, message: draftError.message });
-    return jsonError(draftErrorMessage(draftError.message), 409, "COMPLETION_REJECTED");
+    return jsonError(workCompletionDraftErrorMessage(draftError.message), 409, "COMPLETION_REJECTED");
   }
   const draft = draftValue as { id?: string; certificate_number?: string; revision_number?: number } | null;
   if (!draft?.id || !draft.certificate_number) return jsonError("Unable to reserve a completion certificate", 500, "CERTIFICATE_RESERVATION_FAILED");

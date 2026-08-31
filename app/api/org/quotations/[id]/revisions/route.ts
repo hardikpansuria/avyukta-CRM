@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
+import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import {
   cloneQuotationRevisionData,
   revisionIdFromRpc,
@@ -71,12 +72,18 @@ export async function POST(
   const admin = createAdminClient();
   const { data: source, error: sourceError } = await admin
     .from("quotations")
-    .select("id,status")
+    .select("id,status,sales_rep_id")
     .eq("id", id)
     .eq("org_id", session.org_id)
     .maybeSingle();
   if (sourceError) return jsonError("Unable to validate source quotation", 500);
   if (!source) return jsonError("Quotation not found", 404);
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "quotations",
+    [source.sales_rep_id],
+  );
+  if (scopeDenied) return scopeDenied;
   if (source.status !== "sent") return jsonError("Only a sent quotation can be revised", 409);
 
   const supabase = await createSupabaseServerClient();

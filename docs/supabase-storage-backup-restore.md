@@ -1,11 +1,12 @@
 # Supabase Storage backup and restore
 
-This runbook covers the five private Avyukta CRM file buckets. It does not replace the database migration and logical-dump procedure.
+This runbook covers every classic Storage bucket returned by `storage.buckets`. The application currently requires seven private buckets: `crm-assets`, `customer-quotation-pdfs`, `job-invoice-documents`, `job-purchase-order-documents`, `quotation-documents`, `invoice-request-documents`, and `work-completion-acknowledgements`. It does not replace the database migration and logical-dump procedure.
 
 ## What each backup protects
 
 - `supabase/migrations/` protects custom database schema, including any custom Storage policies or triggers. The current migrations do not define policies on `storage.objects` or `storage.buckets`.
-- `supabase/config.toml` protects the five bucket definitions: privacy, per-file limit, and allowed MIME types.
+- `supabase/config.toml` protects the seven bucket definitions for local bucket seeding: privacy, per-file limit, and allowed MIME types.
+- `supabase/migrations/` also creates or normalizes all seven bucket definitions, so a fresh hosted project receives them through `supabase db push` without a separate bucket-seeding step.
 - Supabase-managed `storage.buckets` and `storage.objects` rows describe buckets and objects. They are metadata, not file contents.
 - `roles.sql`, `schema.sql`, and `data.sql` protect their respective logical database content. The Supabase CLI excludes managed schemas including `auth` and `storage` from a normal `db dump`.
 - The Storage backup created by `scripts/backup-supabase-storage.sh` protects the actual PDFs, images, DWG, DOCX, and XLSX objects, plus inventories and checksums.
@@ -36,13 +37,16 @@ The default destination is `~/avyukta-crm-backups/YYYYMMDD_HHMMSS/storage/`. Ove
 
 The script:
 
-1. verifies the explicit environment, project reference, linked reference, database URL association, and all five buckets;
-2. exports `buckets.csv`, `objects-inventory.csv`, and `remote-summary.csv`;
-3. downloads every non-empty bucket with the installed CLI's `storage cp --experimental --recursive --linked` command;
-4. verifies per-bucket remote and local object counts;
-5. writes `local-files.txt`, `SHA256SUMS`, download logs, and `MANIFEST.txt`;
-6. creates `storage-files-<timestamp>.tar.gz` and its SHA-256 file;
-7. exits non-zero if metadata export, any bucket download, count validation, hashing, or archiving fails.
+1. verifies the explicit environment, project reference, linked reference, database URL association, and all seven required application buckets;
+2. queries every row in `storage.buckets`, so any future bucket is included automatically rather than silently omitted;
+3. exports `buckets.csv`, `objects-inventory.csv`, `remote-summary.csv`, and a machine-readable `remote-summary.tsv`;
+4. downloads every non-empty bucket with the installed CLI's `storage cp --experimental --recursive --linked` command;
+5. verifies per-bucket and overall remote/local object counts and downloaded byte totals, recorded in `local-summary.csv`;
+6. writes `local-files.txt`, `SHA256SUMS`, download logs, and `ARCHIVE-MANIFEST.txt`;
+7. creates `storage-files-<timestamp>.tar.gz`, verifies its SHA-256 checksum, and only then writes `status=SUCCESS` and `archive_status=VERIFIED` to the external `MANIFEST.txt`;
+8. exits non-zero if metadata export, a required bucket check, any bucket download, count/byte validation, hashing, or archiving fails.
+
+`MANIFEST.txt` is deliberately excluded from the archive because it describes the complete run and cannot truthfully say that the archive is verified until after the archive exists. The archive instead contains immutable `ARCHIVE-MANIFEST.txt` with `content_status=VERIFIED`. This separation avoids a stale or self-invalidating manifest.
 
 Production is not implied by a linked project. A Production backup additionally requires an interactive confirmation containing the exact project reference.
 
@@ -51,6 +55,8 @@ Production is not implied by a linked project. A Production backup additionally 
 ```bash
 export STORAGE_BACKUP="/absolute/path/to/YYYYMMDD_HHMMSS/storage"
 grep '^status=SUCCESS$' "$STORAGE_BACKUP/MANIFEST.txt"
+grep '^archive_status=VERIFIED$' "$STORAGE_BACKUP/MANIFEST.txt"
+diff -u "$STORAGE_BACKUP/remote-summary.csv" "$STORAGE_BACKUP/local-summary.csv"
 
 if command -v sha256sum >/dev/null; then
   (cd "$STORAGE_BACKUP" && sha256sum -c SHA256SUMS)
@@ -59,9 +65,13 @@ else
   (cd "$STORAGE_BACKUP" && shasum -a 256 -c SHA256SUMS)
   (cd "$STORAGE_BACKUP" && shasum -a 256 -c storage-files-*.tar.gz.sha256)
 fi
+
+archive_path="$(find "$STORAGE_BACKUP" -maxdepth 1 -type f -name 'storage-files-*.tar.gz' -print -quit)"
+test -n "$archive_path"
+tar -xOf "$archive_path" ./ARCHIVE-MANIFEST.txt | grep '^content_status=VERIFIED$'
 ```
 
-Review `remote-summary.csv` against the file counts beneath `files/<bucket>/`. Do not proceed from a `FAILED` or `FILES_VERIFIED` manifest.
+Review `remote-summary.csv` and `local-summary.csv`. Do not proceed unless the external manifest says both `status=SUCCESS` and `archive_status=VERIFIED`, the archive checksum passes, and the archive's content manifest says `content_status=VERIFIED`. `FAILED` or `ARCHIVING` is not restorable.
 
 ## Restore order for a new clean project
 
@@ -70,7 +80,7 @@ Never use this procedure against an existing Development or Production project w
 1. Create a clean Supabase project and record its new project reference and database credentials.
 2. Link a clean checkout to the new target and apply database migrations.
 3. configure target-specific Auth, URL, SMTP, secrets, and other environment settings;
-4. create buckets from `supabase/config.toml`;
+4. confirm that the migrations created all seven bucket definitions; use `supabase/config.toml` for local seeding only;
 5. query and verify that every bucket is private and has the expected limit and MIME list;
 6. verify the server-only service-role authorization model or apply reviewed custom Storage policies if the architecture has changed;
 7. restore the required logical database data;
@@ -98,16 +108,15 @@ order by id;
 
 ## Create buckets on a new linked target
 
-The following writes bucket configuration. Run it only after confirming that the linked project is the new, empty restore target:
+The migration created by this repository is the source of truth for hosted bucket creation. Run the following only after confirming that the linked project is the new, empty restore target:
 
 ```bash
 export TARGET_PROJECT_REF="replace-with-new-clean-target-ref"
 npx supabase link --project-ref "$TARGET_PROJECT_REF"
 npx supabase db push --linked
-npx supabase seed buckets --linked
 ```
 
-Immediately query `storage.buckets` on the target and confirm exactly the five expected rows, `public = false`, the exact byte limits, and exact MIME lists before uploading files.
+Do not run `supabase seed buckets --linked` as an additional production step; `db push` creates all seven definitions reproducibly. Immediately query `storage.buckets` on the target and confirm the seven expected rows, `public = false`, the exact byte limits, and exact MIME lists before uploading files.
 
 ## Upload restored objects
 
@@ -159,7 +168,6 @@ select b.id as bucket_id,
        coalesce(sum((o.metadata ->> 'size')::bigint), 0) as total_size_bytes
 from storage.buckets b
 left join storage.objects o on o.bucket_id = b.id
-where b.id in ('crm-assets','customer-quotation-pdfs','job-invoice-documents','job-purchase-order-documents','quotation-documents')
 group by b.id
 order by b.id;
 " > /tmp/avyukta-target-storage-summary.csv

@@ -74,7 +74,7 @@ export default async function DashboardLayout({
   const session = await verifyOrgSession();
 
   if (!session) {
-    redirect("/login");
+    redirect("/auth/session-expired");
   }
 
   const [permissions, logoUrl] = await Promise.all([

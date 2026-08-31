@@ -469,3 +469,21 @@ file_size_limit = "10MiB"
 allowed_mime_types = [
   "application/pdf"
 ]
+
+[storage.buckets.invoice-request-documents]
+public = false
+file_size_limit = "15MiB"
+allowed_mime_types = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+]
+
+[storage.buckets.work-completion-acknowledgements]
+public = false
+file_size_limit = "15MiB"
+allowed_mime_types = [
+  "application/pdf"
+]
