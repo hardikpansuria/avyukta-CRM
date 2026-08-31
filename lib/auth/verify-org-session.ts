@@ -8,12 +8,13 @@ type OrgContext = {
   org_id: string;
 };
 
-type OrgSession = {
+export type OrgSession = {
   user: User;
   org_id: string;
   role: string;
   org_code: string;
   org_name: string;
+  logo_storage_path?: string | null;
 };
 
 function parseOrgContext(value: string | undefined): OrgContext | null {
@@ -67,7 +68,7 @@ export async function verifyOrgSession(): Promise<OrgSession | null> {
 
   const { data: organization, error: organizationError } = await admin
     .from("organizations")
-    .select("id, org_code, name")
+    .select("id, org_code, name, logo_storage_path")
     .eq("id", orgContext.org_id)
     .eq("status", "active")
     .maybeSingle();
@@ -82,5 +83,6 @@ export async function verifyOrgSession(): Promise<OrgSession | null> {
     role: membership.role,
     org_code: organization.org_code,
     org_name: organization.name,
+    logo_storage_path: organization.logo_storage_path,
   };
 }

@@ -6,14 +6,6 @@ import { EmployeesClient } from "./employees-client";
 
 export default async function EmployeesPage() {
   const session = await verifyOrgSession();
-
-  if (!session) {
-    redirect("/login");
-  }
-
-  if (session.role !== "admin") {
-    redirect("/dashboard");
-  }
-
+  if (!session) redirect("/login");
   return <EmployeesClient />;
 }

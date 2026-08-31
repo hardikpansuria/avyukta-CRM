@@ -1,0 +1,2 @@
+import { redirect } from "next/navigation";import { verifyOrgSession } from "@/lib/auth/verify-org-session";import { getSupplierPricePermissions } from "@/lib/auth/permissions";import { MaterialDetailClient } from "./material-detail-client";
+export default async function MaterialDetailPage({params}:{params:Promise<{materialId:string}>}){const session=await verifyOrgSession();if(!session)redirect("/login");const{materialId}=await params;return <MaterialDetailClient materialId={materialId} permissions={await getSupplierPricePermissions(session)}/>}

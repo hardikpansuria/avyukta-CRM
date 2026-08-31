@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
+import { isSalesRole, requireOwnedMutation } from "@/lib/auth/data-scope";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
 type ProfileRow = {
   id: string;
@@ -42,13 +45,9 @@ type AddressInput = {
 
 type UpdateCustomerBody = {
   company_name?: unknown;
-  legal_company_name?: unknown;
   industry?: unknown;
-  business_category?: unknown;
-  company_type?: unknown;
   business_registration_number?: unknown;
   gst_hst_number?: unknown;
-  vendor_number?: unknown;
   assigned_sales_rep_id?: unknown;
   account_manager_id?: unknown;
   lead_source?: unknown;
@@ -69,24 +68,6 @@ type UpdateCustomerBody = {
   };
 };
 
-const allowedRoles = new Set(["admin", "sales", "accountant"]);
-const companyTypes = new Set([
-  "manufacturer",
-  "distributor",
-  "supplier",
-  "importer",
-  "exporter",
-  "contractor",
-  "food_processing",
-  "dairy",
-  "bakery",
-  "brewery",
-  "pharmaceutical",
-  "chemical",
-  "packaging",
-  "engineering",
-  "other",
-]);
 const customerStatuses = new Set([
   "prospect",
   "active",
@@ -210,6 +191,8 @@ export async function GET(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "view");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const admin = createAdminClient();
@@ -338,7 +321,11 @@ export async function GET(
   }
 
   const logoStoragePath = customer.logo_storage_path as string | null;
-  const { data: signedLogoData } = logoStoragePath
+  const expectedLogoPrefix = `${session.org_id}/customers/${id}/logo/`;
+  const { data: signedLogoData } =
+    logoStoragePath &&
+    logoStoragePath.startsWith(expectedLogoPrefix) &&
+    isOrgScopedStoragePath(logoStoragePath, session.org_id)
     ? await admin.storage
         .from("crm-assets")
         .createSignedUrl(logoStoragePath, 60 * 60)
@@ -388,10 +375,8 @@ export async function PATCH(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
-
-  if (!allowedRoles.has(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "customers", "edit");
+  if (denied) return denied;
 
   const { id } = await context.params;
   let body: UpdateCustomerBody;
@@ -405,7 +390,7 @@ export async function PATCH(
   const admin = createAdminClient();
   const { data: existingCustomer, error: existingError } = await admin
     .from("customers")
-    .select("id")
+    .select("id,assigned_sales_rep_id,account_manager_id")
     .eq("id", id)
     .eq("org_id", session.org_id)
     .neq("record_status", "deleted")
@@ -419,6 +404,13 @@ export async function PATCH(
     return jsonError("Customer not found", 404);
   }
 
+  const scopeDenied = await requireOwnedMutation(
+    session,
+    "customers",
+    [existingCustomer.assigned_sales_rep_id, existingCustomer.account_manager_id],
+  );
+  if (scopeDenied) return scopeDenied;
+
   const companyName =
     body.company_name !== undefined ? getString(body.company_name) : undefined;
 
@@ -426,11 +418,6 @@ export async function PATCH(
     return jsonError("Company name is required", 400);
   }
 
-  const companyType = getOptionalEnum(
-    body.company_type,
-    companyTypes,
-    "Company type",
-  );
   const customerStatus = getOptionalEnum(
     body.customer_status,
     customerStatuses,
@@ -456,7 +443,6 @@ export async function PATCH(
   const creditLimit = getCreditLimit(body.credit_limit);
 
   for (const result of [
-    companyType,
     customerStatus,
     recordStatus,
     selectedCreditTerms,
@@ -479,6 +465,15 @@ export async function PATCH(
       ? getOptionalString(body.account_manager_id)
       : undefined;
   const assigneeIds = uniqueStrings([assignedSalesRepId, accountManagerId]);
+
+  if (
+    isSalesRole(session.role) &&
+    assignedSalesRepId !== undefined &&
+    assignedSalesRepId !== session.user.id &&
+    !(await hasOrgPermission(session, "customers", "edit_all"))
+  ) {
+    return jsonError("You cannot reassign this customer to another salesperson", 403);
+  }
 
   if (assigneeIds.length > 0) {
     const { data: memberships, error: assigneeError } = await admin
@@ -509,20 +504,8 @@ export async function PATCH(
     updates.company_name = companyName!;
   }
 
-  if (body.legal_company_name !== undefined) {
-    updates.legal_company_name = getOptionalString(body.legal_company_name);
-  }
-
   if (body.industry !== undefined) {
     updates.industry = getOptionalString(body.industry);
-  }
-
-  if (body.business_category !== undefined) {
-    updates.business_category = getOptionalString(body.business_category);
-  }
-
-  if (body.company_type !== undefined) {
-    updates.company_type = companyType.value ?? null;
   }
 
   if (body.business_registration_number !== undefined) {
@@ -533,10 +516,6 @@ export async function PATCH(
 
   if (body.gst_hst_number !== undefined) {
     updates.gst_hst_number = getOptionalString(body.gst_hst_number);
-  }
-
-  if (body.vendor_number !== undefined) {
-    updates.vendor_number = getOptionalString(body.vendor_number);
   }
 
   if (body.assigned_sales_rep_id !== undefined) {

@@ -3,15 +3,17 @@ import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const allowedRoles = new Set(["admin", "sales", "accountant"]);
-const allowedMimeTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/svg+xml",
+const allowedLogoTypes = new Map([
+  ["jpg", "image/jpeg"],
+  ["jpeg", "image/jpeg"],
+  ["png", "image/png"],
+  ["webp", "image/webp"],
+  ["svg", "image/svg+xml"],
 ]);
 const maxLogoBytes = 10 * 1024 * 1024;
 
@@ -39,6 +41,8 @@ export async function POST(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "edit");
+  if (denied) return denied;
 
   if (!allowedRoles.has(session.role)) {
     return jsonError("Forbidden", 403);
@@ -52,8 +56,13 @@ export async function POST(
     return jsonError("Logo file is required", 400);
   }
 
-  if (!allowedMimeTypes.has(file.type)) {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (allowedLogoTypes.get(extension) !== file.type.toLowerCase()) {
     return jsonError("Logo must be JPEG, PNG, WebP, or SVG", 400);
+  }
+
+  if (file.size === 0) {
+    return jsonError("Logo file is empty", 400);
   }
 
   if (file.size > maxLogoBytes) {
@@ -83,7 +92,7 @@ export async function POST(
     .from("crm-assets")
     .upload(storagePath, bytes, {
       contentType: file.type,
-      upsert: true,
+      upsert: false,
     });
 
   if (uploadError) {
@@ -100,6 +109,7 @@ export async function POST(
     .eq("org_id", session.org_id);
 
   if (updateError) {
+    await admin.storage.from("crm-assets").remove([storagePath]);
     return jsonError("Unable to save logo path", 500);
   }
 

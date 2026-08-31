@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
+import { RequiredMark } from "@/components/ui/label";
+
 type Profile = {
   full_name?: string | null;
   email?: string | null;
@@ -12,16 +14,12 @@ type Profile = {
 type Customer = {
   id: string;
   company_name: string;
-  legal_company_name?: string | null;
   customer_code?: string | null;
   logo_storage_path?: string | null;
   logo_signed_url?: string | null;
   industry?: string | null;
-  business_category?: string | null;
-  company_type?: string | null;
   business_registration_number?: string | null;
   gst_hst_number?: string | null;
-  vendor_number?: string | null;
   assigned_sales_rep?: Profile | null;
   account_manager?: Profile | null;
   lead_source?: string | null;
@@ -829,22 +827,12 @@ export default function CustomerDetailPage() {
               Company Information
             </h2>
             <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <Field label="Legal Name" value={customer.legal_company_name} />
               <Field label="Industry" value={customer.industry} />
-              <Field
-                label="Business Category"
-                value={customer.business_category}
-              />
-              <Field
-                label="Company Type"
-                value={formatLabel(customer.company_type)}
-              />
               <Field
                 label="Business Registration"
                 value={customer.business_registration_number}
               />
               <Field label="GST/HST Number" value={customer.gst_hst_number} />
-              <Field label="Vendor Number" value={customer.vendor_number} />
               <Field
                 label="Record Status"
                 value={formatLabel(customer.record_status)}
@@ -904,13 +892,19 @@ export default function CustomerDetailPage() {
               />
             </div>
             <div className="mt-5 grid gap-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-800 md:grid-cols-2 xl:grid-cols-4">
-              <input
-                className={inputClass}
-                id="customer-contact-first-name"
-                placeholder="First name"
-                value={contactFirstName}
-                onChange={(event) => setContactFirstName(event.target.value)}
-              />
+              <label className="space-y-1.5">
+                <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  First Name <RequiredMark />
+                </span>
+                <input
+                  className={inputClass}
+                  id="customer-contact-first-name"
+                  placeholder="First name"
+                  required
+                  value={contactFirstName}
+                  onChange={(event) => setContactFirstName(event.target.value)}
+                />
+              </label>
               <input
                 className={inputClass}
                 placeholder="Last name"
@@ -962,14 +956,20 @@ export default function CustomerDetailPage() {
                   </button>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <input
-                    className={inputClass}
-                    placeholder="First name"
-                    value={editingContactFirstName}
-                    onChange={(event) =>
-                      setEditingContactFirstName(event.target.value)
-                    }
-                  />
+                  <label className="space-y-1.5">
+                    <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      First Name <RequiredMark />
+                    </span>
+                    <input
+                      className={inputClass}
+                      placeholder="First name"
+                      required
+                      value={editingContactFirstName}
+                      onChange={(event) =>
+                        setEditingContactFirstName(event.target.value)
+                      }
+                    />
+                  </label>
                   <input
                     className={inputClass}
                     placeholder="Last name"
@@ -1160,13 +1160,19 @@ export default function CustomerDetailPage() {
                 onChange={(event) => setNoteSearch(event.target.value)}
               />
             </div>
-            <textarea
-              className="mt-5 min-h-24 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-              id="customer-note-box"
-              placeholder="Add an internal note..."
-              value={noteBody}
-              onChange={(event) => setNoteBody(event.target.value)}
-            />
+            <label className="mt-5 block space-y-2">
+              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                Note <RequiredMark />
+              </span>
+              <textarea
+                className="min-h-24 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                id="customer-note-box"
+                placeholder="Add an internal note..."
+                required
+                value={noteBody}
+                onChange={(event) => setNoteBody(event.target.value)}
+              />
+            </label>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
                 <input
@@ -1238,13 +1244,19 @@ export default function CustomerDetailPage() {
                     </div>
                     {editingNoteId === note.id ? (
                       <div className="mt-3 space-y-3">
-                        <textarea
-                          className="min-h-24 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-                          value={editingNoteBody}
-                          onChange={(event) =>
-                            setEditingNoteBody(event.target.value)
-                          }
-                        />
+                        <label className="block space-y-2">
+                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                            Note <RequiredMark />
+                          </span>
+                          <textarea
+                            className="min-h-24 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                            required
+                            value={editingNoteBody}
+                            onChange={(event) =>
+                              setEditingNoteBody(event.target.value)
+                            }
+                          />
+                        </label>
                         <div className="flex gap-2">
                           <button
                             className={buttonClass}
@@ -1286,13 +1298,19 @@ export default function CustomerDetailPage() {
             <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
               Tags
             </h2>
-            <div className="mt-4 flex gap-2">
-              <input
-                className={inputClass}
-                placeholder="Custom tag"
-                value={tagName}
-                onChange={(event) => setTagName(event.target.value)}
-              />
+            <div className="mt-4 space-y-2">
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  Custom Tag <RequiredMark />
+                </span>
+                <input
+                  className={inputClass}
+                  placeholder="Custom tag"
+                  required
+                  value={tagName}
+                  onChange={(event) => setTagName(event.target.value)}
+                />
+              </label>
               <button
                 className={buttonClass}
                 disabled={isWorking}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type UpdateNoteBody = {
@@ -30,6 +31,8 @@ export async function PATCH(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "edit");
+  if (denied) return denied;
 
   if (!allowedRoles.has(session.role)) {
     return jsonError("Forbidden", 403);

@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
+import { RequiredMark } from "@/components/ui/label";
+import {
+  CUSTOMER_INDUSTRIES,
+  OTHER_INDUSTRY_VALUE,
+} from "@/lib/customers/industries";
+
 type Assignee = {
   id: string;
   full_name: string | null;
@@ -40,44 +46,6 @@ const textareaClass =
   "mt-2 min-h-24 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-300";
 const labelClass = "text-sm font-medium text-zinc-800 dark:text-zinc-200";
 
-const COMPANY_TYPES = [
-  ["manufacturer", "Manufacturer"],
-  ["distributor", "Distributor"],
-  ["supplier", "Supplier"],
-  ["importer", "Importer"],
-  ["exporter", "Exporter"],
-  ["contractor", "Contractor"],
-  ["food_processing", "Food Processing"],
-  ["dairy", "Dairy"],
-  ["bakery", "Bakery"],
-  ["brewery", "Brewery"],
-  ["pharmaceutical", "Pharmaceutical"],
-  ["chemical", "Chemical"],
-  ["packaging", "Packaging"],
-  ["engineering", "Engineering"],
-  ["other", "Other"],
-];
-const INDUSTRIES = [
-  "Food & Beverage",
-  "Dairy",
-  "Bakery",
-  "Brewery",
-  "Pharmaceutical",
-  "Chemical",
-  "Packaging",
-  "Manufacturing",
-  "Engineering",
-  "Other",
-];
-const BUSINESS_CATEGORIES = [
-  "OEM",
-  "End User",
-  "Distributor",
-  "Supplier",
-  "Contractor",
-  "Service",
-  "Other",
-];
 const DEPARTMENTS = [
   ["purchasing", "Purchasing"],
   ["engineering", "Engineering"],
@@ -162,14 +130,11 @@ export default function NewCustomerPage() {
   const router = useRouter();
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [companyName, setCompanyName] = useState("");
-  const [legalCompanyName, setLegalCompanyName] = useState("");
   const [industry, setIndustry] = useState("");
-  const [businessCategory, setBusinessCategory] = useState("");
-  const [companyType, setCompanyType] = useState("");
+  const [customIndustry, setCustomIndustry] = useState("");
   const [businessRegistrationNumber, setBusinessRegistrationNumber] =
     useState("");
   const [gstHstNumber, setGstHstNumber] = useState("");
-  const [vendorNumber, setVendorNumber] = useState("");
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [headOfficeAddress, setHeadOfficeAddress] = useState<AddressForm>(
     emptyAddress,
@@ -313,6 +278,16 @@ export default function NewCustomerPage() {
       return;
     }
 
+    const normalizedIndustry =
+      industry === OTHER_INDUSTRY_VALUE
+        ? customIndustry.trim()
+        : industry.trim();
+
+    if (industry === OTHER_INDUSTRY_VALUE && !normalizedIndustry) {
+      setError("Specify Industry is required when Other is selected.");
+      return;
+    }
+
     const invalidContact = contacts.find(
       (contact) => hasContactValue(contact) && !contact.first_name.trim(),
     );
@@ -332,13 +307,9 @@ export default function NewCustomerPage() {
         },
         body: JSON.stringify({
           company_name: companyName,
-          legal_company_name: legalCompanyName,
-          industry,
-          business_category: businessCategory,
-          company_type: companyType,
+          industry: normalizedIndustry,
           business_registration_number: businessRegistrationNumber,
           gst_hst_number: gstHstNumber,
-          vendor_number: vendorNumber,
           assigned_sales_rep_id: assignedSalesRepId,
           account_manager_id: accountManagerId,
           lead_source: leadSource,
@@ -435,20 +406,12 @@ export default function NewCustomerPage() {
           </h2>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label>
-              <span className={labelClass}>Company Name</span>
+              <span className={labelClass}>Company Name <RequiredMark /></span>
               <input
                 className={inputClass}
                 value={companyName}
                 onChange={(event) => setCompanyName(event.target.value)}
                 required
-              />
-            </label>
-            <label>
-              <span className={labelClass}>Legal Company Name</span>
-              <input
-                className={inputClass}
-                value={legalCompanyName}
-                onChange={(event) => setLegalCompanyName(event.target.value)}
               />
             </label>
             <label>
@@ -489,43 +452,26 @@ export default function NewCustomerPage() {
                 onChange={(event) => setIndustry(event.target.value)}
               >
                 <option value="">Select industry</option>
-                {INDUSTRIES.map((item) => (
+                {CUSTOMER_INDUSTRIES.map((item) => (
                   <option key={item} value={item}>
                     {item}
                   </option>
                 ))}
+                <option value={OTHER_INDUSTRY_VALUE}>Other</option>
               </select>
             </label>
-            <label>
-              <span className={labelClass}>Business Category</span>
-              <select
-                className={inputClass}
-                value={businessCategory}
-                onChange={(event) => setBusinessCategory(event.target.value)}
-              >
-                <option value="">Select category</option>
-                {BUSINESS_CATEGORIES.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className={labelClass}>Company Type</span>
-              <select
-                className={inputClass}
-                value={companyType}
-                onChange={(event) => setCompanyType(event.target.value)}
-              >
-                <option value="">Select type</option>
-                {COMPANY_TYPES.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {industry === OTHER_INDUSTRY_VALUE ? (
+              <label>
+                <span className={labelClass}>Specify Industry <RequiredMark /></span>
+                <input
+                  className={inputClass}
+                  placeholder="Enter industry type"
+                  required
+                  value={customIndustry}
+                  onChange={(event) => setCustomIndustry(event.target.value)}
+                />
+              </label>
+            ) : null}
             <label>
               <span className={labelClass}>Business Registration Number</span>
               <input
@@ -542,14 +488,6 @@ export default function NewCustomerPage() {
                 className={inputClass}
                 value={gstHstNumber}
                 onChange={(event) => setGstHstNumber(event.target.value)}
-              />
-            </label>
-            <label>
-              <span className={labelClass}>Vendor Number</span>
-              <input
-                className={inputClass}
-                value={vendorNumber}
-                onChange={(event) => setVendorNumber(event.target.value)}
               />
             </label>
           </div>
@@ -650,9 +588,13 @@ export default function NewCustomerPage() {
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <label>
-                      <span className={labelClass}>First Name</span>
+                      <span className={labelClass}>
+                        First Name
+                        {hasContactValue(contact) ? <RequiredMark /> : null}
+                      </span>
                       <input
                         className={inputClass}
+                        required={hasContactValue(contact)}
                         value={contact.first_name}
                         onChange={(event) =>
                           updateContact(

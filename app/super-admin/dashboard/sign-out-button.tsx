@@ -1,16 +1,14 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function SignOutButton() {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleSignOut() {
     setIsLoading(true);
     await fetch("/api/auth/logout", { method: "POST" });
-    router.replace("/super-admin/login");
+    window.location.replace("/super-admin/login");
   }
 
   return (

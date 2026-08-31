@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
+import { isSalesRole } from "@/lib/auth/data-scope";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type CustomerRow = {
   id: string;
   company_name: string;
-  legal_company_name?: string | null;
   customer_code?: string | null;
   industry?: string | null;
   customer_status: string;
@@ -66,13 +67,9 @@ type CustomerContactInput = {
 
 type CreateCustomerBody = {
   company_name?: unknown;
-  legal_company_name?: unknown;
   industry?: unknown;
-  business_category?: unknown;
-  company_type?: unknown;
   business_registration_number?: unknown;
   gst_hst_number?: unknown;
-  vendor_number?: unknown;
   assigned_sales_rep_id?: unknown;
   account_manager_id?: unknown;
   lead_source?: unknown;
@@ -123,24 +120,6 @@ type ContactInsert = {
   created_by: string;
 };
 
-const allowedRoles = new Set(["admin", "sales", "accountant"]);
-const companyTypes = new Set([
-  "manufacturer",
-  "distributor",
-  "supplier",
-  "importer",
-  "exporter",
-  "contractor",
-  "food_processing",
-  "dairy",
-  "bakery",
-  "brewery",
-  "pharmaceutical",
-  "chemical",
-  "packaging",
-  "engineering",
-  "other",
-]);
 const customerStatuses = new Set([
   "prospect",
   "active",
@@ -254,6 +233,8 @@ export async function GET(request: Request) {
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "view");
+  if (denied) return denied;
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim() ?? "";
@@ -286,7 +267,7 @@ export async function GET(request: Request) {
   let customerQuery = admin
     .from("customers")
     .select(
-      "id, company_name, legal_company_name, customer_code, industry, customer_status, assigned_sales_rep_id, updated_at, created_at",
+      "id, company_name, customer_code, industry, customer_status, assigned_sales_rep_id, updated_at, created_at",
     )
     .eq("org_id", session.org_id)
     .neq("record_status", "deleted")
@@ -298,7 +279,6 @@ export async function GET(request: Request) {
     customerQuery = customerQuery.or(
       [
         `company_name.ilike.%${safeSearch}%`,
-        `legal_company_name.ilike.%${safeSearch}%`,
         `customer_code.ilike.%${safeSearch}%`,
       ].join(","),
     );
@@ -410,7 +390,6 @@ export async function GET(request: Request) {
     customers: customers.map((customer) => ({
       id: customer.id,
       company_name: customer.company_name,
-      legal_company_name: customer.legal_company_name ?? null,
       customer_code: customer.customer_code ?? null,
       industry: customer.industry ?? null,
       customer_status: customer.customer_status,
@@ -530,10 +509,8 @@ export async function POST(request: Request) {
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
-
-  if (!allowedRoles.has(session.role)) {
-    return jsonError("Forbidden", 403);
-  }
+  const denied = await requireOrgPermission(session, "customers", "create");
+  if (denied) return denied;
 
   let body: CreateCustomerBody;
 
@@ -549,11 +526,6 @@ export async function POST(request: Request) {
     return jsonError("Company name is required", 400);
   }
 
-  const companyType = getOptionalEnum(
-    body.company_type,
-    companyTypes,
-    "Company type",
-  );
   const customerStatus = getOptionalEnum(
     body.customer_status,
     customerStatuses,
@@ -574,7 +546,6 @@ export async function POST(request: Request) {
   const creditLimit = getCreditLimit(body.credit_limit);
 
   for (const result of [
-    companyType,
     customerStatus,
     selectedCreditTerms,
     currency,
@@ -599,7 +570,11 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
-  const assignedSalesRepId = getOptionalString(body.assigned_sales_rep_id);
+  let assignedSalesRepId = getOptionalString(body.assigned_sales_rep_id);
+  if (isSalesRole(session.role) && assignedSalesRepId !== session.user.id) {
+    const canCreateForOthers = await hasOrgPermission(session, "customers", "edit_all");
+    if (!canCreateForOthers) assignedSalesRepId = session.user.id;
+  }
   const accountManagerId = getOptionalString(body.account_manager_id);
   const assigneeIds = Array.from(
     new Set([assignedSalesRepId, accountManagerId].filter(Boolean)),
@@ -629,15 +604,11 @@ export async function POST(request: Request) {
   const customerInsert = {
     org_id: session.org_id,
     company_name: companyName,
-    legal_company_name: getOptionalString(body.legal_company_name),
     industry: getOptionalString(body.industry),
-    business_category: getOptionalString(body.business_category),
-    company_type: companyType.value,
     business_registration_number: getOptionalString(
       body.business_registration_number,
     ),
     gst_hst_number: getOptionalString(body.gst_hst_number),
-    vendor_number: getOptionalString(body.vendor_number),
     assigned_sales_rep_id: assignedSalesRepId,
     account_manager_id: accountManagerId,
     lead_source: getOptionalString(body.lead_source),

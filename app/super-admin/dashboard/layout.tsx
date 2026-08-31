@@ -16,7 +16,7 @@ export default async function SuperAdminDashboardLayout({
   const session = await verifySuperAdmin();
 
   if (!session) {
-    redirect("/super-admin/login");
+    redirect("/auth/session-expired?area=super-admin");
   }
 
   return (

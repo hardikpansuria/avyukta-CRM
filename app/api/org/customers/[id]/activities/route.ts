@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ProfileRow = {
@@ -26,6 +27,8 @@ export async function GET(
   if (!session) {
     return jsonError("Unauthorized", 401);
   }
+  const denied = await requireOrgPermission(session, "customers", "view");
+  if (denied) return denied;
 
   const { id } = await context.params;
   const { searchParams } = new URL(request.url);

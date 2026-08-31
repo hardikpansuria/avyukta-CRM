@@ -1,183 +1,221 @@
-import { NextResponse } from "next/server";
-
-import { findAuthUserByEmail } from "@/lib/auth/find-auth-user-by-email";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { requireOrgPermission } from "@/lib/auth/permissions";
+import {
+  isEmployeeDirectoryRole,
+  isEmployeeDirectoryStatus,
+} from "@/lib/employees/access";
+import {
+  fetchSkillsForEmployees,
+  isDuplicateEmailError,
+  jsonError,
+  normalizedEmail,
+  optionalText,
+  uniqueStringIds,
+  validateSelectedSkills,
+} from "@/lib/employees/server";
+import type { DirectoryEmployee } from "@/lib/employees/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+type EmployeeRow = Omit<DirectoryEmployee, "skills">;
+
 type CreateEmployeeBody = {
+  employee_name?: unknown;
   email?: unknown;
-  full_name?: unknown;
-  role?: unknown;
+  contact_number?: unknown;
+  employee_role?: unknown;
+  notes?: unknown;
+  employee_status?: unknown;
+  skill_ids?: unknown;
 };
 
-type ProfileEmbed =
-  | {
-      email?: string | null;
-      full_name?: string | null;
-    }
-  | {
-      email?: string | null;
-      full_name?: string | null;
-    }[]
-  | null;
-
-type MembershipRow = {
-  id: string;
-  role: string;
-  status: string;
-  created_at?: string | null;
-  profiles?: ProfileEmbed;
-};
-
-const employeeRoles = new Set(["accountant", "sales"]);
-
-function jsonError(error: string, status: number) {
-  return NextResponse.json({ error }, { status });
+function positiveInteger(value: string | null, fallback: number) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
-function getProfile(profile: ProfileEmbed) {
-  if (Array.isArray(profile)) {
-    return profile[0] ?? null;
-  }
-
-  return profile;
+function safeSearchValue(value: string) {
+  return value
+    .replace(/[(),"]/g, " ")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("%", "\\%")
+    .replaceAll("_", "\\_")
+    .trim();
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await verifyOrgSession();
+  if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "employees", "view");
+  if (denied) return denied;
 
-  if (!session) {
-    return jsonError("Unauthorized", 401);
+  const params = new URL(request.url).searchParams;
+  const search = safeSearchValue(params.get("search")?.trim() ?? "");
+  const role = params.get("role")?.trim() ?? "";
+  const status = params.get("status")?.trim() ?? "";
+  const sort = params.get("sort") === "created_at" ? "created_at" : "employee_name";
+  const direction = params.get("direction") === "desc" ? "desc" : "asc";
+  const page = positiveInteger(params.get("page"), 1);
+  const pageSize = Math.min(positiveInteger(params.get("pageSize"), 20), 100);
+  const start = (page - 1) * pageSize;
+
+  if (role && !isEmployeeDirectoryRole(role)) {
+    return jsonError("Invalid employee role filter", 400);
   }
-
-  if (session.role !== "admin") {
-    return jsonError("Forbidden", 403);
+  if (status && !isEmployeeDirectoryStatus(status)) {
+    return jsonError("Invalid employee status filter", 400);
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("org_members")
-    .select("*, profiles(email, full_name)")
-    .eq("org_id", session.org_id)
-    .order("role", { ascending: true });
+  let query = admin
+    .from("employee_directory")
+    .select(
+      "id, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at",
+      { count: "exact" },
+    )
+    .eq("org_id", session.org_id);
+
+  if (search) {
+    query = query.or(
+      `employee_name.ilike.%${search}%,email.ilike.%${search}%`,
+    );
+  }
+  if (role) query = query.eq("employee_role", role);
+  if (status) query = query.eq("employee_status", status);
+
+  const { data, error, count } = await query
+    .order(sort, { ascending: direction === "asc", nullsFirst: false })
+    .order("id", { ascending: true })
+    .range(start, start + pageSize - 1);
 
   if (error) {
+    console.error("Unable to fetch employee directory", {
+      code: error.code,
+      message: error.message,
+    });
     return jsonError("Unable to fetch employees", 500);
   }
 
-  const employees = ((data ?? []) as MembershipRow[]).map((membership) => {
-    const profile = getProfile(membership.profiles ?? null);
+  const rows = (data ?? []) as EmployeeRow[];
+  const skillsResult = await fetchSkillsForEmployees(
+    admin,
+    session.org_id,
+    rows.map((row) => row.id),
+  );
+  if (skillsResult.error) return jsonError("Unable to fetch employee skills", 500);
 
-    return {
-      id: membership.id,
-      full_name: profile?.full_name ?? null,
-      email: profile?.email ?? null,
-      role: membership.role,
-      status: membership.status,
-      member_since: membership.created_at ?? null,
-    };
+  const total = count ?? 0;
+  return Response.json({
+    employees: rows.map((row) => ({
+      ...row,
+      skills: skillsResult.data.get(row.id) ?? [],
+    })),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    },
   });
-
-  return NextResponse.json({ employees });
 }
 
 export async function POST(request: Request) {
   const session = await verifyOrgSession();
-
-  if (!session) {
-    return jsonError("Unauthorized", 401);
-  }
-
-  if (session.role !== "admin") {
-    return jsonError("Forbidden", 403);
-  }
+  if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "employees", "create");
+  if (denied) return denied;
 
   let body: CreateEmployeeBody;
-
   try {
     body = (await request.json()) as CreateEmployeeBody;
   } catch {
     return jsonError("Invalid request body", 400);
   }
 
-  const email =
-    typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const fullName =
-    typeof body.full_name === "string" ? body.full_name.trim() : "";
-  const role = typeof body.role === "string" ? body.role : "";
+  const employeeName = optionalText(body.employee_name);
+  const email = normalizedEmail(body.email);
+  const employeeRole = body.employee_role ?? "worker";
+  const employeeStatus = body.employee_status ?? "active";
+  const skillIds = uniqueStringIds(body.skill_ids);
 
-  if (!email || !fullName || !role) {
-    return jsonError("Email, full name, and role are required", 400);
+  if (!employeeName) return jsonError("Employee name is required", 400);
+  if (email.error) return jsonError(email.error, 400);
+  if (!isEmployeeDirectoryRole(employeeRole)) {
+    return jsonError("Role must be admin, sales, accounts, or worker", 400);
   }
-
-  if (!employeeRoles.has(role)) {
-    return jsonError("Role must be accountant or sales", 400);
+  if (!isEmployeeDirectoryStatus(employeeStatus)) {
+    return jsonError("Status must be active or inactive", 400);
   }
 
   const admin = createAdminClient();
-  let userId: string;
-
-  try {
-    const existingUser = await findAuthUserByEmail(admin, email);
-
-    if (existingUser) {
-      userId = existingUser.id;
-    } else {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-
-      if (!siteUrl) {
-        return jsonError("Missing NEXT_PUBLIC_SITE_URL", 500);
-      }
-
-      const { data: inviteData, error: inviteError } =
-        await admin.auth.admin.inviteUserByEmail(email, {
-          data: { full_name: fullName },
-          redirectTo: `${siteUrl}/auth/reset-password`,
-        });
-
-      if (inviteError || !inviteData.user) {
-        return jsonError("Unable to invite employee", 500);
-      }
-
-      userId = inviteData.user.id;
-    }
-  } catch {
-    return jsonError("Unable to check employee user", 500);
+  const skillsValidation = await validateSelectedSkills(
+    admin,
+    session.org_id,
+    skillIds,
+  );
+  if (!skillsValidation.valid) {
+    return skillsValidation.serverError
+      ? jsonError("Unable to validate employee skills", 500)
+      : jsonError("One or more selected skills are invalid or inactive", 400);
   }
 
-  const { error: profileError } = await admin.from("profiles").upsert({
-    id: userId,
-    email,
-    full_name: fullName,
-    status: "active",
-  });
+  const { data: employee, error: employeeError } = await admin
+    .from("employee_directory")
+    .insert({
+      org_id: session.org_id,
+      employee_name: employeeName,
+      email: email.value,
+      contact_number: optionalText(body.contact_number),
+      employee_role: employeeRole,
+      notes: optionalText(body.notes),
+      employee_status: employeeStatus,
+      source_type: "manual",
+      created_by: session.user.id,
+      updated_by: session.user.id,
+    })
+    .select(
+      "id, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at",
+    )
+    .single();
 
-  if (profileError) {
-    return jsonError("Unable to save employee profile", 500);
-  }
-
-  const { error: membershipError } = await admin.from("org_members").insert({
-    id: crypto.randomUUID(),
-    user_id: userId,
-    org_id: session.org_id,
-    role,
-    status: "active",
-  });
-
-  if (membershipError) {
-    if (membershipError.code === "23505") {
+  if (employeeError) {
+    if (isDuplicateEmailError(employeeError)) {
       return jsonError(
-        "This user is already a member of your organization",
+        "An employee with this email already exists in the Employee Directory.",
         409,
       );
     }
-
-    return jsonError("Unable to create employee membership", 500);
+    return jsonError("Unable to create employee", 500);
   }
 
-  return NextResponse.json(
+  if (skillIds.length > 0) {
+    const { error: assignmentError } = await admin
+      .from("employee_directory_skills")
+      .insert(
+        skillIds.map((skillId) => ({
+          org_id: session.org_id,
+          employee_id: employee.id,
+          skill_id: skillId,
+          assigned_by: session.user.id,
+        })),
+      );
+
+    if (assignmentError) {
+      await admin
+        .from("employee_directory")
+        .delete()
+        .eq("id", employee.id)
+        .eq("org_id", session.org_id)
+        .eq("source_type", "manual");
+      return jsonError("Unable to assign employee skills", 500);
+    }
+  }
+
+  return Response.json(
     {
-      message: "Employee invited",
+      employee: {
+        ...(employee as EmployeeRow),
+        skills: [],
+      },
     },
     { status: 201 },
   );
