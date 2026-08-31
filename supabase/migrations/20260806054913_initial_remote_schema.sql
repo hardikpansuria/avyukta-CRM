@@ -4,7 +4,10 @@
 
 SET check_function_bodies = false;
 
-DROP EXTENSION pg_net;
+-- Keep Supabase-managed platform extensions intact on fresh hosted projects.
+-- This baseline was generated from a project where pg_net was disabled, but
+-- dropping it is not part of the CRM schema and may be rejected by the hosted
+-- platform because Database Webhooks and other managed services depend on it.
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT DELETE, INSERT, SELECT, UPDATE ON TABLES TO anon;
 
