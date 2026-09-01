@@ -96,9 +96,18 @@ Use a dedicated Production sending key restricted to `auth.avyukta.ca` when that
 Email-template checks:
 
 1. Invitation email must take the user to the password setup flow.
-2. Recovery email must use the requested redirect and reach `/auth/confirm`.
+2. In **Supabase Dashboard > Authentication > Email Templates > Reset password**, use this recovery link instead of `{{ .ConfirmationURL }}`:
+
+   ```html
+   <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&amp;type=recovery">
+     Continue password reset
+   </a>
+   ```
+
+   The application passes `/auth/confirm` as `RedirectTo`. Sending the token hash to that page lets the user deliberately select **Continue** before the one-time token is verified, reducing failures caused by email-link prefetching. The callback also accepts Supabase's PKCE `?code=` format for backward compatibility when the originating browser still has the PKCE verifier, but the token-hash template is the Production standard and also works when the email opens in another browser.
 3. Send one real invitation and one password-reset email to controlled inboxes.
-4. Confirm delivery and link behavior in Resend logs and the browser.
+4. Confirm the recovery email opens `/auth/confirm?token_hash=...&type=recovery`, then reaches `/auth/reset-password` after **Continue**.
+5. Confirm delivery and link behavior in Resend logs and the browser.
 
 ## 5. Super administrator setup
 
