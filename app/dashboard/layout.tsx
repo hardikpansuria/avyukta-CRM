@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { ReactNode } from "react";
 
-import { verifyOrgSession } from "@/lib/auth/verify-org-session";
+import { verifyOrgSessionWithoutLegalGate } from "@/lib/auth/verify-org-session";
 import { getEffectivePermissionKeys, type PermissionModule } from "@/lib/auth/permissions";
+import { getMissingRequiredLegalDocuments } from "@/lib/legal/acceptance";
+import { safeLegalReturnPath } from "@/lib/legal/redirect";
 import { getEffectiveOrganizationBranding } from "@/lib/organizations/branding";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
@@ -86,10 +89,25 @@ export default async function DashboardLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const session = await verifyOrgSession();
+  const session = await verifyOrgSessionWithoutLegalGate();
 
   if (!session) {
     redirect("/auth/session-expired");
+  }
+
+  const missingLegalDocuments = await getMissingRequiredLegalDocuments(
+    session.user.id,
+    session.org_id,
+  );
+
+  if (missingLegalDocuments.length > 0) {
+    const requestHeaders = await headers();
+    const returnPath = safeLegalReturnPath(
+      `${requestHeaders.get("x-avyukta-pathname") ?? "/dashboard"}${
+        requestHeaders.get("x-avyukta-search") ?? ""
+      }`,
+    );
+    redirect(`/legal/acceptance?next=${encodeURIComponent(returnPath)}`);
   }
 
   const [permissions, logoUrl] = await Promise.all([

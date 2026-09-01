@@ -168,6 +168,27 @@ export default function LoginPage() {
             </p>
           </div>
 
+          <aside className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
+            <div className="flex items-start gap-3">
+              <ShieldCheckIcon className="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-300" />
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
+                  Your business data stays yours.
+                </h3>
+                <p className="mt-2 text-xs leading-5 text-emerald-900/80 dark:text-emerald-100/80">
+                  Avyukta CRM uses Client Data only to operate, secure and
+                  support the service. We do not sell Client Data or use it for
+                  third-party advertising. Essential cookies are used for
+                  authentication and session security.
+                </p>
+                <p className="mt-2 text-xs leading-5 text-emerald-900/80 dark:text-emerald-100/80">
+                  Pilot privacy framework: PIPEDA fair-information principles.
+                  This is not a certification.
+                </p>
+              </div>
+            </div>
+          </aside>
+
           {error ? (
             <Alert
               className="mt-6 rounded-md border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30"
@@ -287,9 +308,36 @@ export default function LoginPage() {
                 "Sign in"
               )}
             </Button>
+
+            <p className="text-center text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+              By signing in, you agree to the{" "}
+              <Link className="underline hover:text-zinc-950 dark:hover:text-zinc-50" href="/legal/terms">
+                Authorized User Terms
+              </Link>{" "}
+              and acknowledge the{" "}
+              <Link className="underline hover:text-zinc-950 dark:hover:text-zinc-50" href="/legal/privacy">
+                CRM Privacy Notice
+              </Link>
+              .
+            </p>
           </form>
 
-          <p className="mt-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
+          <nav aria-label="Legal and privacy" className="mt-8">
+            <ul className="flex flex-wrap justify-center gap-x-3 gap-y-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
+              <li><Link className="hover:text-zinc-950 hover:underline dark:hover:text-zinc-50" href="/legal/privacy">Privacy Notice</Link></li>
+              <li aria-hidden="true">|</li>
+              <li><Link className="hover:text-zinc-950 hover:underline dark:hover:text-zinc-50" href="/legal/terms">Authorized User Terms</Link></li>
+              <li aria-hidden="true">|</li>
+              <li><Link className="hover:text-zinc-950 hover:underline dark:hover:text-zinc-50" href="/security">Security</Link></li>
+              <li aria-hidden="true">|</li>
+              <li><Link className="hover:text-zinc-950 hover:underline dark:hover:text-zinc-50" href="/legal/cookies">Cookie Notice</Link></li>
+              <li aria-hidden="true">|</li>
+              <li><Link className="hover:text-zinc-950 hover:underline dark:hover:text-zinc-50" href="/legal/subprocessors">Subprocessors</Link></li>
+              <li aria-hidden="true">|</li>
+              <li><Link className="hover:text-zinc-950 hover:underline dark:hover:text-zinc-50" href="/legal/privacy#contact">Contact Privacy Officer</Link></li>
+            </ul>
+          </nav>
+          <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
             Access is limited to active organization members.
           </p>
         </div>

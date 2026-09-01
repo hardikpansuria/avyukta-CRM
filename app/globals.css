@@ -49,6 +49,31 @@
 }
 
 @media print {
+  .legal-no-print {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  article {
+    max-width: none !important;
+  }
+
+  article > header {
+    display: block !important;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: underline;
+  }
+}
+
+@media print {
   aside,
   header,
   .no-print {

@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
+import { hasCurrentLegalAcceptance } from "@/lib/legal/acceptance";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -95,4 +96,26 @@ async function verifyOrgSessionUncached(): Promise<OrgSession | null> {
 // Layouts and pages frequently verify the same session during one render pass.
 // React cache keeps that authorization work request-scoped and avoids duplicate
 // Auth and database round trips without persisting session data between users.
-export const verifyOrgSession = cache(verifyOrgSessionUncached);
+export const verifyOrgSessionWithoutLegalGate = cache(
+  verifyOrgSessionUncached,
+);
+
+async function verifyAcceptedOrgSessionUncached() {
+  const session = await verifyOrgSessionWithoutLegalGate();
+
+  if (!session) {
+    return null;
+  }
+
+  const accepted = await hasCurrentLegalAcceptance(
+    session.user.id,
+    session.org_id,
+  );
+
+  return accepted ? session : null;
+}
+
+// Organization APIs use this gated verifier by default. The acceptance page
+// and dashboard shell deliberately use verifyOrgSessionWithoutLegalGate so
+// they can distinguish an expired session from a missing legal acceptance.
+export const verifyOrgSession = cache(verifyAcceptedOrgSessionUncached);
