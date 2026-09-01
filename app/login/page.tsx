@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingSpinner } from "@/components/ui/loading-state";
 
 export default function LoginPage() {
   const [orgCode, setOrgCode] = useState("");
@@ -177,7 +178,11 @@ export default function LoginPage() {
             </Alert>
           ) : null}
 
-          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+          <form
+            aria-busy={isLoading}
+            className="mt-8 space-y-5"
+            onSubmit={handleSubmit}
+          >
             <div>
               <Label
                 className="text-sm font-medium text-zinc-800 dark:text-zinc-200"
@@ -273,7 +278,14 @@ export default function LoginPage() {
               disabled={isLoading}
               type="submit"
             >
-              {isLoading ? "Signing in..." : "Sign in"}
+              {isLoading ? (
+                <>
+                  <LoadingSpinner />
+                  Signing in...
+                </>
+              ) : (
+                "Sign in"
+              )}
             </Button>
           </form>
 

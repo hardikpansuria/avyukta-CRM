@@ -14,6 +14,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
 import {
   Select,
   SelectContent,
@@ -83,6 +84,9 @@ export default function QuotationsPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [openingQuotationId, setOpeningQuotationId] = useState<string | null>(
+    null,
+  );
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -134,7 +138,7 @@ export default function QuotationsPage() {
 
     const timeoutId = window.setTimeout(() => {
       void loadQuotations();
-    }, 250);
+    }, queryString ? 250 : 0);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -143,6 +147,8 @@ export default function QuotationsPage() {
   }, [queryString]);
 
   function openQuotation(quotationId: string) {
+    if (openingQuotationId) return;
+    setOpeningQuotationId(quotationId);
     router.push(`/dashboard/quotations/${quotationId}`);
   }
 
@@ -163,12 +169,23 @@ export default function QuotationsPage() {
 
   return (
     <div className="mx-auto max-w-7xl pb-12">
+      {openingQuotationId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/75 p-4 backdrop-blur-sm dark:bg-zinc-950/75">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white px-6 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+            <LoadingState
+              description="Retrieving scopes, pricing, and revision history."
+              message="Opening quotation..."
+            />
+          </div>
+        </div>
+      ) : null}
+
       <PageHeader
         action={
           <Button
             className="h-10 rounded-md px-4 font-semibold"
             nativeButton={false}
-            render={<Link href="/dashboard/quotations/new" />}
+            render={<Link href="/dashboard/quotations/new" prefetch={false} />}
             size="lg"
           >
             <PlusIcon data-icon="inline-start" />
@@ -283,7 +300,7 @@ export default function QuotationsPage() {
               <Button
                 className="rounded-md px-4"
                 nativeButton={false}
-                render={<Link href="/dashboard/quotations/new" />}
+                render={<Link href="/dashboard/quotations/new" prefetch={false} />}
               >
                 Create Quotation
               </Button>
@@ -317,6 +334,16 @@ export default function QuotationsPage() {
                       className="cursor-pointer focus-within:bg-zinc-50 hover:bg-zinc-50 dark:focus-within:bg-zinc-900/70 dark:hover:bg-zinc-900/70"
                       key={quotation.id}
                       tabIndex={0}
+                      onFocus={() =>
+                        router.prefetch(
+                          `/dashboard/quotations/${quotation.id}`,
+                        )
+                      }
+                      onMouseEnter={() =>
+                        router.prefetch(
+                          `/dashboard/quotations/${quotation.id}`,
+                        )
+                      }
                       onClick={() => openQuotation(quotation.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
@@ -371,8 +398,15 @@ export default function QuotationsPage() {
               {quotations.map((quotation) => (
                 <button
                   className="w-full p-4 text-left transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-zinc-400 dark:hover:bg-zinc-900"
+                  disabled={Boolean(openingQuotationId)}
                   key={quotation.id}
                   type="button"
+                  onFocus={() =>
+                    router.prefetch(`/dashboard/quotations/${quotation.id}`)
+                  }
+                  onPointerEnter={() =>
+                    router.prefetch(`/dashboard/quotations/${quotation.id}`)
+                  }
                   onClick={() => openQuotation(quotation.id)}
                 >
                   <div className="flex items-start justify-between gap-3">

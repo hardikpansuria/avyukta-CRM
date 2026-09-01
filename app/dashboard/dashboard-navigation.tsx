@@ -76,6 +76,7 @@ export function DashboardNavigation({
               mobile && "whitespace-nowrap",
             )}
             href={link.href}
+            prefetch={false}
           >
             <Icon className="size-4" />
             {link.label}
@@ -107,6 +108,7 @@ export function DashboardNavigation({
                       )}
                       href={child.href}
                       key={child.href}
+                      prefetch={false}
                     >
                       <ChildIcon className="size-3.5" />
                       {child.label}

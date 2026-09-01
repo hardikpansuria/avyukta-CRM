@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { LoadingState } from "@/components/ui/loading-state";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -293,31 +294,12 @@ export default function QuotationDetailPage() {
   useEffect(() => {
     const controller = new AbortController();
 
-    async function loadQuotation() {
-      setError(null);
-      setIsLoading(true);
-
+    async function loadSupplementalQuotationData() {
       try {
-        const response = await fetch(`/api/org/quotations/${quotationId}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const payload = (await response.json().catch(() => null)) as
-          | (QuotationDetail & { error?: string })
-          | null;
-
-        if (!response.ok || !payload?.quotation) {
-          setError(payload?.error ?? "Unable to load quotation.");
-          return;
-        }
-
-        setDetail(payload);
-        setStatusValue(payload.quotation.status ?? "draft");
-
         const [customerQuotationResponse, generatedResponse] =
           await Promise.all([
             fetch(
-              `/api/org/quotations/${quotationId}/customer-quotation`,
+              `/api/org/quotations/${quotationId}/customer-quotation?exists_only=true`,
               {
                 cache: "no-store",
                 signal: controller.signal,
@@ -344,6 +326,34 @@ export default function QuotationDetailPage() {
           };
           setGeneratedCustomerDocuments(generatedPayload.documents ?? []);
         }
+      } catch (loadError) {
+        if ((loadError as Error).name !== "AbortError") {
+          console.error("Unable to load quotation document summary", loadError);
+        }
+      }
+    }
+
+    async function loadQuotation() {
+      setError(null);
+      setIsLoading(true);
+      void loadSupplementalQuotationData();
+
+      try {
+        const response = await fetch(`/api/org/quotations/${quotationId}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | (QuotationDetail & { error?: string })
+          | null;
+
+        if (!response.ok || !payload?.quotation) {
+          setError(payload?.error ?? "Unable to load quotation.");
+          return;
+        }
+
+        setDetail(payload);
+        setStatusValue(payload.quotation.status ?? "draft");
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
           setError("Unable to load quotation.");
@@ -374,8 +384,11 @@ export default function QuotationDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-6xl rounded-lg border border-zinc-200 bg-white p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
-        Loading quotation...
+      <div className="mx-auto max-w-6xl rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <LoadingState
+          description="Retrieving scopes, pricing, and revision history."
+          message="Loading quotation..."
+        />
       </div>
     );
   }
@@ -539,6 +552,7 @@ export default function QuotationDetailPage() {
             render={
               <Link
                 href={`/dashboard/quotations/${quotation.id}/customer-quotation`}
+                prefetch={false}
               />
             }
           >
@@ -550,7 +564,7 @@ export default function QuotationDetailPage() {
               : "Prepare Customer Quotation"}
           </Button>
           {quotation.status === "sent" ? <Button className="h-10 rounded-md" type="button" variant="outline" onClick={() => setRevisionDialogOpen(true)}>Create Revision</Button> : null}
-          <Button className="h-10 rounded-md" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} />} variant="outline"><GitCompareIcon className="size-4" />Compare Revisions</Button>
+          <Button className="h-10 rounded-md" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} prefetch={false} />} variant="outline"><GitCompareIcon className="size-4" />Compare Revisions</Button>
           {!quotation.is_locked ? <Button
             className="h-10 rounded-md"
             type="button"
@@ -581,7 +595,7 @@ export default function QuotationDetailPage() {
           <Button
             className="h-10 rounded-md font-semibold"
             nativeButton={false}
-            render={<Link href={`/dashboard/quotations/${quotation.id}/edit`} />}
+            render={<Link href={`/dashboard/quotations/${quotation.id}/edit`} prefetch={false} />}
           >
             Edit
           </Button>
@@ -827,7 +841,7 @@ export default function QuotationDetailPage() {
           }))}
           title="Status History"
         />
-        <div className={cardClass}><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Revision History</h2><Button size="sm" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} />} variant="outline">Compare</Button></div><div className="mt-4 space-y-2">{revisions.map((item) => <Link className="block rounded-md border border-zinc-200 p-3 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900" href={`/dashboard/quotations/${item.id}`} key={item.id}><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Rev {item.revision_number ?? 0}</span><span className="text-xs text-zinc-500">{item.is_locked ? "Locked" : "Editable"}</span></div><p className="mt-1 text-sm text-zinc-600">{Number(item.revision_number ?? 0) === 0 ? "Original Quotation" : `Purpose: ${item.revision_purpose || "—"}`}</p><p className="mt-1 text-xs text-zinc-500">{formatStatus(item.status)} · {formatDateTime(item.revision_created_at ?? item.created_at)} · {profileName(item.created_by_profile)}</p></Link>)}{revisions.length === 0 ? <p className="text-sm text-zinc-500">No revision history.</p> : null}</div></div>
+        <div className={cardClass}><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Revision History</h2><Button size="sm" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} prefetch={false} />} variant="outline">Compare</Button></div><div className="mt-4 space-y-2">{revisions.map((item) => <Link className="block rounded-md border border-zinc-200 p-3 transition hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900" href={`/dashboard/quotations/${item.id}`} key={item.id} prefetch={false}><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Rev {item.revision_number ?? 0}</span><span className="text-xs text-zinc-500">{item.is_locked ? "Locked" : "Editable"}</span></div><p className="mt-1 text-sm text-zinc-600">{Number(item.revision_number ?? 0) === 0 ? "Original Quotation" : `Purpose: ${item.revision_purpose || "—"}`}</p><p className="mt-1 text-xs text-zinc-500">{formatStatus(item.status)} · {formatDateTime(item.revision_created_at ?? item.created_at)} · {profileName(item.created_by_profile)}</p></Link>)}{revisions.length === 0 ? <p className="text-sm text-zinc-500">No revision history.</p> : null}</div></div>
       </section>
 
       {auditHistory.length ? <section className="mt-6"><TimelineCard emptyText="No audit activity." items={auditHistory.map((event) => ({ id: event.id, title: `${formatStatus(event.event_type)} · Rev ${event.revision_number ?? 0}`, meta: `${formatDateTime(event.created_at)} · ${profileName(event.actor_profile)}`, body: event.metadata ? JSON.stringify(event.metadata) : undefined }))} title="Audit History" /></section> : null}
@@ -849,6 +863,7 @@ export default function QuotationDetailPage() {
               render={
                 <Link
                   href={`/dashboard/quotations/${quotation.id}/customer-quotation`}
+                  prefetch={false}
                 />
               }
             >
@@ -944,6 +959,7 @@ export default function QuotationDetailPage() {
             render={
               <Link
                 href={`/dashboard/quotations/${quotation.id}/customer-quotation`}
+                prefetch={false}
               />
             }
             variant="outline"
@@ -990,7 +1006,7 @@ export default function QuotationDetailPage() {
           {!quotation.is_locked ? <Button
             className="h-10 rounded-md font-semibold"
             nativeButton={false}
-            render={<Link href={`/dashboard/quotations/${quotation.id}/edit`} />}
+            render={<Link href={`/dashboard/quotations/${quotation.id}/edit`} prefetch={false} />}
           >
             Edit
           </Button> : null}

@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -35,17 +36,7 @@ function parseOrgContext(value: string | undefined): OrgContext | null {
   }
 }
 
-export async function verifyOrgSession(): Promise<OrgSession | null> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return null;
-  }
-
+async function verifyOrgSessionUncached(): Promise<OrgSession | null> {
   const cookieStore = await cookies();
   const orgContext = parseOrgContext(cookieStore.get("org_context")?.value);
 
@@ -53,7 +44,32 @@ export async function verifyOrgSession(): Promise<OrgSession | null> {
     return null;
   }
 
+  const supabase = await createSupabaseServerClient();
   const admin = createAdminClient();
+  const [userResult, organizationResult] = await Promise.all([
+    supabase.auth.getUser(),
+    admin
+      .from("organizations")
+      .select("id, org_code, name, logo_storage_path")
+      .eq("id", orgContext.org_id)
+      .eq("status", "active")
+      .maybeSingle(),
+  ]);
+  const {
+    data: { user },
+    error: userError,
+  } = userResult;
+
+  if (userError || !user) {
+    return null;
+  }
+
+  const { data: organization, error: organizationError } = organizationResult;
+
+  if (organizationError || !organization) {
+    return null;
+  }
+
   const { data: membership, error: membershipError } = await admin
     .from("org_members")
     .select("org_id, role")
@@ -66,17 +82,6 @@ export async function verifyOrgSession(): Promise<OrgSession | null> {
     return null;
   }
 
-  const { data: organization, error: organizationError } = await admin
-    .from("organizations")
-    .select("id, org_code, name, logo_storage_path")
-    .eq("id", orgContext.org_id)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (organizationError || !organization) {
-    return null;
-  }
-
   return {
     user,
     org_id: membership.org_id,
@@ -86,3 +91,8 @@ export async function verifyOrgSession(): Promise<OrgSession | null> {
     logo_storage_path: organization.logo_storage_path,
   };
 }
+
+// Layouts and pages frequently verify the same session during one render pass.
+// React cache keeps that authorization work request-scoped and avoids duplicate
+// Auth and database round trips without persisting session data between users.
+export const verifyOrgSession = cache(verifyOrgSessionUncached);

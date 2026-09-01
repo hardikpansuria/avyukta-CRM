@@ -56,32 +56,31 @@ export async function GET(
   }
 
   const seriesId = (result.quotation as Record<string, unknown>).quotation_series_id as string | null;
-  const { data: seriesRevisions } = seriesId
-    ? await admin
-        .from("quotations")
-        .select("id,quotation_number,revision_number,revision_purpose,revision_source_id,revision_created_by,revision_created_at,status,is_locked,created_at,updated_at,customer_id")
-        .eq("org_id", session.org_id)
-        .eq("quotation_series_id", seriesId)
-        .order("revision_number", { ascending: true })
-    : { data: [] };
+  const [{ data: seriesRevisions }, { data: auditRows }] = await Promise.all([
+    seriesId
+      ? admin
+          .from("quotations")
+          .select("id,quotation_number,revision_number,revision_purpose,revision_source_id,revision_created_by,revision_created_at,status,is_locked,created_at,updated_at,customer_id")
+          .eq("org_id", session.org_id)
+          .eq("quotation_series_id", seriesId)
+          .order("revision_number", { ascending: true })
+      : Promise.resolve({ data: [] }),
+    session.role === "admin" && seriesId
+      ? admin
+          .from("quotation_revision_audit")
+          .select("*")
+          .eq("org_id", session.org_id)
+          .eq("quotation_series_id", seriesId)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+  ]);
   const revisionCreatorIds = Array.from(new Set((seriesRevisions ?? []).map((row) => row.revision_created_by as string).filter(Boolean)));
-  const { data: revisionProfiles } = revisionCreatorIds.length
-    ? await admin.from("profiles").select("id,full_name,email").in("id", revisionCreatorIds)
-    : { data: [] };
-  const revisionProfilesById = new Map((revisionProfiles ?? []).map((profile) => [profile.id, profile]));
-  const { data: auditRows } = session.role === "admin" && seriesId
-    ? await admin
-        .from("quotation_revision_audit")
-        .select("*")
-        .eq("org_id", session.org_id)
-        .eq("quotation_series_id", seriesId)
-        .order("created_at", { ascending: false })
-    : { data: [] };
   const auditActorIds = Array.from(new Set((auditRows ?? []).map((row) => row.actor_id as string).filter(Boolean)));
-  const { data: auditProfiles } = auditActorIds.length
-    ? await admin.from("profiles").select("id,full_name,email").in("id", auditActorIds)
+  const profileIds = Array.from(new Set([...revisionCreatorIds, ...auditActorIds]));
+  const { data: profiles } = profileIds.length
+    ? await admin.from("profiles").select("id,full_name,email").in("id", profileIds)
     : { data: [] };
-  const auditProfilesById = new Map((auditProfiles ?? []).map((profile) => [profile.id, profile]));
+  const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
 
   return NextResponse.json({
     quotation: result.quotation,
@@ -93,11 +92,11 @@ export async function GET(
     revisions: result.revisions ?? [],
     series_revisions: (seriesRevisions ?? []).map((revision) => ({
       ...revision,
-      created_by_profile: revisionProfilesById.get(revision.revision_created_by as string) ?? null,
+      created_by_profile: profilesById.get(revision.revision_created_by as string) ?? null,
     })),
     revision_audit: (auditRows ?? []).map((event) => ({
       ...event,
-      actor_profile: auditProfilesById.get(event.actor_id as string) ?? null,
+      actor_profile: profilesById.get(event.actor_id as string) ?? null,
     })),
     tax_warning: result.tax_warning ?? null,
   });

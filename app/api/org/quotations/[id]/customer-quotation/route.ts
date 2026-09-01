@@ -84,7 +84,7 @@ async function saveItemContent({
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: RouteContext<"/api/org/quotations/[id]/customer-quotation">,
 ) {
   const session = await verifyOrgSession();
@@ -95,6 +95,35 @@ export async function GET(
 
   const { id } = await context.params;
   const admin = createAdminClient();
+  const existsOnly =
+    new URL(request.url).searchParams.get("exists_only") === "true";
+
+  if (existsOnly) {
+    const [{ data: quotation, error: quotationError }, { data: document, error: documentError }] =
+      await Promise.all([
+        admin
+          .from("quotations")
+          .select("id")
+          .eq("org_id", session.org_id)
+          .eq("id", id)
+          .maybeSingle(),
+        admin
+          .from("quotation_customer_documents")
+          .select("id")
+          .eq("org_id", session.org_id)
+          .eq("quotation_id", id)
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+    if (quotationError || documentError) {
+      return jsonError("Unable to check customer quotation", 500);
+    }
+    if (!quotation) return jsonError("Quotation not found", 404);
+
+    return NextResponse.json({ exists: Boolean(document) });
+  }
+
   const { data: lock } = await getQuotationLock(admin, session.org_id, id);
   if (lock && !lock.is_locked) {
     const syncResult = await syncCustomerQuotationPricing({

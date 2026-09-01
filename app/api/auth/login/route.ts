@@ -44,23 +44,26 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: authData, error: authError } =
-    await supabase.auth.signInWithPassword({
+  const admin = createAdminClient();
+  const [authResult, organizationResult] = await Promise.all([
+    supabase.auth.signInWithPassword({
       email,
       password,
-    });
+    }),
+    admin
+      .from("organizations")
+      .select("id, org_code, name")
+      .eq("org_code", orgCode)
+      .eq("status", "active")
+      .maybeSingle(),
+  ]);
+  const { data: authData, error: authError } = authResult;
 
   if (authError || !authData.user) {
     return jsonError("Invalid email or password", 401);
   }
 
-  const admin = createAdminClient();
-  const { data: organization, error: organizationError } = await admin
-    .from("organizations")
-    .select("id, org_code, name")
-    .eq("org_code", orgCode)
-    .eq("status", "active")
-    .maybeSingle();
+  const { data: organization, error: organizationError } = organizationResult;
 
   if (organizationError || !organization) {
     await supabase.auth.signOut();
