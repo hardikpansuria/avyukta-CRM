@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(25);
+select plan(28);
 
 select ok(
   not exists (
@@ -115,6 +115,17 @@ select ok(
     ]) function_oid
   ),
   'Service role retains every reviewed server-only RPC'
+);
+
+select ok(
+  has_schema_privilege('service_role', 'private', 'USAGE'),
+  'Service role can resolve explicitly allowlisted private helpers'
+);
+
+select ok(
+  not has_schema_privilege('anon', 'private', 'USAGE')
+  and not has_schema_privilege('authenticated', 'private', 'USAGE'),
+  'Browser roles cannot resolve objects in the private schema'
 );
 
 select ok(
@@ -247,6 +258,19 @@ insert into public.org_members (id, user_id, org_id, role, status)
 values
   ('fa200000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000001', 'fa100000-0000-4000-8000-000000000001', 'admin', 'active'),
   ('fb200000-0000-4000-8000-000000000001', 'fb000000-0000-4000-8000-000000000001', 'fb100000-0000-4000-8000-000000000001', 'admin', 'active');
+
+set local role service_role;
+select is(
+  public.user_has_permission(
+    'fa000000-0000-4000-8000-000000000001',
+    'fa100000-0000-4000-8000-000000000001',
+    'dashboard',
+    'view'
+  ),
+  true,
+  'Server-side permission RPC grants an active organization admin dashboard access'
+);
+reset role;
 
 insert into public.customers (id, org_id, company_name, customer_code)
 values
