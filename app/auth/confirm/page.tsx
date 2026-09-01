@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
+import { confirmPasswordRecovery } from "@/lib/auth/password-recovery-confirmation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function ConfirmAuthPage() {
@@ -13,26 +14,21 @@ export default function ConfirmAuthPage() {
     event.preventDefault();
     setError(null);
 
-    const params = new URLSearchParams(window.location.search);
-    const tokenHash = params.get("token_hash");
-    const type = params.get("type");
-
-    if (!tokenHash || type !== "recovery") {
-      setError("Password reset link is invalid. Please request a new link.");
-      return;
-    }
-
     setIsLoading(true);
 
     try {
       const supabase = createClient();
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        token_hash: tokenHash,
-        type: "recovery",
-      });
+      const result = await confirmPasswordRecovery(
+        supabase.auth,
+        new URLSearchParams(window.location.search),
+      );
 
-      if (verifyError) {
-        setError("Password reset link is invalid or has expired.");
+      if (!result.ok) {
+        setError(
+          result.reason === "invalid"
+            ? "Password reset link is invalid. Please request a new link."
+            : "Password reset link is invalid or has expired.",
+        );
         return;
       }
 
