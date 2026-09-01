@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { getEffectiveOrganizationBranding } from "@/lib/organizations/branding";
 import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
 import type { WorkCompletionPdfData } from "./work-completion-pdf";
@@ -50,6 +51,14 @@ export async function getWorkCompletionPdfData(
 
   const job = jobResult.data;
   const completion = completionResult.data;
+  const brandingResult = await getEffectiveOrganizationBranding(
+    admin,
+    orgId,
+    String(completion.completion_date).slice(0, 10),
+    organizationResult.data,
+  );
+  if (!brandingResult.data) return { error: brandingResult.error };
+  const branding = brandingResult.data;
   const [quotationResult, customerResult, allocationResult, techniciansResult, scopesResult] = await Promise.all([
     admin.from("quotations").select("id,quotation_number,quote_date,project_name,project_location,sales_rep_id").eq("id", job.latest_accepted_quotation_id).eq("org_id", orgId).maybeSingle(),
     admin.from("customers").select("id,company_name").eq("id", job.customer_id).eq("org_id", orgId).maybeSingle(),
@@ -82,15 +91,19 @@ export async function getWorkCompletionPdfData(
   const shipping = addresses.find((row) => row.address_type === "shipping");
   const headOffice = addresses.find((row) => row.address_type === "head_office");
   const employeeNames = new Map((employeesResult.data ?? []).map((row) => [row.id, row.employee_name]));
-  const logoDataUrl = await organizationLogo(admin, orgId, organizationResult.data.logo_storage_path);
+  const logoDataUrl = await organizationLogo(
+    admin,
+    orgId,
+    branding.logo_storage_path,
+  );
 
   return {
     data: {
       organization: {
-        company_name: text(organizationResult.data.quotation_company_name) || text(organizationResult.data.name) || "Pro-Tech Stainless and Services Ltd.",
-        phone: text(organizationResult.data.quotation_phone),
-        fax: text(organizationResult.data.quotation_fax),
-        footer_text: text(organizationResult.data.quotation_footer_text),
+        company_name: branding.company_name,
+        phone: branding.phone,
+        fax: branding.fax,
+        footer_text: branding.footer_text,
       },
       logo_data_url: logoDataUrl,
       certificate: {

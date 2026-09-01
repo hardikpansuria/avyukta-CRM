@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { getEffectivePermissionKeys, type PermissionModule } from "@/lib/auth/permissions";
+import { getEffectiveOrganizationBranding } from "@/lib/organizations/branding";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 
@@ -52,16 +53,30 @@ const dashboardLinks: DashboardLink[] = [
 
 async function organizationLogoUrl(
   orgId: string,
+  orgName: string,
   logoStoragePath: string | null | undefined,
 ) {
-  if (!logoStoragePath || !isOrgScopedStoragePath(logoStoragePath, orgId)) {
+  const admin = createAdminClient();
+  const branding = await getEffectiveOrganizationBranding(
+    admin,
+    orgId,
+    new Date().toISOString().slice(0, 10),
+    { name: orgName, logo_storage_path: logoStoragePath },
+  );
+  const effectiveLogoPath = branding.data
+    ? branding.data.logo_storage_path
+    : logoStoragePath;
+
+  if (
+    !effectiveLogoPath ||
+    !isOrgScopedStoragePath(effectiveLogoPath, orgId)
+  ) {
     return null;
   }
 
-  const admin = createAdminClient();
   const { data, error } = await admin.storage
     .from("crm-assets")
-    .createSignedUrl(logoStoragePath, 60 * 60);
+    .createSignedUrl(effectiveLogoPath, 60 * 60);
 
   return error ? null : data.signedUrl;
 }
@@ -79,7 +94,11 @@ export default async function DashboardLayout({
 
   const [permissions, logoUrl] = await Promise.all([
     getEffectivePermissionKeys(session),
-    organizationLogoUrl(session.org_id, session.logo_storage_path),
+    organizationLogoUrl(
+      session.org_id,
+      session.org_name,
+      session.logo_storage_path,
+    ),
   ]);
   const links = dashboardLinks
     .filter((link) =>
