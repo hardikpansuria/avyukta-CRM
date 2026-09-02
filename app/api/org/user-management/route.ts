@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { buildAuthRedirectUrl } from "@/lib/auth/auth-redirect-url";
 import { findAuthUserByEmail } from "@/lib/auth/find-auth-user-by-email";
+import { buildInvitationEmailData } from "@/lib/auth/invitation-email";
 import { isPendingInvitation } from "@/lib/auth/invitation-status";
 import { authorizeOrgRequest } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -155,7 +156,11 @@ export async function POST(request: Request) {
 
       const { data: inviteData, error: inviteError } =
         await admin.auth.admin.inviteUserByEmail(email, {
-          data: { full_name: fullName },
+          data: buildInvitationEmailData({
+            fullName,
+            organizationName: session.org_name,
+            organizationCode: session.org_code,
+          }),
           redirectTo: buildAuthRedirectUrl(siteUrl, "/auth/reset-password"),
         });
 

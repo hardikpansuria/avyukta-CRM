@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 import { buildAuthRedirectUrl } from "@/lib/auth/auth-redirect-url";
+import { buildInvitationEmailData } from "@/lib/auth/invitation-email";
 import { verifySuperAdmin } from "@/lib/auth/verify-super-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -185,9 +186,11 @@ export async function POST(request: Request) {
       const { data: inviteData, error: inviteError } =
         await admin.auth.admin.inviteUserByEmail(adminEmail, {
           redirectTo: buildAuthRedirectUrl(siteUrl, "/auth/reset-password"),
-          data: {
-            full_name: adminFullName,
-          },
+          data: buildInvitationEmailData({
+            fullName: adminFullName,
+            organizationName: name,
+            organizationCode: orgCode,
+          }),
         });
 
       if (inviteError || !inviteData.user) {

@@ -95,8 +95,9 @@ Use a dedicated Production sending key restricted to `auth.avyukta.ca` when that
 
 Email-template checks:
 
-1. Invitation email must take the user to the password setup flow.
-2. In **Supabase Dashboard > Authentication > Email Templates > Reset password**, use this recovery link instead of `{{ .ConfirmationURL }}`:
+1. In **Supabase Dashboard > Authentication > Email Templates > Invite user**, set the subject to `You are invited to Avyukta CRM` and copy the version-controlled HTML from `supabase/templates/invite.html`. Apply it separately to the verified `crm-dev` and `crm-prod` projects. The application supplies the invitee name, organization name, and organization code as user metadata; the template also uses Supabase's built-in email value as the username.
+2. Confirm that the invitation email greets the user by name, identifies the inviting organization, prominently shows the organization code and email-as-username, and takes the user to the password setup flow.
+3. In **Supabase Dashboard > Authentication > Email Templates > Reset password**, use this recovery link instead of `{{ .ConfirmationURL }}`:
 
    ```html
    <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&amp;type=recovery">
@@ -105,9 +106,9 @@ Email-template checks:
    ```
 
    The application passes `/auth/confirm` as `RedirectTo`. Sending the token hash to that page lets the user deliberately select **Continue** before the one-time token is verified, reducing failures caused by email-link prefetching. The callback also accepts Supabase's PKCE `?code=` format for backward compatibility when the originating browser still has the PKCE verifier, but the token-hash template is the Production standard and also works when the email opens in another browser.
-3. Send one real invitation and one password-reset email to controlled inboxes.
-4. Confirm the recovery email opens `/auth/confirm?token_hash=...&type=recovery`, then reaches `/auth/reset-password` after **Continue**.
-5. Confirm delivery and link behavior in Resend logs and the browser.
+4. Send one real invitation and one password-reset email to controlled inboxes.
+5. Confirm the recovery email opens `/auth/confirm?token_hash=...&type=recovery`, then reaches `/auth/reset-password` after **Continue**.
+6. Confirm delivery and link behavior in Resend logs and the browser.
 
 ## 5. Super administrator setup
 

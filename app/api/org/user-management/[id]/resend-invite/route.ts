@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { buildAuthRedirectUrl } from "@/lib/auth/auth-redirect-url";
+import { buildInvitationEmailData } from "@/lib/auth/invitation-email";
 import { isPendingInvitation } from "@/lib/auth/invitation-status";
 import { authorizeOrgRequest } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -62,6 +63,7 @@ export async function POST(
 
   const profile = getProfile(membership.profiles as ProfileEmbed);
   const email = authUserData.user.email ?? profile?.email;
+  const fullName = profile?.full_name?.trim();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
   if (!email) {
@@ -72,10 +74,18 @@ export async function POST(
     return jsonError("Missing NEXT_PUBLIC_SITE_URL", 500);
   }
 
+  if (!fullName) {
+    return jsonError("The invited user does not have a full name", 500);
+  }
+
   const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(
     email,
     {
-      data: { full_name: profile?.full_name ?? undefined },
+      data: buildInvitationEmailData({
+        fullName,
+        organizationName: session.org_name,
+        organizationCode: session.org_code,
+      }),
       redirectTo: buildAuthRedirectUrl(siteUrl, "/auth/reset-password"),
     },
   );
