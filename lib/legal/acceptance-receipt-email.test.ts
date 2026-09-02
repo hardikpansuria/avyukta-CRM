@@ -53,7 +53,7 @@ describe("legal acceptance receipt email", () => {
     expect(message.html).toContain("ProTech &amp; Co.");
     expect(message.html).toContain("Org code:</strong> 4455");
     expect(message.html).toContain("hardik@example.com");
-    expect(message.html).toContain("https://crm.example.com/login");
+    expect(message.html).toContain("https://crm.example.com/dashboard");
     expect(message.html).not.toContain("Hardik <Admin>");
   });
 

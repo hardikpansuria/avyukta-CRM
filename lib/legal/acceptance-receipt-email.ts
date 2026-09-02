@@ -64,7 +64,7 @@ export function buildAcceptanceReceiptEmail(
   const safeOrganizationCode = escapeHtml(input.organizationCode);
   const safeEmail = escapeHtml(input.recipientEmail);
   const safePrivacyEmail = escapeHtml(input.privacyContactEmail);
-  const loginUrl = new URL("/login", siteUrl).toString();
+  const loginUrl = new URL("/dashboard", siteUrl).toString();
   const documentItems = input.documents
     .map(
       (document) => `
