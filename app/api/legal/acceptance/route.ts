@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSessionWithoutLegalGate } from "@/lib/auth/verify-org-session";
 import { getMissingRequiredLegalDocuments } from "@/lib/legal/acceptance";
+import { sendAcceptanceReceiptEmail } from "@/lib/legal/acceptance-receipt-email";
 import { getLegalSiteConfiguration } from "@/lib/legal/config";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -94,5 +95,86 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json({ success: true });
+  const [
+    { data: profile, error: profileError },
+    { data: evidence, error: evidenceError },
+  ] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", session.user.id)
+      .maybeSingle(),
+    admin
+      .from("legal_acceptances")
+      .select(
+        "document_key, document_version, content_hash, action_type, accepted_at",
+      )
+      .eq("user_id", session.user.id)
+      .eq("organization_id", session.org_id)
+      .in(
+        "document_key",
+        missing.map((document) => document.key),
+      ),
+  ]);
+
+  let receiptEmailStatus: "sent" | "skipped" | "failed" = "skipped";
+
+  if (profileError || evidenceError) {
+    console.error("Unable to prepare legal acceptance receipt email", {
+      profileError,
+      evidenceError,
+    });
+  } else {
+    const recipientEmail = profile?.email ?? session.user.email;
+    const acceptedDocuments = missing.flatMap((document) => {
+      const record = (evidence ?? []).find(
+        (candidate) =>
+          candidate.document_key === document.key &&
+          candidate.document_version === document.version &&
+          candidate.content_hash === document.contentHash &&
+          candidate.action_type === document.actionType,
+      );
+
+      if (!record) return [];
+
+      return [
+        {
+          key: document.key,
+          title: document.title,
+          version: document.version,
+          contentHash: document.contentHash,
+          actionType: document.actionType,
+          acceptedAt: record.accepted_at,
+        },
+      ];
+    });
+
+    if (recipientEmail && acceptedDocuments.length === missing.length) {
+      const result = await sendAcceptanceReceiptEmail({
+        userId: session.user.id,
+        organizationId: session.org_id,
+        recipientEmail,
+        recipientName:
+          profile?.full_name ??
+          (typeof session.user.user_metadata.full_name === "string"
+            ? session.user.user_metadata.full_name
+            : null),
+        organizationName: session.org_name,
+        organizationCode: session.org_code,
+        acceptanceSource,
+        documents: acceptedDocuments,
+        privacyContactEmail: configuration.privacyContactEmail,
+      });
+      receiptEmailStatus = result.status;
+    } else {
+      console.error(
+        "Legal acceptance was recorded, but receipt evidence could not be resolved.",
+      );
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    receipt_email: receiptEmailStatus,
+  });
 }

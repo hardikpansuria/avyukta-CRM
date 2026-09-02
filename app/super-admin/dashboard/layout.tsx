@@ -39,6 +39,12 @@ export default async function SuperAdminDashboardLayout({
           >
             Organizations
           </Link>
+          <Link
+            className="block rounded-md px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950"
+            href="/super-admin/dashboard/legal-acceptances"
+          >
+            Legal Acceptances
+          </Link>
         </nav>
         <div className="mt-auto">
           <SignOutButton />

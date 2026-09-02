@@ -26,7 +26,7 @@ Production branch: `main`
 
 Production domain: `https://protech.avyukta.ca`
 
-Configure the same four variable names twice, with different environment scopes:
+Configure the application variables twice, with environment-specific values:
 
 | Variable | Preview value | Production value | Exposure |
 | --- | --- | --- | --- |
@@ -34,6 +34,8 @@ Configure the same four variable names twice, with different environment scopes:
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://bfsorhjuivyqlvqrkwgn.supabase.co` | `https://lnybnkbetjjluhpspvjy.supabase.co` | Browser-safe configuration |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Development publishable key | Production publishable key | Browser-safe configuration |
 | `SUPABASE_SERVICE_ROLE_KEY` | Development secret key | Production secret key | Sensitive, server only |
+| `RESEND_API_KEY` | Dedicated Development sending key | Dedicated Production sending key | Sensitive, server only |
+| `LEGAL_ACCEPTANCE_EMAIL_FROM` | `Avyukta CRM <no-reply@auth.avyukta.ca>` | `Avyukta CRM <no-reply@auth.avyukta.ca>` | Server-only sender identity |
 
 Rules:
 
@@ -92,6 +94,12 @@ Password:     dedicated Production Resend API key (stored securely)
 ```
 
 Use a dedicated Production sending key restricted to `auth.avyukta.ca` when that option is available. Do not reuse the website or Development key.
+
+The application also uses the Resend HTTPS API for legal-acceptance receipts.
+Configure `RESEND_API_KEY` and `LEGAL_ACCEPTANCE_EMAIL_FROM` in the matching
+Vercel environment. A receipt is attempted only after acceptance evidence is
+successfully recorded; an email-provider failure is logged and does not revoke
+the user's accepted status.
 
 Email-template checks:
 

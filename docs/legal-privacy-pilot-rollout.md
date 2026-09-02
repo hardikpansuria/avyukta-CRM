@@ -86,6 +86,8 @@ LEGAL_LOG_RETENTION
 LEGAL_RESEND_RETENTION
 LEGAL_SUPABASE_REGION
 LEGAL_DOCUMENTS_APPROVED
+RESEND_API_KEY
+LEGAL_ACCEPTANCE_EMAIL_FROM
 ```
 
 Production must use the verified value for `LEGAL_SUPABASE_REGION`, for example a clear approved statement identifying `us-west-2` as a United States region. Preview should identify the Development project's `us-east-2` region if the Preview deployment remains connected to crm-dev.
