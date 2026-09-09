@@ -8,6 +8,15 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 The main branch controls the ProTech production deployment.
 
+Before preparing or performing any release, incident recovery, GitHub ruleset
+change, integration-access change, or Vercel deployment operation, read
+`docs/source-control-and-production-release-safety.md`. The intended release
+path is `feature/* -> develop -> user-reviewed PR -> main -> Vercel Staged ->
+manual Promote -> protech.avyukta.ca`. Do not assume that Vercel's staged
+Production setting is active merely because it is documented; verify the
+Production Branch Tracking setting before each release until the runbook marks
+that configuration as confirmed.
+
 Never perform any of the following without explicit user authorization in the current conversation:
 
 - Commit while checked out on main

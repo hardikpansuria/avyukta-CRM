@@ -273,6 +273,10 @@ These items are not proven merely by entering environment variables:
 
 ## 11. Safe future deployment procedure
 
+Also follow `docs/source-control-and-production-release-safety.md`. It records the
+GitHub `Protect main` ruleset, external-integration scoping, and the staged
+Vercel Production promotion gate introduced after the 2026-09-04 incident.
+
 1. Complete and test changes on `develop` against `crm-dev`.
 2. Require lint, tests, production build, database tests, migration replay, and migration lint to pass.
 3. Back up Development database and all seven Storage buckets when the release requires it.
@@ -297,11 +301,12 @@ npx supabase migration list --linked
 npx supabase db push --linked --dry-run
 ```
 
-7. Merge the reviewed `develop` commit into `main`; do not delete or rewrite `main` history.
+7. Merge the reviewed `develop` pull request into `main`; do not push directly to `main`, and do not delete or rewrite `main` history.
 8. Apply only reviewed pending migrations to the confirmed Production project.
-9. Push `main`, wait for the Vercel Production deployment, and confirm the custom domain points to it.
-10. Run the Section 9 smoke tests and monitor Vercel and Supabase logs.
-11. Record the result and create verified Production backups.
+9. Confirm Vercel created a **Staged** Production deployment and that the custom domain still points to the previous Current deployment. If the deployment became Current automatically, stop and correct the Production Branch Tracking setting before the next release.
+10. Verify the staged deployment's commit SHA, run the Section 9 smoke tests, and inspect relevant Vercel logs.
+11. Manually promote the reviewed staged deployment to Production, then confirm the custom domain points to it.
+12. Monitor Vercel and Supabase logs, record the result, and create verified Production backups.
 
 Never run:
 
