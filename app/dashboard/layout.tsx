@@ -130,6 +130,11 @@ export default async function DashboardLayout({
         permissions.has(`${child.module}.view`),
       ),
     }));
+  const metadataName = session.user.user_metadata?.full_name;
+  const displayName =
+    typeof metadataName === "string" && metadataName.trim()
+      ? metadataName.trim()
+      : (session.user.email?.split("@")[0] ?? "User");
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
@@ -151,7 +156,10 @@ export default async function DashboardLayout({
         </div>
         <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
           <div className="mb-3 min-w-0 px-1">
-            <p className="truncate text-sm font-medium text-zinc-950 dark:text-zinc-50">
+            <p className="truncate text-[17px] font-semibold text-zinc-950 dark:text-zinc-50">
+              {displayName}
+            </p>
+            <p className="mt-0.5 truncate text-sm text-zinc-600 dark:text-zinc-300">
               {session.user.email}
             </p>
             <p className="mt-0.5 text-xs capitalize text-zinc-500 dark:text-zinc-400">

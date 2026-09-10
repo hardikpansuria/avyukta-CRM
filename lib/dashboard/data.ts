@@ -5,7 +5,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrgSession } from "@/lib/auth/verify-org-session";
 import { numeric } from "@/lib/invoices/data";
 
-import { dateInRange, type DashboardDateRange } from "./date-range";
+import {
+  dateInRange,
+  ontarioDayUtcRange,
+  ontarioDate,
+  type DashboardDateRange,
+} from "./date-range";
 
 type Row = Record<string, unknown>;
 
@@ -49,7 +54,6 @@ export type DashboardData = {
     customers: number;
     newCustomers: number;
     openQuoteCount: number;
-    openQuoteValue: number;
     poCount: number;
     poValue: number;
     activeJobs: number;
@@ -58,6 +62,8 @@ export type DashboardData = {
     completedYear: number;
     readyToInvoiceCount: number;
     readyToInvoiceValue: number;
+    unbilledJobsCount: number;
+    unbilledJobsValue: number;
     invoiced: number;
     paid: number;
     outstanding: number;
@@ -117,11 +123,12 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   const orgId = session.org_id;
   const today = new Date();
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = ontarioDate(today);
+  const todayUtcRange = ontarioDayUtcRange(today);
   const monthStart = `${todayIso.slice(0, 7)}-01`;
   const yearStart = `${todayIso.slice(0, 4)}-01-01`;
 
-  const [customersR, quotesR, jobsR, posR, allocationsR, invoicesR, completionsR, membersR, employeesR, eventsR, participantsR, revisionsR, activitiesR, notificationsR] =
+  const [customersR, quotesR, jobsR, posR, allocationsR, invoicesR, completionsR, membersR, employeesR, eventsR, participantsR, revisionsR, activitiesR, notificationsR, unbilledR] =
     await Promise.all([
       admin.from("customers").select("id,company_name,customer_status,record_status,assigned_sales_rep_id,created_at").eq("org_id", orgId).neq("record_status", "deleted"),
       admin.from("quotations").select("id,quotation_number,quotation_series_id,revision_number,customer_id,sales_rep_id,status,quote_date,created_at,project_name,grand_total_before_tax,grand_total_after_tax").eq("org_id", orgId).order("revision_number", { ascending: false }),
@@ -132,11 +139,12 @@ export async function getDashboardData(
       admin.from("job_work_completions").select("id,job_id,completion_date,completed_at,reopened_at").eq("org_id", orgId),
       admin.from("org_members").select("user_id,role,status").eq("org_id", orgId).eq("status", "active"),
       admin.from("employee_directory").select("id,system_user_id,employee_name,employee_role,employee_status").eq("org_id", orgId).eq("employee_status", "active"),
-      admin.from("public_calendar_events").select("id,event_type,event_status,starts_at,ends_at,job_id").eq("org_id", orgId).eq("event_status", "scheduled").lte("starts_at", `${todayIso}T23:59:59.999Z`).gte("ends_at", `${todayIso}T00:00:00.000Z`),
+      admin.from("public_calendar_events").select("id,event_type,event_status,starts_at,ends_at,job_id").eq("org_id", orgId).eq("event_status", "scheduled").lte("starts_at", todayUtcRange.end).gte("ends_at", todayUtcRange.start),
       admin.from("public_calendar_event_participants").select("event_id,employee_id").eq("org_id", orgId),
       admin.from("job_purchase_order_revisions").select("id,purchase_order_id,revision_number,revision_date,previous_po_amount,revised_po_amount,difference_amount").eq("org_id", orgId).gt("revision_number", 0).order("revision_date", { ascending: false }).limit(8),
       admin.from("customer_activities").select("id,description,linked_record_type,linked_record_id,occurred_at").eq("org_id", orgId).order("occurred_at", { ascending: false }).limit(10),
       admin.from("crm_notifications").select("id,title,message,href,read_at,created_at").eq("org_id", orgId).eq("user_id", session.user.id).order("created_at", { ascending: false }).limit(8),
+      admin.from("unbilled_job_balances").select("job_id,remaining_unbilled_amount").eq("org_id", orgId),
     ]);
 
   const customers = resultRows(customersR, "customers");
@@ -159,6 +167,9 @@ export async function getDashboardData(
   const revisionRows = resultRows(revisionsR, "PO revisions");
   const activityRows = resultRows(activitiesR, "activity");
   const notificationRows = resultRows(notificationsR, "notifications");
+  const unbilledRows = resultRows(unbilledR, "unbilled jobs").filter(
+    (row) => numeric(row.remaining_unbilled_amount) > 0,
+  );
 
   const profileIds = Array.from(new Set(members.map((member) => text(member.user_id, "")).filter(Boolean)));
   const profilesResult = profileIds.length
@@ -181,6 +192,20 @@ export async function getDashboardData(
   const openQuotes = latestQuotes.filter((quote) => openStatuses.has(text(quote.status, "")));
   const activeJobs = jobs.filter((job) => job.job_status === "work_in_process");
   const completedJobs = jobs.filter((job) => job.job_status === "work_completed");
+  const receivedJobIds = new Set(
+    [...activeJobs, ...completedJobs].map((job) => text(job.id)),
+  );
+  const filteredPOIds = new Set(filteredPOs.map((po) => text(po.id)));
+  const receivedPOAllocations = allocations.filter(
+    (allocation) =>
+      receivedJobIds.has(text(allocation.job_id)) &&
+      filteredPOIds.has(text(allocation.purchase_order_id)),
+  );
+  const receivedPOIds = new Set(
+    receivedPOAllocations.map((allocation) =>
+      text(allocation.purchase_order_id),
+    ),
+  );
   const readyJobs = completedJobs.filter((job) => !invoiceJobIds.has(text(job.id)));
   const outstanding = invoices.filter((invoice) => invoice.status === "sent");
   const overdueInvoices = outstanding.filter((invoice) => dateDiffDays(text(invoice.sent_at, text(invoice.invoice_date, ""))) > 30);
@@ -288,15 +313,22 @@ export async function getDashboardData(
       customers: customers.length,
       newCustomers: customers.filter((row) => dateInRange(text(row.created_at, ""), range)).length,
       openQuoteCount: openQuotes.length,
-      openQuoteValue: openQuotes.reduce((sum, row) => sum + numeric(row.grand_total_after_tax ?? row.grand_total_before_tax), 0),
-      poCount: filteredPOs.length,
-      poValue: filteredPOs.reduce((sum, row) => sum + numeric(row.current_po_total ?? row.combined_po_total), 0),
+      poCount: receivedPOIds.size,
+      poValue: receivedPOAllocations.reduce(
+        (sum, row) => sum + numeric(row.total_po_amount),
+        0,
+      ),
       activeJobs: activeJobs.length,
       completedJobs: completedJobs.length,
       completedMonth: completions.filter((row) => text(row.completion_date, "") >= monthStart).length,
       completedYear: completions.filter((row) => text(row.completion_date, "") >= yearStart).length,
       readyToInvoiceCount: readyJobs.length,
       readyToInvoiceValue: readyValue,
+      unbilledJobsCount: unbilledRows.length,
+      unbilledJobsValue: unbilledRows.reduce(
+        (sum, row) => sum + numeric(row.remaining_unbilled_amount),
+        0,
+      ),
       invoiced: filteredInvoices.reduce((sum, row) => sum + numeric(row.invoice_amount), 0),
       paid: paidInvoices.reduce((sum, row) => sum + numeric(row.invoice_amount), 0),
       outstanding: outstanding.reduce((sum, row) => sum + numeric(row.invoice_amount), 0),

@@ -22,4 +22,17 @@ describe("dashboard configuration", () => {
       "company-history",
     ]);
   });
+
+  it("does not register the removed owner sales and jobs sections", () => {
+    const permissions = new Set<PermissionKey>([
+      "dashboard.view",
+      "quotations.view",
+      "jobs.view",
+      "invoices.view",
+    ]);
+
+    expect(
+      visibleDashboardWidgets("owner", permissions).map((widget) => widget.id),
+    ).toEqual(["executive-summary", "attention", "financial"]);
+  });
 });
