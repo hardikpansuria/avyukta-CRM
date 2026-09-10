@@ -125,9 +125,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 24,
     left: 38,
-    width: 450,
+    right: 38,
     color: "#52525b",
     fontSize: 7.5,
+    lineHeight: 1,
+    textAlign: "center",
   },
   pageNumber: {
     position: "absolute",
@@ -406,10 +408,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 10,
     left: 24,
-    width: 480,
+    right: 24,
     color: "#52525b",
-    fontSize: 4.8,
+    fontSize: 7.5,
     lineHeight: 1,
+    textAlign: "center",
   },
 });
 
@@ -629,14 +632,7 @@ function FixedChrome({
       </View>
       <View fixed style={styles.footerRule} />
       <Text fixed style={styles.footerText}>
-        {organization.footer_text ||
-          [
-            organization.company_name,
-            organization.phone ? `Phone: ${organization.phone}` : null,
-            organization.fax ? `Fax: ${organization.fax}` : null,
-          ]
-            .filter(Boolean)
-            .join("  ")}
+        {organizationFooterText(organization)}
       </Text>
       <Text
         fixed
@@ -675,9 +671,24 @@ function TermsChrome({
       </View>
       <View fixed style={styles.termsFooterRule} />
       <Text fixed style={styles.termsFooterText}>
-        {organization.footer_text || companyLine}
+        {organizationFooterText(organization)}
       </Text>
     </>
+  );
+}
+
+function organizationFooterText(
+  organization: CustomerQuotationPdfData["organization"],
+) {
+  return (
+    organization.footer_text ||
+    [
+      organization.company_name,
+      organization.phone ? `Phone: ${organization.phone}` : null,
+      organization.fax ? `Fax: ${organization.fax}` : null,
+    ]
+      .filter(Boolean)
+      .join("  ")
   );
 }
 
