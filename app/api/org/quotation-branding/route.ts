@@ -50,7 +50,7 @@ export async function GET() {
   const { data, error } = await admin
     .from("organization_quotation_branding_versions")
     .select(
-      "id,company_name,phone,fax,footer_text,terms_html,terms_text,logo_storage_path,effective_from,effective_to,created_by,created_at",
+      "id,company_name,phone,fax,footer_text,terms_html,terms_text,quotation_intro_text,quotation_order_terms_text,logo_storage_path,effective_from,effective_to,created_by,created_at",
     )
     .eq("org_id", session.org_id)
     .order("effective_from", { ascending: false });
@@ -114,6 +114,11 @@ export async function POST(request: Request) {
   const phone = value(formData, "phone");
   const fax = value(formData, "fax");
   const footerText = value(formData, "footer_text");
+  const quotationIntroText = value(formData, "quotation_intro_text");
+  const quotationOrderTermsText = value(
+    formData,
+    "quotation_order_terms_text",
+  );
   const effectiveFrom = value(formData, "effective_from");
   const termsHtml = sanitizeCustomerQuotationHtml(
     value(formData, "terms_html"),
@@ -123,14 +128,25 @@ export async function POST(request: Request) {
   const logo = formData.get("logo");
 
   if (!companyName) return jsonError("Company name is required", 400);
+  if (!quotationIntroText || !quotationOrderTermsText) {
+    return jsonError(
+      "Quotation introduction and order terms statement are required",
+      400,
+    );
+  }
   if (!validDate(effectiveFrom)) {
     return jsonError("A valid effective date is required", 400);
   }
   if (companyName.length > 200 || phone.length > 60 || fax.length > 60) {
     return jsonError("Company name, phone, or fax is too long", 400);
   }
-  if (footerText.length > 2_000 || termsHtml.length > 100_000) {
-    return jsonError("Footer or terms and conditions are too long", 400);
+  if (
+    footerText.length > 2_000 ||
+    quotationIntroText.length > 2_000 ||
+    quotationOrderTermsText.length > 2_000 ||
+    termsHtml.length > 100_000
+  ) {
+    return jsonError("Quotation branding content is too long", 400);
   }
 
   const admin = createAdminClient();
@@ -179,6 +195,8 @@ export async function POST(request: Request) {
       footer_text: footerText || null,
       terms_html: termsHtml || null,
       terms_text: termsText || null,
+      quotation_intro_text: quotationIntroText,
+      quotation_order_terms_text: quotationOrderTermsText,
       logo_storage_path: logoStoragePath,
       effective_from: effectiveFrom,
       created_by: session.user.id,

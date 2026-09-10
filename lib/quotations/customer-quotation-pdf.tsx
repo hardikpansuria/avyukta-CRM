@@ -37,6 +37,8 @@ export type CustomerQuotationPdfData = {
     footer_text?: string | null;
     terms_html?: string | null;
     terms_text?: string | null;
+    quotation_intro_text: string;
+    quotation_order_terms_text: string;
   };
   logo_data_url?: string | null;
   document: {
@@ -809,10 +811,7 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
           </View>
         </View>
 
-        <Text style={styles.thankYou}>
-          Thank you, for the opportunity to quote on your requirements, please
-          call if you require further information.
-        </Text>
+        <Text style={styles.thankYou}>{organization.quotation_intro_text}</Text>
         <View style={styles.commercialRow}>
           <Text style={styles.commercialLabel}>Delivery:</Text>
           <Text style={styles.commercialValue}>
@@ -830,8 +829,7 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
           <Text style={styles.commercialValue}>{document.fob_text || "-"}</Text>
         </View>
         <Text style={styles.subjectText}>
-          Order Subject to {organization.company_name} Standard terms and
-          conditions of sale.
+          {organization.quotation_order_terms_text}
         </Text>
         <Text>Sincerely,</Text>
         <Text style={styles.signature}>

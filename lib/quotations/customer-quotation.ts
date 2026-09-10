@@ -6,6 +6,10 @@ import {
   isCustomerDocumentType,
   type CustomerDocumentType,
 } from "./customer-document-type";
+import {
+  DEFAULT_QUOTATION_INTRO_TEXT,
+  defaultQuotationOrderTermsText,
+} from "./commercial-copy";
 
 export type CustomerQuotationItemInput = {
   id?: string;
@@ -60,6 +64,8 @@ export type CustomerQuotationData = {
     footer_text: string;
     terms_html: string;
     terms_text: string;
+    quotation_intro_text: string;
+    quotation_order_terms_text: string;
     logo_signed_url: string | null;
     logo_storage_path: string | null;
     has_logo: boolean;
@@ -158,16 +164,22 @@ type BrandingRecord = {
   footer_text: string;
   terms_html: string;
   terms_text: string;
+  quotation_intro_text: string;
+  quotation_order_terms_text: string;
   logo_storage_path: string | null;
   effective_from: string | null;
   effective_to: string | null;
 };
 
 function fallbackBranding(organization: Record<string, unknown>): BrandingRecord {
+  const companyName =
+    text(organization.quotation_company_name) ||
+    text(organization.name) ||
+    "Organization";
+
   return {
     id: null,
-    company_name:
-      text(organization.quotation_company_name) || text(organization.name),
+    company_name: companyName,
     phone: text(organization.quotation_phone),
     fax: text(organization.quotation_fax),
     footer_text: text(organization.quotation_footer_text),
@@ -175,6 +187,9 @@ function fallbackBranding(organization: Record<string, unknown>): BrandingRecord
       organization.quotation_terms_html,
     ),
     terms_text: text(organization.quotation_terms_text),
+    quotation_intro_text: DEFAULT_QUOTATION_INTRO_TEXT,
+    quotation_order_terms_text:
+      defaultQuotationOrderTermsText(companyName),
     logo_storage_path: text(organization.logo_storage_path) || null,
     effective_from: null,
     effective_to: null,
@@ -191,7 +206,7 @@ async function effectiveBranding(
   const { data, error } = await admin
     .from("organization_quotation_branding_versions")
     .select(
-      "id,company_name,phone,fax,footer_text,terms_html,terms_text,logo_storage_path,effective_from,effective_to",
+      "id,company_name,phone,fax,footer_text,terms_html,terms_text,quotation_intro_text,quotation_order_terms_text,logo_storage_path,effective_from,effective_to",
     )
     .eq("org_id", orgId)
     .lte("effective_from", effectiveDate)
@@ -212,6 +227,11 @@ async function effectiveBranding(
       footer_text: text(data.footer_text),
       terms_html: sanitizeCustomerQuotationHtml(data.terms_html),
       terms_text: text(data.terms_text),
+      quotation_intro_text:
+        text(data.quotation_intro_text) || fallback.quotation_intro_text,
+      quotation_order_terms_text:
+        text(data.quotation_order_terms_text) ||
+        fallback.quotation_order_terms_text,
       logo_storage_path: text(data.logo_storage_path) || null,
       effective_from: dateOnly(data.effective_from),
       effective_to: dateOnly(data.effective_to),
@@ -237,6 +257,12 @@ function snapshottedBranding(
       document.organization_terms_html_snapshot,
     ),
     terms_text: text(document.organization_terms_text_snapshot),
+    quotation_intro_text:
+      text(document.organization_quotation_intro_snapshot) ||
+      fallback.quotation_intro_text,
+    quotation_order_terms_text:
+      text(document.organization_quotation_order_terms_snapshot) ||
+      fallback.quotation_order_terms_text,
     logo_storage_path:
       text(document.organization_logo_path_snapshot) || null,
     effective_from: fallback.effective_from,
@@ -578,6 +604,8 @@ export async function getCustomerQuotationData(
         footer_text: branding.footer_text,
         terms_html: branding.terms_html,
         terms_text: branding.terms_text,
+        quotation_intro_text: branding.quotation_intro_text,
+        quotation_order_terms_text: branding.quotation_order_terms_text,
         logo_signed_url: logoSignedUrl,
         logo_storage_path: branding.logo_storage_path,
         has_logo: Boolean(branding.logo_storage_path),

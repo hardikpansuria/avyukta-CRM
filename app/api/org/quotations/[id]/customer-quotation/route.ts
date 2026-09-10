@@ -49,6 +49,9 @@ function brandingSnapshot(
     organization_footer_snapshot: organization.footer_text || null,
     organization_terms_html_snapshot: organization.terms_html || null,
     organization_terms_text_snapshot: organization.terms_text || null,
+    organization_quotation_intro_snapshot: organization.quotation_intro_text,
+    organization_quotation_order_terms_snapshot:
+      organization.quotation_order_terms_text,
   };
 }
 
