@@ -61,6 +61,7 @@ type Quotation = {
   expiry_date?: string | null;
   project_name?: string | null;
   customer_rfq_number?: string | null;
+  revision_number?: number | string | null;
   status?: string | null;
   grand_total?: number | string | null;
   updated_at?: string | null;
@@ -317,6 +318,7 @@ export default function QuotationsPage() {
                 <TableHeader className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900/80 dark:text-zinc-400">
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Quotation Number</TableHead>
+                    <TableHead>Revision</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Project</TableHead>
                     <TableHead>Quote Date</TableHead>
@@ -353,6 +355,9 @@ export default function QuotationsPage() {
                     >
                       <TableCell className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
                         {quotation.quotation_number ?? "Pending"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                        {quotation.revision_number ?? 0}
                       </TableCell>
                       <TableCell className="font-medium text-zinc-950 dark:text-zinc-50">
                         {quotation.customer?.company_name ?? "-"}
@@ -413,6 +418,7 @@ export default function QuotationsPage() {
                     <div>
                       <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
                         {quotation.quotation_number ?? "Pending"}
+                        <span className="ml-2">Rev {quotation.revision_number ?? 0}</span>
                       </p>
                       <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-zinc-50">
                         {quotation.customer?.company_name ?? "-"}
@@ -470,10 +476,10 @@ function QuotationTableSkeleton() {
     <div className="space-y-3">
       {Array.from({ length: 6 }).map((_, index) => (
         <div
-          className="grid gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800 md:grid-cols-[120px_1fr_1fr_110px_110px_1fr_1fr_130px_110px]"
+          className="grid gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800 md:grid-cols-[120px_70px_1fr_1fr_110px_110px_1fr_1fr_130px_110px]"
           key={index}
         >
-          {Array.from({ length: 9 }).map((__, cellIndex) => (
+          {Array.from({ length: 10 }).map((__, cellIndex) => (
             <Skeleton className="h-5 rounded-md" key={cellIndex} />
           ))}
         </div>

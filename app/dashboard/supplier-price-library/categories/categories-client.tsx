@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   ArchiveIcon,
@@ -174,7 +175,14 @@ export function CategoriesClient({
               ) : null}
               {!loading ? categories.map((category) => (
                 <TableRow key={category.id}>
-                  <TableCell className="font-medium">{category.category_name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      className="text-primary underline-offset-4 hover:underline"
+                      href={`/dashboard/supplier-price-library/categories/${category.id}`}
+                    >
+                      {category.category_name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{category.material_count ?? 0}</TableCell>
                   <TableCell><Badge variant={category.is_archived ? "outline" : "secondary"}>{category.is_archived ? "Archived" : "Active"}</Badge></TableCell>
                   <TableCell>{formatDate(category.created_at)}</TableCell>

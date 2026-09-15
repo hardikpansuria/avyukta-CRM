@@ -6,6 +6,7 @@ import {
 } from "@/lib/employees/access";
 import {
   fetchSkillsForEmployees,
+  isDuplicateEmployeeCodeError,
   isDuplicateEmailError,
   jsonError,
   normalizedEmail,
@@ -19,6 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 type EmployeeRow = Omit<DirectoryEmployee, "skills">;
 
 type CreateEmployeeBody = {
+  employee_code?: unknown;
   employee_name?: unknown;
   email?: unknown;
   contact_number?: unknown;
@@ -69,14 +71,14 @@ export async function GET(request: Request) {
   let query = admin
     .from("employee_directory")
     .select(
-      "id, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at",
+      "id, employee_code, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at",
       { count: "exact" },
     )
     .eq("org_id", session.org_id);
 
   if (search) {
     query = query.or(
-      `employee_name.ilike.%${search}%,email.ilike.%${search}%`,
+      `employee_code.ilike.%${search}%,employee_name.ilike.%${search}%,email.ilike.%${search}%`,
     );
   }
   if (role) query = query.eq("employee_role", role);
@@ -132,12 +134,16 @@ export async function POST(request: Request) {
   }
 
   const employeeName = optionalText(body.employee_name);
+  const employeeCode = optionalText(body.employee_code);
   const email = normalizedEmail(body.email);
   const employeeRole = body.employee_role ?? "worker";
   const employeeStatus = body.employee_status ?? "active";
   const skillIds = uniqueStringIds(body.skill_ids);
 
   if (!employeeName) return jsonError("Employee name is required", 400);
+  if (employeeCode && employeeCode.length > 50) {
+    return jsonError("Employee ID must be 50 characters or fewer", 400);
+  }
   if (email.error) return jsonError(email.error, 400);
   if (!isEmployeeDirectoryRole(employeeRole)) {
     return jsonError("Role must be admin, sales, accounts, or worker", 400);
@@ -162,6 +168,7 @@ export async function POST(request: Request) {
     .from("employee_directory")
     .insert({
       org_id: session.org_id,
+      employee_code: employeeCode,
       employee_name: employeeName,
       email: email.value,
       contact_number: optionalText(body.contact_number),
@@ -173,11 +180,17 @@ export async function POST(request: Request) {
       updated_by: session.user.id,
     })
     .select(
-      "id, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at",
+      "id, employee_code, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at",
     )
     .single();
 
   if (employeeError) {
+    if (isDuplicateEmployeeCodeError(employeeError)) {
+      return jsonError(
+        "An employee with this Employee ID already exists.",
+        409,
+      );
+    }
     if (isDuplicateEmailError(employeeError)) {
       return jsonError(
         "An employee with this email already exists in the Employee Directory.",

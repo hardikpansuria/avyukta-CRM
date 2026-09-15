@@ -277,7 +277,12 @@ export function SuppliersClient({
                 ? suppliers.map((supplier) => (
                     <TableRow key={supplier.id}>
                       <TableCell className="font-medium">
-                        {supplier.company_name}
+                        <Link
+                          className="text-primary underline-offset-4 hover:underline"
+                          href={`/dashboard/supplier-price-library/suppliers/${supplier.id}`}
+                        >
+                          {supplier.company_name}
+                        </Link>
                       </TableCell>
                       <TableCell>{supplier.contact_person ?? "—"}</TableCell>
                       <TableCell>{supplier.email_address ?? "—"}</TableCell>

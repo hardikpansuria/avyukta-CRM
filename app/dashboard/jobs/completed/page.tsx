@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { WorkflowIcon } from "lucide-react";
+import { ArrowDownAZIcon, ArrowUpAZIcon, CalendarArrowDownIcon, CalendarArrowUpIcon, ListFilterIcon, WorkflowIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +17,16 @@ import type { JobListItem } from "@/lib/jobs/types";
 import { JobStatusTabs } from "../job-status-tabs";
 
 type Filters = { completionFrom: string; completionTo: string; customer: string; salesperson: string; jobNumber: string; quotationNumber: string; poNumber: string };
+type SortValue = "completion_date:desc" | "completion_date:asc" | "company_name:asc" | "company_name:desc" | "job_number:asc" | "job_number:desc";
 const emptyFilters: Filters = { completionFrom: "", completionTo: "", customer: "", salesperson: "", jobNumber: "", quotationNumber: "", poNumber: "" };
+const sortLabels: Record<SortValue, string> = {
+  "completion_date:desc": "Completion date: newest",
+  "completion_date:asc": "Completion date: oldest",
+  "company_name:asc": "Company name: A–Z",
+  "company_name:desc": "Company name: Z–A",
+  "job_number:asc": "Job number: ascending",
+  "job_number:desc": "Job number: descending",
+};
 
 function date(value?: string | null) {
   if (!value) return "-";
@@ -31,16 +41,20 @@ export default function JobCompletedPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortValue, setSortValue] = useState<SortValue>("completion_date:desc");
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ status: "work_completed", page: String(page), pageSize: "20" });
+    const [sort, direction] = sortValue.split(":");
+    params.set("sort", sort);
+    params.set("direction", direction);
     Object.entries(applied).forEach(([key, value]) => {
       if (!value) return;
       const names: Record<string, string> = { completionFrom: "completion_from", completionTo: "completion_to", jobNumber: "job_number", quotationNumber: "quotation_number", poNumber: "po_number" };
       params.set(names[key] ?? key, value);
     });
     return params.toString();
-  }, [applied, page]);
+  }, [applied, page, sortValue]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -64,7 +78,7 @@ export default function JobCompletedPage() {
   }
 
   return <div className="mx-auto max-w-7xl space-y-6">
-    <div><div className="flex items-center gap-2 text-sm text-zinc-500"><WorkflowIcon className="size-4" />Job on the Go</div><h1 className="mt-1 text-2xl font-semibold">Job Completed</h1><p className="mt-1 text-sm text-zinc-500">Completed jobs, newest completion first.</p></div>
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="flex items-center gap-2 text-sm text-zinc-500"><WorkflowIcon className="size-4" />Job on the Go</div><h1 className="mt-1 text-2xl font-semibold">Job Completed</h1><p className="mt-1 text-sm text-zinc-500">Completed purchase-order jobs.</p></div><DropdownMenu><DropdownMenuTrigger render={<Button variant="outline" />}><ListFilterIcon /> Sort by: {sortLabels[sortValue]}</DropdownMenuTrigger><DropdownMenuContent align="end" className="min-w-64"><DropdownMenuLabel>Sort completed jobs</DropdownMenuLabel><DropdownMenuRadioGroup value={sortValue} onValueChange={(value) => { setSortValue(value as SortValue); setPage(1); }}><DropdownMenuRadioItem value="completion_date:desc"><CalendarArrowDownIcon /> Completion date: newest</DropdownMenuRadioItem><DropdownMenuRadioItem value="completion_date:asc"><CalendarArrowUpIcon /> Completion date: oldest</DropdownMenuRadioItem><DropdownMenuRadioItem value="company_name:asc"><ArrowDownAZIcon /> Company name: A–Z</DropdownMenuRadioItem><DropdownMenuRadioItem value="company_name:desc"><ArrowUpAZIcon /> Company name: Z–A</DropdownMenuRadioItem><DropdownMenuRadioItem value="job_number:asc">Job number: ascending</DropdownMenuRadioItem><DropdownMenuRadioItem value="job_number:desc">Job number: descending</DropdownMenuRadioItem></DropdownMenuRadioGroup></DropdownMenuContent></DropdownMenu></div>
     <JobStatusTabs active="po_completed" />
     <Card><CardContent className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -6,6 +6,7 @@ import {
 } from "@/lib/employees/access";
 import {
   fetchSkillsForEmployees,
+  isDuplicateEmployeeCodeError,
   isDuplicateEmailError,
   jsonError,
   normalizedEmail,
@@ -19,6 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 type EmployeeRow = Omit<DirectoryEmployee, "skills">;
 type UpdateEmployeeBody = {
+  employee_code?: unknown;
   employee_name?: unknown;
   email?: unknown;
   contact_number?: unknown;
@@ -29,7 +31,7 @@ type UpdateEmployeeBody = {
 };
 
 const employeeColumns =
-  "id, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at";
+  "id, employee_code, employee_name, email, contact_number, employee_role, notes, employee_status, source_type, system_user_id, created_at, updated_at";
 
 export async function GET(
   _request: Request,
@@ -91,6 +93,14 @@ export async function PATCH(
   if (!existing) return jsonError("Employee not found", 404);
 
   const updates: Record<string, string | null> = {};
+  if (body.employee_code !== undefined) {
+    const employeeCode = optionalText(body.employee_code);
+    if (!employeeCode) return jsonError("Employee ID is required", 400);
+    if (employeeCode.length > 50) {
+      return jsonError("Employee ID must be 50 characters or fewer", 400);
+    }
+    updates.employee_code = employeeCode;
+  }
   if (body.employee_name !== undefined) {
     const employeeName = optionalText(body.employee_name);
     if (!employeeName) return jsonError("Employee name is required", 400);
@@ -157,6 +167,12 @@ export async function PATCH(
       .select(employeeColumns)
       .maybeSingle();
     if (error) {
+      if (isDuplicateEmployeeCodeError(error)) {
+        return jsonError(
+          "An employee with this Employee ID already exists.",
+          409,
+        );
+      }
       if (isDuplicateEmailError(error)) {
         return jsonError(
           "An employee with this email already exists in the Employee Directory.",
@@ -181,6 +197,7 @@ export async function PATCH(
         await admin
           .from("employee_directory")
           .update({
+            employee_code: existing.employee_code,
             employee_name: existing.employee_name,
             email: existing.email,
             contact_number: existing.contact_number,
@@ -204,4 +221,49 @@ export async function PATCH(
       skills: skillsResult.data.get(employeeId) ?? [],
     },
   });
+}
+
+export async function DELETE(
+  _request: Request,
+  context: RouteContext<"/api/org/employees/[employeeId]">,
+) {
+  const session = await verifyOrgSession();
+  if (!session) return jsonError("Unauthorized", 401);
+  const denied = await requireOrgPermission(session, "employees", "delete");
+  if (denied) return denied;
+
+  const { employeeId } = await context.params;
+  const admin = createAdminClient();
+  const { data: employee, error: fetchError } = await admin
+    .from("employee_directory")
+    .select("id, employee_name, source_type")
+    .eq("id", employeeId)
+    .eq("org_id", session.org_id)
+    .maybeSingle();
+  if (fetchError) return jsonError("Unable to fetch employee", 500);
+  if (!employee) return jsonError("Employee not found", 404);
+  if (employee.source_type === "system") {
+    return jsonError(
+      "CRM users cannot be removed from the Employee List. Manage their access from User Management.",
+      409,
+    );
+  }
+
+  const { data: removed, error } = await admin
+    .from("employee_directory")
+    .delete()
+    .eq("id", employeeId)
+    .eq("org_id", session.org_id)
+    .eq("source_type", "manual")
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    return jsonError(
+      "This employee cannot be removed because they are linked to job or calendar history. Set the employee to Inactive instead.",
+      409,
+    );
+  }
+  if (!removed) return jsonError("Employee not found", 404);
+
+  return Response.json({ removed: true });
 }

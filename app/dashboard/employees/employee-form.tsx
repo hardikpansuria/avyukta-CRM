@@ -42,6 +42,7 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
   const router = useRouter();
   const [employee, setEmployee] = useState<DirectoryEmployee | null>(null);
   const [skills, setSkills] = useState<EmployeeSkill[]>([]);
+  const [employeeCode, setEmployeeCode] = useState("");
   const [employeeName, setEmployeeName] = useState("");
   const [email, setEmail] = useState("");
   const [contactNumber, setContactNumber] = useState("");
@@ -83,6 +84,7 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
           if (!cancelled) {
             const value = payload.employee;
             setEmployee(value);
+            setEmployeeCode(value.employee_code);
             setEmployeeName(value.employee_name);
             setEmail(value.email ?? "");
             setContactNumber(value.contact_number ?? "");
@@ -135,6 +137,7 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
           method: employeeId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            employee_code: employeeCode,
             employee_name: employeeName,
             email,
             contact_number: contactNumber,
@@ -195,6 +198,14 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
             <CardDescription>Fields marked required must be completed.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-5 sm:grid-cols-2">
+            <Field label="Employee ID">
+              <Input
+                maxLength={50}
+                placeholder="Auto-generated if left blank"
+                value={employeeCode}
+                onChange={(event) => setEmployeeCode(event.target.value)}
+              />
+            </Field>
             <Field label="Employee Name" required>
               <Input value={employeeName} onChange={(event) => setEmployeeName(event.target.value)} required />
             </Field>
