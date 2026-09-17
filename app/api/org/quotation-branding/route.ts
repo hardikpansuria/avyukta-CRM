@@ -2,6 +2,8 @@ import { Buffer } from "node:buffer";
 
 import { NextResponse } from "next/server";
 
+import { buildAuditChanges } from "@/lib/admin-audit/changes";
+import { recordAdminAuditLog } from "@/lib/admin-audit/server";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import {
   richTextToPlainText,
@@ -152,7 +154,9 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: inherited } = await admin
     .from("organization_quotation_branding_versions")
-    .select("logo_storage_path")
+    .select(
+      "company_name,phone,fax,footer_text,terms_text,quotation_intro_text,quotation_order_terms_text,logo_storage_path,effective_from",
+    )
     .eq("org_id", session.org_id)
     .lte("effective_from", effectiveFrom)
     .order("effective_from", { ascending: false })
@@ -219,6 +223,65 @@ export async function POST(request: Request) {
         .from("crm-assets")
         .createSignedUrl(version.logo_storage_path, 10 * 60)
     : { data: null };
+
+  const changes = buildAuditChanges(
+    {
+      company_name: inherited?.company_name,
+      phone: inherited?.phone,
+      fax: inherited?.fax,
+      footer_text: inherited?.footer_text,
+      effective_from: inherited?.effective_from,
+      logo: inherited?.logo_storage_path ? "Included" : "Not included",
+    },
+    {
+      company_name: companyName,
+      phone: phone || null,
+      fax: fax || null,
+      footer_text: footerText || null,
+      effective_from: effectiveFrom,
+      logo: logoStoragePath ? "Included" : "Not included",
+    },
+    {
+      company_name: "Company Name",
+      phone: "Phone",
+      fax: "Fax",
+      footer_text: "Footer",
+      effective_from: "Effective From",
+      logo: "Company Logo",
+    },
+  );
+  if (inherited?.quotation_intro_text !== quotationIntroText) {
+    changes.push({
+      field: "Quotation Introduction",
+      from: inherited?.quotation_intro_text ? "Previous content" : null,
+      to: "Updated content",
+    });
+  }
+  if (inherited?.quotation_order_terms_text !== quotationOrderTermsText) {
+    changes.push({
+      field: "Order Terms Statement",
+      from: inherited?.quotation_order_terms_text ? "Previous content" : null,
+      to: "Updated content",
+    });
+  }
+  if ((inherited?.terms_text ?? "") !== termsText) {
+    changes.push({
+      field: "Terms and Conditions",
+      from: inherited?.terms_text ? "Previous content" : null,
+      to: termsText ? "Updated content" : null,
+    });
+  }
+  await recordAdminAuditLog(session, {
+    action: inherited ? "edit" : "add",
+    module: "company_branding",
+    targetType: "quotation_branding_version",
+    targetId: version.id,
+    targetLabel: companyName,
+    summary: inherited
+      ? "Created a new company branding version"
+      : "Added company branding",
+    changes,
+  });
 
   return NextResponse.json(
     {

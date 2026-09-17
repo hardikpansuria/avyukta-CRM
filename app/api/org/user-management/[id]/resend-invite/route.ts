@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { recordAdminAuditLog } from "@/lib/admin-audit/server";
 import { buildAuthRedirectUrl } from "@/lib/auth/auth-redirect-url";
 import { buildInvitationEmailData } from "@/lib/auth/invitation-email";
 import { isPendingInvitation } from "@/lib/auth/invitation-status";
@@ -98,6 +99,16 @@ export async function POST(
     });
     return jsonError("Unable to resend the invitation email", 500);
   }
+
+  await recordAdminAuditLog(session, {
+    action: "edit",
+    module: "invite_employee",
+    targetType: "organization_member",
+    targetId: membership.id,
+    targetLabel: `${fullName} (${email})`,
+    summary: "Resent a CRM invitation",
+    changes: [{ field: "Invitation email", from: "Previously sent", to: "Resent" }],
+  });
 
   return NextResponse.json({
     message: `Invitation resent to ${email}.`,

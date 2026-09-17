@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { buildAuditChanges } from "@/lib/admin-audit/changes";
+import { recordAdminAuditLog } from "@/lib/admin-audit/server";
 import { isPendingInvitation } from "@/lib/auth/invitation-status";
 import { authorizeOrgRequest } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -76,6 +78,16 @@ export async function PATCH(
   if (!currentEmployee) {
     return jsonError("Employee not found", 404);
   }
+
+  const { data: targetProfile } = await admin
+    .from("profiles")
+    .select("full_name,email")
+    .eq("id", currentEmployee.user_id)
+    .maybeSingle();
+  const targetLabel =
+    targetProfile?.full_name?.trim() ||
+    targetProfile?.email ||
+    currentEmployee.user_id;
 
   if (
     session.role !== "admin" &&
@@ -215,6 +227,28 @@ export async function PATCH(
         );
       }
 
+      await recordAdminAuditLog(session, {
+        action: "edit",
+        module: "crm_users",
+        targetType: "organization_member",
+        targetId: currentEmployee.id,
+        targetLabel,
+        summary: "Transferred administrator access and updated a CRM user",
+        changes: buildAuditChanges(
+          { role: currentEmployee.role, status: currentEmployee.status },
+          {
+            role: transferredEmployee.role,
+            status: transferredEmployee.status,
+            administrator_transferred_to: successor.user_id,
+          },
+          {
+            role: "Role",
+            status: "Status",
+            administrator_transferred_to: "Administrator transferred to user",
+          },
+        ),
+      });
+
       return NextResponse.json({
         employee: transferredEmployee,
         message: "Administrator access transferred.",
@@ -247,6 +281,20 @@ export async function PATCH(
   if (!data) {
     return jsonError("Employee not found", 404);
   }
+
+  await recordAdminAuditLog(session, {
+    action: "edit",
+    module: "crm_users",
+    targetType: "organization_member",
+    targetId: currentEmployee.id,
+    targetLabel,
+    summary: "Updated a CRM user",
+    changes: buildAuditChanges(
+      { role: currentEmployee.role, status: currentEmployee.status },
+      { role: data.role, status: data.status },
+      { role: "Role", status: "Status" },
+    ),
+  });
 
   return NextResponse.json({
     employee: {
@@ -305,6 +353,17 @@ export async function DELETE(
     );
   }
 
+  const { data: targetProfile } = await admin
+    .from("profiles")
+    .select("full_name,email")
+    .eq("id", membership.user_id)
+    .maybeSingle();
+  const targetLabel =
+    targetProfile?.full_name?.trim() ||
+    targetProfile?.email ||
+    authUserData.user.email ||
+    membership.user_id;
+
   const { count, error: membershipCountError } = await admin
     .from("org_members")
     .select("id", { count: "exact", head: true })
@@ -333,6 +392,19 @@ export async function DELETE(
       return jsonError("Unable to delete the pending invitation", 500);
     }
   }
+
+  await recordAdminAuditLog(session, {
+    action: "delete",
+    module: "invite_employee",
+    targetType: "organization_member",
+    targetId: membership.id,
+    targetLabel,
+    summary: "Deleted a pending CRM invitation",
+    changes: [
+      { field: "Role", from: membership.role, to: null },
+      { field: "Status", from: membership.status, to: null },
+    ],
+  });
 
   return NextResponse.json({
     message: "Pending invitation deleted.",

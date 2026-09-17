@@ -119,6 +119,15 @@ export async function PATCH(
     if (!isEmployeeDirectoryRole(body.employee_role)) {
       return jsonError("Role must be admin, sales, accounts, or worker", 400);
     }
+    if (
+      existing.source_type === "system" &&
+      body.employee_role !== existing.employee_role
+    ) {
+      return jsonError(
+        "CRM user roles must be changed from User Management.",
+        409,
+      );
+    }
     updates.employee_role = body.employee_role;
   }
   if (body.employee_status !== undefined) {

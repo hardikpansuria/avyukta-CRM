@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { recordAdminAuditLog } from "@/lib/admin-audit/server";
 import { buildAuthRedirectUrl } from "@/lib/auth/auth-redirect-url";
 import { findAuthUserByEmail } from "@/lib/auth/find-auth-user-by-email";
 import { buildInvitationEmailData } from "@/lib/auth/invitation-email";
@@ -185,15 +186,19 @@ export async function POST(request: Request) {
     return jsonError("Unable to save employee profile", 500);
   }
 
-  const { error: membershipError } = await admin.from("org_members").insert({
-    id: crypto.randomUUID(),
-    user_id: userId,
-    org_id: session.org_id,
-    role,
-    status: "active",
-  });
+  const { data: membership, error: membershipError } = await admin
+    .from("org_members")
+    .insert({
+      id: crypto.randomUUID(),
+      user_id: userId,
+      org_id: session.org_id,
+      role,
+      status: "active",
+    })
+    .select("id")
+    .single();
 
-  if (membershipError) {
+  if (membershipError || !membership) {
     if (membershipError.code === "23505") {
       return jsonError(
         "This user is already a member of your organization",
@@ -203,6 +208,19 @@ export async function POST(request: Request) {
 
     return jsonError("Unable to create employee membership", 500);
   }
+
+  await recordAdminAuditLog(session, {
+    action: "add",
+    module: "invite_employee",
+    targetType: "organization_member",
+    targetId: membership.id,
+    targetLabel: `${fullName} (${email})`,
+    summary: "Invited a CRM user",
+    changes: [
+      { field: "Role", from: null, to: role },
+      { field: "Status", from: null, to: "active" },
+    ],
+  });
 
   return NextResponse.json(
     {

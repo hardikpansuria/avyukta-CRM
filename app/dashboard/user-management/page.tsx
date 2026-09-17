@@ -16,5 +16,5 @@ export default async function UserManagementPage() {
     redirect("/dashboard/access-denied?module=settings");
   }
 
-  return <UserManagementClient />;
+  return <UserManagementClient isAdmin={session.role === "admin"} />;
 }

@@ -17,7 +17,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label, RequiredMark } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -27,6 +35,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { EmployeeDirectoryRole, EmployeeDirectoryStatus } from "@/lib/employees/access";
+import {
+  isEmployeeRoleChangeLocked,
+  requiresDepartmentRoleConfirmation,
+} from "@/lib/employees/role-change";
 import type { DirectoryEmployee, EmployeeSkill } from "@/lib/employees/types";
 
 const roleOptions: Array<[EmployeeDirectoryRole, string]> = [
@@ -53,6 +65,7 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
   const [isLoading, setIsLoading] = useState(Boolean(employeeId));
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [pendingRole, setPendingRole] = useState<EmployeeDirectoryRole | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +128,18 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
     () => skills.filter((skill) => selectedSkillIds.includes(skill.id)),
     [selectedSkillIds, skills],
   );
+  const roleIsLocked = employee
+    ? isEmployeeRoleChangeLocked(employee.source_type)
+    : false;
+
+  function requestRoleChange(nextRole: EmployeeDirectoryRole) {
+    if (roleIsLocked || nextRole === role) return;
+    if (requiresDepartmentRoleConfirmation(role, nextRole)) {
+      setPendingRole(nextRole);
+      return;
+    }
+    setRole(nextRole);
+  }
 
   function toggleSkill(skill: EmployeeSkill, checked: boolean) {
     if (!skill.is_active && !selectedSkillIds.includes(skill.id)) return;
@@ -216,13 +241,21 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
               <Input value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} />
             </Field>
             <Field label="Role" required>
-              <Select value={role} onValueChange={(value) => setRole(value as EmployeeDirectoryRole)}>
+              <Select
+                disabled={roleIsLocked}
+                value={role}
+                onValueChange={(value) => requestRoleChange(value as EmployeeDirectoryRole)}
+              >
                 <SelectTrigger className="w-full"><SelectValue>{roleOptions.find(([value]) => value === role)?.[1] ?? "Select role"}</SelectValue></SelectTrigger>
                 <SelectContent align="start">
                   {roleOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              {role === "worker" ? (
+              {roleIsLocked ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This role is managed in Admin Settings under CRM users.
+                </p>
+              ) : role === "worker" ? (
                 <p className="mt-2 text-xs text-muted-foreground">
                   Worker is for internal employee records only and does not provide CRM access.
                 </p>
@@ -281,6 +314,39 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
           </div>
         </Card>
       </form>
+
+      <Dialog
+        open={Boolean(pendingRole)}
+        onOpenChange={(open) => {
+          if (!open && !isSaving) setPendingRole(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm role change</DialogTitle>
+            <DialogDescription>
+              Change {employeeName || "this employee"} from {roleOptions.find(([value]) => value === role)?.[1]} to {roleOptions.find(([value]) => value === pendingRole)?.[1]}?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            This changes how the employee is categorized in the Employee Directory.
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingRole(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (pendingRole) setRole(pendingRole);
+                setPendingRole(null);
+              }}
+            >
+              Confirm role change
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -288,7 +354,10 @@ export function EmployeeForm({ employeeId }: { employeeId?: string }) {
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <Label className="mb-2 block" required={required}>{label}</Label>
+      <Label className="mb-2 inline-flex items-baseline gap-1">
+        {label}
+        {required ? <RequiredMark className="relative top-px" /> : null}
+      </Label>
       {children}
     </div>
   );
