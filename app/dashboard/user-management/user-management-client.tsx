@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { requiresCrmRoleConfirmation } from "@/lib/employees/role-change";
 
 import { CompanyBrandingSettings } from "./company-branding-settings";
 import { AdminAuditLogs } from "./admin-audit-logs";
@@ -83,6 +84,18 @@ type AdminDemotionRequest = {
   role: string;
 };
 
+type CrmRoleChangeRequest = {
+  employee: Employee;
+  role: string;
+};
+
+function roleLabel(role: string) {
+  if (role === "accountant") return "Accountant";
+  if (role === "sales") return "Sales";
+  if (role === "admin") return "Admin";
+  return role;
+}
+
 function formatDate(value: string | null) {
   if (!value) {
     return "-";
@@ -127,6 +140,8 @@ export function UserManagementClient({ isAdmin }: { isAdmin: boolean }) {
   const [adminConfirmation, setAdminConfirmation] = useState("");
   const [adminDemotionRequest, setAdminDemotionRequest] =
     useState<AdminDemotionRequest | null>(null);
+  const [crmRoleChangeRequest, setCrmRoleChangeRequest] =
+    useState<CrmRoleChangeRequest | null>(null);
   const [auditRefreshKey, setAuditRefreshKey] = useState(0);
 
   async function loadEmployees() {
@@ -410,6 +425,16 @@ export function UserManagementClient({ isAdmin }: { isAdmin: boolean }) {
   }
 
   function requestEmployeeUpdate(employee: Employee, update: EmployeeUpdate) {
+    if (
+      update.role !== undefined &&
+      requiresCrmRoleConfirmation(employee.role, update.role)
+    ) {
+      setError(null);
+      setMessage(null);
+      setCrmRoleChangeRequest({ employee, role: update.role });
+      return;
+    }
+
     if (employee.role !== "admin" && update.role === "admin") {
       setError(null);
       setMessage(null);
@@ -430,6 +455,13 @@ export function UserManagementClient({ isAdmin }: { isAdmin: boolean }) {
     }
 
     continueEmployeeUpdate(employee, update);
+  }
+
+  function confirmCrmRoleChange() {
+    if (!crmRoleChangeRequest) return;
+    const { employee, role: nextRole } = crmRoleChangeRequest;
+    setCrmRoleChangeRequest(null);
+    continueEmployeeUpdate(employee, { role: nextRole });
   }
 
   function continueEmployeeUpdate(
@@ -794,6 +826,46 @@ export function UserManagementClient({ isAdmin }: { isAdmin: boolean }) {
               onClick={() => void deletePendingInvitation()}
             >
               {deletingId ? "Deleting..." : "Delete invitation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(crmRoleChangeRequest)}
+        onOpenChange={(open) => {
+          if (!open && !updatingId) setCrmRoleChangeRequest(null);
+        }}
+      >
+        <DialogContent showCloseButton={!updatingId}>
+          <DialogHeader>
+            <DialogTitle>Confirm CRM role change</DialogTitle>
+            <DialogDescription>
+              Change {crmRoleChangeRequest?.employee.full_name ?? "this user"} from{" "}
+              {roleLabel(crmRoleChangeRequest?.employee.role ?? "")} to{" "}
+              {roleLabel(crmRoleChangeRequest?.role ?? "")}?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            This will update the user&apos;s CRM access and dashboard permissions immediately.
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(updatingId)}
+              onClick={() => setCrmRoleChangeRequest(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={Boolean(updatingId)}
+              onClick={confirmCrmRoleChange}
+            >
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

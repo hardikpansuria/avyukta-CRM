@@ -13,3 +13,13 @@ export function requiresDepartmentRoleConfirmation(
 export function isEmployeeRoleChangeLocked(sourceType: "manual" | "system") {
   return sourceType === "system";
 }
+
+export function requiresCrmRoleConfirmation(
+  currentRole: string,
+  nextRole: string,
+) {
+  return (
+    (currentRole === "sales" && nextRole === "accountant") ||
+    (currentRole === "accountant" && nextRole === "sales")
+  );
+}
