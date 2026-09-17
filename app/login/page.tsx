@@ -338,7 +338,7 @@ export default function LoginPage() {
             </ul>
           </nav>
           <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
-            Access is limited to active organization members.
+            Access is limited to active organization members. · v1.0.0
           </p>
         </div>
       </section>
