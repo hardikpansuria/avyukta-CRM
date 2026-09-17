@@ -529,18 +529,20 @@ async function getCustomerTaxInfo(
   customerId: string,
   effectiveDate?: string | null,
 ): Promise<CustomerTaxInfo> {
-  const { data: customer } = await admin
-    .from("customers")
-    .select("tax_exempt")
-    .eq("id", customerId)
-    .eq("org_id", orgId)
-    .maybeSingle();
-  const { data: addresses } = await admin
-    .from("customer_addresses")
-    .select("address_type, province_state")
-    .eq("org_id", orgId)
-    .eq("customer_id", customerId)
-    .neq("status", "deleted");
+  const [{ data: customer }, { data: addresses }] = await Promise.all([
+    admin
+      .from("customers")
+      .select("tax_exempt")
+      .eq("id", customerId)
+      .eq("org_id", orgId)
+      .maybeSingle(),
+    admin
+      .from("customer_addresses")
+      .select("address_type, province_state")
+      .eq("org_id", orgId)
+      .eq("customer_id", customerId)
+      .neq("status", "deleted"),
+  ]);
   const addressRows = (addresses ?? []) as Array<{
     address_type: string;
     province_state?: string | null;
@@ -1331,6 +1333,7 @@ export async function getQuotationDetail(
     notesResult,
     statusHistoryResult,
     revisionsResult,
+    taxInfo,
   ] = await Promise.all([
     admin
       .from("quotation_contacts")
@@ -1406,6 +1409,12 @@ export async function getQuotationDetail(
       .eq("org_id", orgId)
       .eq("quotation_id", quotationId)
       .order("created_at", { ascending: false }),
+    getCustomerTaxInfo(
+      admin,
+      orgId,
+      quotationRow.customer_id,
+      quotationRow.quote_date,
+    ),
   ]);
 
   if (contactsResult.error) {
@@ -1462,33 +1471,35 @@ export async function getQuotationDetail(
 
   const customersById = customersResult.customersById ?? new Map();
   const profilesById = profilesResult.profilesById ?? new Map();
-  const taxInfo = await getCustomerTaxInfo(
-    admin,
-    orgId,
-    quotationRow.customer_id,
-    quotationRow.quote_date,
-  );
   const materialsByScope = new Map<string, MaterialWithDocument[]>();
   const labourByScope = new Map<string, LabourRow[]>();
   const chargesByScope = new Map<string, ChargeWithDocument[]>();
   const documentsByMaterial = new Map<string, MaterialDocumentRow>();
   const documentsByCharge = new Map<string, ChargeDocumentRow>();
 
-  for (const document of (documentsResult.data ?? []) as MaterialDocumentRow[]) {
-    let signedUrl: string | null = null;
-    const expectedPath = `${orgId}/quotations/${quotationRow.id}/materials/${document.material_item_id}/supplier-quote.pdf`;
+  const materialDocuments = await Promise.all(
+    ((documentsResult.data ?? []) as MaterialDocumentRow[]).map(
+      async (document) => {
+        let signedUrl: string | null = null;
+        const expectedPath = `${orgId}/quotations/${quotationRow.id}/materials/${document.material_item_id}/supplier-quote.pdf`;
 
-    if (
-      document.storage_bucket === "quotation-documents" &&
-      document.file_path === expectedPath
-    ) {
-      const { data: signedData } = await admin.storage
-        .from("quotation-documents")
-        .createSignedUrl(expectedPath, 10 * 60);
+        if (
+          document.storage_bucket === "quotation-documents" &&
+          document.file_path === expectedPath
+        ) {
+          const { data: signedData } = await admin.storage
+            .from("quotation-documents")
+            .createSignedUrl(expectedPath, 10 * 60);
 
-      signedUrl = signedData?.signedUrl ?? null;
-    }
+          signedUrl = signedData?.signedUrl ?? null;
+        }
 
+        return { document, signedUrl };
+      },
+    ),
+  );
+
+  for (const { document, signedUrl } of materialDocuments) {
     documentsByMaterial.set(document.material_item_id, {
       ...document,
       signed_url: signedUrl,
@@ -1505,22 +1516,29 @@ export async function getQuotationDetail(
     materialsByScope.set(material.scope_id, existing);
   }
 
-  for (const document of (chargeDocumentsResult.data ??
-    []) as ChargeDocumentRow[]) {
-    let signedUrl: string | null = null;
-    const expectedPath = `${orgId}/quotations/${quotationRow.id}/scope-charges/${document.scope_charge_id}/supporting-document.pdf`;
+  const chargeDocuments = await Promise.all(
+    ((chargeDocumentsResult.data ?? []) as ChargeDocumentRow[]).map(
+      async (document) => {
+        let signedUrl: string | null = null;
+        const expectedPath = `${orgId}/quotations/${quotationRow.id}/scope-charges/${document.scope_charge_id}/supporting-document.pdf`;
 
-    if (
-      document.storage_bucket === "quotation-documents" &&
-      document.file_path === expectedPath
-    ) {
-      const { data: signedData } = await admin.storage
-        .from("quotation-documents")
-        .createSignedUrl(expectedPath, 10 * 60);
+        if (
+          document.storage_bucket === "quotation-documents" &&
+          document.file_path === expectedPath
+        ) {
+          const { data: signedData } = await admin.storage
+            .from("quotation-documents")
+            .createSignedUrl(expectedPath, 10 * 60);
 
-      signedUrl = signedData?.signedUrl ?? null;
-    }
+          signedUrl = signedData?.signedUrl ?? null;
+        }
 
+        return { document, signedUrl };
+      },
+    ),
+  );
+
+  for (const { document, signedUrl } of chargeDocuments) {
     documentsByCharge.set(document.scope_charge_id, {
       ...document,
       signed_url: signedUrl,

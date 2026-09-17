@@ -12,7 +12,11 @@ const sample: CustomerQuotationPdfData = {
     company_name: "PRO-TECH STAINLESS AND SERVICES LTD.",
     phone: "306-555-0100",
     fax: "306-555-0101",
-    footer_text: "PRO-TECH STAINLESS AND SERVICES LTD. | Regina, SK",
+    footer_text:
+      "Pro-Tech Stainless & Services Ltd. Phone: (905) 463-1050 Fax: (905) 463-1095",
+    quotation_intro_text: "Thank you for considering this proposal.",
+    quotation_order_terms_text:
+      "Orders follow the configured organization sales terms.",
     terms_html:
       "<h2>1. Acceptance</h2><p>Acceptance must be provided in writing.</p>",
   },

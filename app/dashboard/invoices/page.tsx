@@ -41,7 +41,7 @@ type Invoice = {
   sent_at?: string | null;
   days_outstanding: number;
   aging_bucket: string;
-  job?: { job_number?: string | null } | null;
+  job?: { id: string; job_number?: string | null } | null;
 };
 
 type Group = {
@@ -107,6 +107,9 @@ export default function InvoicesPage() {
   const [canCreate, setCanCreate] = useState(false);
   const [canViewRequests, setCanViewRequests] = useState(false);
   const [unbilledCount, setUnbilledCount] = useState<number | null>(null);
+  const [invoiceRequestCount, setInvoiceRequestCount] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebounced(filters), 350);
@@ -139,6 +142,7 @@ export default function InvoicesPage() {
                 can_view_requests?: boolean;
               };
               unbilled_count?: number | null;
+              invoice_request_count?: number | null;
               error?: string;
             }
           | null;
@@ -148,6 +152,7 @@ export default function InvoicesPage() {
         }
         setGroups(payload?.groups ?? []);
         setUnbilledCount(payload?.unbilled_count ?? null);
+        setInvoiceRequestCount(payload?.invoice_request_count ?? null);
         setCanCreate(payload?.permissions?.can_create === true);
         setCanViewRequests(
           payload?.permissions?.can_view_requests === true,
@@ -200,12 +205,21 @@ export default function InvoicesPage() {
           </Button>
           {canViewRequests ? (
             <Button
+              className="relative"
               nativeButton={false}
               render={<Link href="/dashboard/invoice-requests" />}
               variant="outline"
             >
               <ClipboardListIcon />
               Invoice Requests
+              {invoiceRequestCount !== null && invoiceRequestCount > 0 ? (
+                <span
+                  aria-label={`${invoiceRequestCount} open invoice requests`}
+                  className="absolute -right-2 -top-2 flex min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white shadow-sm ring-2 ring-background"
+                >
+                  {invoiceRequestCount > 99 ? "99+" : invoiceRequestCount}
+                </span>
+              ) : null}
             </Button>
           ) : null}
           <Button
@@ -394,7 +408,18 @@ export default function InvoicesPage() {
                   <TableBody>
                     {group.invoices.map((invoice) => (
                       <TableRow key={invoice.id}>
-                        <TableCell>{invoice.job?.job_number ?? "-"}</TableCell>
+                        <TableCell>
+                          {invoice.job?.id && invoice.job.job_number ? (
+                            <Link
+                              className="font-medium text-primary underline-offset-4 hover:underline"
+                              href={`/dashboard/jobs/${invoice.job.id}`}
+                            >
+                              {invoice.job.job_number}
+                            </Link>
+                          ) : (
+                            "-"
+                          )}
+                        </TableCell>
                         <TableCell className="font-medium">
                           {invoice.invoice_number}
                         </TableCell>

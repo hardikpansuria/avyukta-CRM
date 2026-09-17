@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <body
+    style="margin: 0; background: #f4f4f5; color: #18181b; font-family: Arial, sans-serif;"
+  >
+    <div style="display: none; max-height: 0; overflow: hidden">
+      Your organization code and sign-in details for Avyukta CRM.
+    </div>
+    <div
+      style="max-width: 560px; margin: 0 auto; padding: 40px 20px"
+    >
+      <div
+        style="border: 1px solid #e4e4e7; border-radius: 12px; background: #ffffff; padding: 32px"
+      >
+        <h1 style="margin: 0 0 24px; font-size: 24px; line-height: 1.25">
+          You are invited to Avyukta CRM
+        </h1>
+
+        <p style="margin: 0 0 16px; line-height: 1.6">
+          Hi {{ .Data.full_name }},
+        </p>
+        <p style="margin: 0 0 24px; line-height: 1.6">
+          <strong>{{ .Data.organization_name }}</strong> has invited you to
+          join the CRM portal.
+        </p>
+
+        <div
+          style="margin: 0 0 24px; border-radius: 8px; background: #f4f4f5; padding: 20px"
+        >
+          <p style="margin: 0 0 16px; font-weight: 700">
+            Use these details every time you sign in:
+          </p>
+          <p style="margin: 0 0 12px; line-height: 1.5">
+            Organization code:<br />
+            <strong style="font-size: 20px"
+              >{{ .Data.organization_code }}</strong
+            >
+          </p>
+          <p style="margin: 0 0 12px; line-height: 1.5">
+            Username (your email address):<br />
+            <strong>{{ .Email }}</strong>
+          </p>
+          <p style="margin: 0; line-height: 1.5">
+            Password:<br />
+            <strong>The password you create after accepting this invitation</strong>
+          </p>
+        </div>
+
+        <p style="margin: 0 0 24px">
+          <a
+            href="{{ .ConfirmationURL }}"
+            style="display: inline-block; border-radius: 8px; background: #18181b; color: #ffffff; padding: 12px 20px; font-weight: 700; text-decoration: none"
+          >
+            Accept invitation and create password
+          </a>
+        </p>
+
+        <p style="margin: 0 0 12px; line-height: 1.6">
+          After creating your password, sign in with organization code
+          <strong>{{ .Data.organization_code }}</strong>, username
+          <strong>{{ .Email }}</strong>, and your password.
+        </p>
+        <p style="margin: 0; color: #71717a; font-size: 13px; line-height: 1.6">
+          This invitation link expires shortly and can only be used once. If
+          you were not expecting this invitation, you can ignore this email.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

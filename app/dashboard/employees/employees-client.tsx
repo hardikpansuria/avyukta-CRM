@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowDownAZIcon, ArrowUpAZIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Settings2Icon } from "lucide-react";
+import { ArrowDownAZIcon, ArrowUpAZIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Settings2Icon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,15 @@ import { SkillsManager } from "./skills-manager";
 const roleLabels: Record<EmployeeDirectoryRole, string> = { admin: "Admin", sales: "Sales", accounts: "Accounts", worker: "Worker" };
 const statusLabels: Record<EmployeeDirectoryStatus, string> = { active: "Active", inactive: "Inactive" };
 
-export function EmployeesClient() {
+export function EmployeesClient({
+  canCreate,
+  canEdit,
+  canDelete,
+}: {
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}) {
   const [employees, setEmployees] = useState<DirectoryEmployee[]>([]);
   const [pagination, setPagination] = useState<EmployeeListResponse["pagination"]>({ page: 1, pageSize: 20, total: 0, totalPages: 1 });
   const [searchInput, setSearchInput] = useState("");
@@ -67,6 +75,31 @@ export function EmployeesClient() {
 
   function resetPage(update: () => void) { update(); setPage(1); }
 
+  async function removeEmployee(employee: DirectoryEmployee) {
+    if (!window.confirm(`Remove ${employee.employee_name} from the Employee List?`)) {
+      return;
+    }
+    setError(null);
+    try {
+      const response = await fetch(`/api/org/employees/${employee.id}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to remove employee.");
+      }
+      setRefreshKey((key) => key + 1);
+    } catch (removeError) {
+      setError(
+        removeError instanceof Error
+          ? removeError.message
+          : "Unable to remove employee.",
+      );
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -75,8 +108,8 @@ export function EmployeesClient() {
           <p className="mt-1 text-sm text-muted-foreground">Manage internal directory records, skills, and workforce status.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setSkillsOpen(true)}><Settings2Icon /> Manage Skills</Button>
-          <Button nativeButton={false} render={<Link href="/dashboard/employees/new" />}><PlusIcon /> Add Employee</Button>
+          {canEdit ? <Button variant="outline" onClick={() => setSkillsOpen(true)}><Settings2Icon /> Manage Skills</Button> : null}
+          {canCreate ? <Button nativeButton={false} render={<Link href="/dashboard/employees/new" />}><PlusIcon /> Add Employee</Button> : null}
         </div>
       </div>
 
@@ -84,7 +117,7 @@ export function EmployeesClient() {
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <div className="relative sm:col-span-2">
             <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search employee name or email" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+            <Input className="pl-9" placeholder="Search Employee ID, name, or email" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
           </div>
           <Select value={role} onValueChange={(value) => resetPage(() => setRole(String(value)))}>
             <SelectTrigger className="w-full"><SelectValue>{role === "all" ? "All roles" : roleLabels[role as EmployeeDirectoryRole]}</SelectValue></SelectTrigger>
@@ -109,11 +142,11 @@ export function EmployeesClient() {
       <Card className="hidden rounded-xl md:block">
         <CardContent className="px-0">
           <Table>
-            <TableHeader><TableRow><TableHead>Employee Name</TableHead><TableHead>Email Address</TableHead><TableHead>Contact Number</TableHead><TableHead>Role</TableHead><TableHead>Skills</TableHead><TableHead>Status</TableHead><TableHead>Source</TableHead><TableHead>Date Added</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Employee ID</TableHead><TableHead>Employee Name</TableHead><TableHead>Email Address</TableHead><TableHead>Contact Number</TableHead><TableHead>Role</TableHead><TableHead>Skills</TableHead><TableHead>Status</TableHead><TableHead>Source</TableHead><TableHead>Date Added</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
-              {isLoading ? Array.from({ length: 5 }).map((_, index) => <TableRow key={index}><TableCell colSpan={9}><Skeleton className="h-8 w-full" /></TableCell></TableRow>) : null}
-              {!isLoading && employees.length === 0 ? <TableRow><TableCell className="py-12 text-center text-muted-foreground" colSpan={9}>No employees match the current filters.</TableCell></TableRow> : null}
-              {!isLoading ? employees.map((employee) => <EmployeeRow employee={employee} key={employee.id} />) : null}
+              {isLoading ? Array.from({ length: 5 }).map((_, index) => <TableRow key={index}><TableCell colSpan={10}><Skeleton className="h-8 w-full" /></TableCell></TableRow>) : null}
+              {!isLoading && employees.length === 0 ? <TableRow><TableCell className="py-12 text-center text-muted-foreground" colSpan={10}>No employees match the current filters.</TableCell></TableRow> : null}
+              {!isLoading ? employees.map((employee) => <EmployeeRow canDelete={canDelete} canEdit={canEdit} employee={employee} key={employee.id} onRemove={removeEmployee} />) : null}
             </TableBody>
           </Table>
         </CardContent>
@@ -122,7 +155,7 @@ export function EmployeesClient() {
       <div className="grid gap-3 md:hidden">
         {isLoading ? Array.from({ length: 4 }).map((_, index) => <Skeleton className="h-48 rounded-xl" key={index} />) : null}
         {!isLoading && employees.length === 0 ? <Card className="rounded-xl"><CardContent className="py-10 text-center text-muted-foreground">No employees match the current filters.</CardContent></Card> : null}
-        {!isLoading ? employees.map((employee) => <EmployeeCard employee={employee} key={employee.id} />) : null}
+        {!isLoading ? employees.map((employee) => <EmployeeCard canDelete={canDelete} canEdit={canEdit} employee={employee} key={employee.id} onRemove={removeEmployee} />) : null}
       </div>
 
       <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -138,9 +171,10 @@ export function EmployeesClient() {
   );
 }
 
-function EmployeeRow({ employee }: { employee: DirectoryEmployee }) {
+function EmployeeRow({ employee, canEdit, canDelete, onRemove }: { employee: DirectoryEmployee; canEdit: boolean; canDelete: boolean; onRemove: (employee: DirectoryEmployee) => void }) {
   return (
     <TableRow>
+      <TableCell className="font-mono text-xs">{employee.employee_code}</TableCell>
       <TableCell className="font-medium">{employee.employee_name}</TableCell>
       <TableCell>{employee.email ?? "—"}</TableCell><TableCell>{employee.contact_number ?? "—"}</TableCell>
       <TableCell><RoleBadge role={employee.employee_role} /></TableCell>
@@ -148,13 +182,13 @@ function EmployeeRow({ employee }: { employee: DirectoryEmployee }) {
       <TableCell><StatusBadge status={employee.employee_status} /></TableCell>
       <TableCell><Badge variant="outline">{employee.source_type === "system" ? "CRM User" : "Directory Only"}</Badge></TableCell>
       <TableCell>{formatDate(employee.created_at)}</TableCell>
-      <TableCell className="text-right"><Button nativeButton={false} size="icon-sm" variant="ghost" aria-label={`Edit ${employee.employee_name}`} render={<Link href={`/dashboard/employees/${employee.id}/edit`} />}><PencilIcon /></Button></TableCell>
+      <TableCell className="text-right whitespace-nowrap">{canEdit ? <Button nativeButton={false} size="icon-sm" variant="ghost" aria-label={`Edit ${employee.employee_name}`} render={<Link href={`/dashboard/employees/${employee.id}/edit`} />}><PencilIcon /></Button> : null}{canDelete && employee.source_type === "manual" ? <Button size="icon-sm" variant="ghost" aria-label={`Remove ${employee.employee_name}`} onClick={() => onRemove(employee)}><Trash2Icon /></Button> : null}{!canEdit && (!canDelete || employee.source_type !== "manual") ? "—" : null}</TableCell>
     </TableRow>
   );
 }
 
-function EmployeeCard({ employee }: { employee: DirectoryEmployee }) {
-  return <Card className="rounded-xl" size="sm"><CardContent className="space-y-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{employee.employee_name}</p><p className="mt-1 text-sm text-muted-foreground">{employee.email ?? "No email"}</p></div><Button nativeButton={false} size="icon-sm" variant="ghost" aria-label={`Edit ${employee.employee_name}`} render={<Link href={`/dashboard/employees/${employee.id}/edit`} />}><PencilIcon /></Button></div><div className="flex flex-wrap gap-2"><RoleBadge role={employee.employee_role} /><StatusBadge status={employee.employee_status} /><Badge variant="outline">{employee.source_type === "system" ? "CRM User" : "Directory Only"}</Badge></div><div><p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Skills</p><SkillBadges employee={employee} /></div><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Contact</p><p>{employee.contact_number ?? "—"}</p></div><div><p className="text-xs text-muted-foreground">Date Added</p><p>{formatDate(employee.created_at)}</p></div></div></CardContent></Card>;
+function EmployeeCard({ employee, canEdit, canDelete, onRemove }: { employee: DirectoryEmployee; canEdit: boolean; canDelete: boolean; onRemove: (employee: DirectoryEmployee) => void }) {
+  return <Card className="rounded-xl" size="sm"><CardContent className="space-y-4"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-xs text-muted-foreground">{employee.employee_code}</p><p className="mt-1 font-semibold">{employee.employee_name}</p><p className="mt-1 text-sm text-muted-foreground">{employee.email ?? "No email"}</p></div><div className="flex gap-1">{canEdit ? <Button nativeButton={false} size="icon-sm" variant="ghost" aria-label={`Edit ${employee.employee_name}`} render={<Link href={`/dashboard/employees/${employee.id}/edit`} />}><PencilIcon /></Button> : null}{canDelete && employee.source_type === "manual" ? <Button size="icon-sm" variant="ghost" aria-label={`Remove ${employee.employee_name}`} onClick={() => onRemove(employee)}><Trash2Icon /></Button> : null}</div></div><div className="flex flex-wrap gap-2"><RoleBadge role={employee.employee_role} /><StatusBadge status={employee.employee_status} /><Badge variant="outline">{employee.source_type === "system" ? "CRM User" : "Directory Only"}</Badge></div><div><p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Skills</p><SkillBadges employee={employee} /></div><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Contact</p><p>{employee.contact_number ?? "—"}</p></div><div><p className="text-xs text-muted-foreground">Date Added</p><p>{formatDate(employee.created_at)}</p></div></div></CardContent></Card>;
 }
 
 function RoleBadge({ role }: { role: EmployeeDirectoryRole }) { return <Badge variant="secondary">{roleLabels[role]}</Badge>; }

@@ -21,7 +21,32 @@ export async function GET(request: Request) {
   if (denied) return denied;
   const params = new URL(request.url).searchParams;
   const admin = createAdminClient();
-  const [result, unbilledResult, canCreate, canViewRequests] = await Promise.all([
+  const canViewRequestsPromise = hasOrgPermission(
+    session,
+    "invoice_requests",
+    "view",
+  );
+  const invoiceRequestCountPromise = (async (): Promise<{
+    count: number | null;
+    error: unknown;
+  }> => {
+    if (!(await canViewRequestsPromise)) {
+      return { count: null, error: null };
+    }
+    const { count, error } = await admin
+      .from("invoice_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", session.org_id)
+      .in("status", ["pending", "under_review"]);
+    return { count, error };
+  })();
+  const [
+    result,
+    unbilledResult,
+    canCreate,
+    canViewRequests,
+    invoiceRequestCountResult,
+  ] = await Promise.all([
     listInvoices(admin, session.org_id, {
       customer: params.get("customer")?.trim() ?? "",
       po: params.get("po")?.trim() ?? "",
@@ -34,7 +59,8 @@ export async function GET(request: Request) {
     }),
     countUnbilledJobs(admin, session.org_id),
     hasOrgPermission(session, "invoices", "create"),
-    hasOrgPermission(session, "invoice_requests", "view"),
+    canViewRequestsPromise,
+    invoiceRequestCountPromise,
   ]);
   if (result.error) return jsonError("Unable to fetch invoices", 500);
   if (unbilledResult.error) {
@@ -43,9 +69,16 @@ export async function GET(request: Request) {
       error: unbilledResult.error,
     });
   }
+  if (invoiceRequestCountResult.error) {
+    console.error("Unable to fetch open invoice request count", {
+      orgId: session.org_id,
+      error: invoiceRequestCountResult.error,
+    });
+  }
   return NextResponse.json({
     groups: result.groups ?? [],
     unbilled_count: unbilledResult.count,
+    invoice_request_count: invoiceRequestCountResult.count,
     permissions: {
       can_create: canCreate,
       can_view_requests: canViewRequests,

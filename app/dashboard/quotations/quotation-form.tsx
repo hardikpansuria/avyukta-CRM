@@ -1,11 +1,18 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftIcon, SaveIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -120,6 +127,7 @@ export function QuotationForm({
   currentUserName: string;
 }) {
   const router = useRouter();
+  const initialQuoteDate = useRef(today()).current;
   const [customers, setCustomers] = useState<CustomerSummary[]>([]);
   const [contacts, setContacts] = useState<CustomerContact[]>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
@@ -127,7 +135,7 @@ export function QuotationForm({
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [quotationNumber, setQuotationNumber] = useState("Generated after save");
-  const [quoteDate, setQuoteDate] = useState(today);
+  const [quoteDate, setQuoteDate] = useState(initialQuoteDate);
   const [expiryDate, setExpiryDate] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectLocation, setProjectLocation] = useState("");
@@ -152,6 +160,11 @@ export function QuotationForm({
   const [persistedQuotationId, setPersistedQuotationId] = useState(
     quotationId ?? "",
   );
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
+  const navigationAllowedRef = useRef(false);
+  const historyGuardActiveRef = useRef(false);
+  const bypassNextPopRef = useRef(false);
+  const collapsedGuardResolverRef = useRef<(() => void) | null>(null);
 
   const salesAssignees = useMemo(
     () =>
@@ -180,6 +193,80 @@ export function QuotationForm({
     (customer) => customer.id === selectedCustomerId,
   );
   const isPersisted = Boolean(persistedQuotationId);
+  const backHref = isPersisted
+    ? `/dashboard/quotations/${persistedQuotationId}`
+    : "/dashboard/quotations";
+  const hasUnsavedChanges =
+    mode === "new" &&
+    Boolean(
+      customerSearch.trim() ||
+        selectedCustomerId ||
+        selectedContactIds.length ||
+        quoteDate !== initialQuoteDate ||
+        expiryDate ||
+        projectName.trim() ||
+        projectLocation.trim() ||
+        customerRfqNumber.trim() ||
+        salesRepId ||
+        scopes.length ||
+        finalDiscountType !== "none" ||
+        finalDiscountValue ||
+        finalAdjustments.length ||
+        noteSections.some((section) => section.body_text?.trim()),
+    );
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
+
+  useEffect(() => {
+    if (mode !== "new") return;
+
+    function handlePopState() {
+      historyGuardActiveRef.current = false;
+
+      if (bypassNextPopRef.current) {
+        bypassNextPopRef.current = false;
+        collapsedGuardResolverRef.current?.();
+        collapsedGuardResolverRef.current = null;
+        return;
+      }
+
+      if (hasUnsavedChangesRef.current && !navigationAllowedRef.current) {
+        setExitDialogOpen(true);
+      }
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "new") return;
+
+    if (hasUnsavedChanges && !historyGuardActiveRef.current) {
+      window.history.pushState(
+        { ...window.history.state, quotationFormGuard: true },
+        "",
+        window.location.href,
+      );
+      historyGuardActiveRef.current = true;
+    } else if (!hasUnsavedChanges && historyGuardActiveRef.current) {
+      bypassNextPopRef.current = true;
+      window.history.back();
+    }
+  }, [hasUnsavedChanges, mode]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (navigationAllowedRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     async function loadLookups() {
@@ -345,18 +432,16 @@ export function QuotationForm({
     });
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function saveQuotation() {
     if (isSaving) {
-      return;
+      return null;
     }
 
     setError(null);
 
     if (!selectedCustomerId) {
       setError("Customer is required.");
-      return;
+      return null;
     }
 
     setIsSaving(true);
@@ -391,7 +476,7 @@ export function QuotationForm({
 
         if (!createResponse.ok || !createPayload?.quotation) {
           setError(createPayload?.error ?? "Unable to create quotation.");
-          return;
+          return null;
         }
 
         targetQuotationId = createPayload.quotation.id;
@@ -427,15 +512,65 @@ export function QuotationForm({
           payload?.error ??
             "Quotation was created, but the complete draft could not be saved. Try Save Draft again.",
         );
-        return;
+        return null;
       }
 
-      router.push(`/dashboard/quotations/${payload.quotation.id}`);
+      return payload.quotation.id;
     } catch {
       setError("Unable to save quotation.");
+      return null;
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function collapseHistoryGuard() {
+    if (!historyGuardActiveRef.current) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      collapsedGuardResolverRef.current = resolve;
+      bypassNextPopRef.current = true;
+      window.history.back();
+    });
+  }
+
+  async function navigateAfterSave(quotationId: string) {
+    navigationAllowedRef.current = true;
+    await collapseHistoryGuard();
+    router.replace(`/dashboard/quotations/${quotationId}`);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const savedQuotationId = await saveQuotation();
+    if (savedQuotationId) await navigateAfterSave(savedQuotationId);
+  }
+
+  function keepEditing() {
+    setExitDialogOpen(false);
+    if (hasUnsavedChanges && !historyGuardActiveRef.current) {
+      window.history.pushState(
+        { ...window.history.state, quotationFormGuard: true },
+        "",
+        window.location.href,
+      );
+      historyGuardActiveRef.current = true;
+    }
+  }
+
+  async function discardAndExit() {
+    navigationAllowedRef.current = true;
+    setExitDialogOpen(false);
+    await collapseHistoryGuard();
+    router.replace(backHref);
+  }
+
+  async function saveAndExit() {
+    setExitDialogOpen(false);
+    const savedQuotationId = await saveQuotation();
+    if (savedQuotationId) await navigateAfterSave(savedQuotationId);
   }
 
   if (isLoading) {
@@ -446,10 +581,6 @@ export function QuotationForm({
     );
   }
 
-  const backHref =
-    isPersisted
-      ? `/dashboard/quotations/${persistedQuotationId}`
-      : "/dashboard/quotations";
   const selectedContacts = contacts.filter((contact) =>
     selectedContactIds.includes(contact.id),
   );
@@ -472,10 +603,15 @@ export function QuotationForm({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button
               className="h-10 rounded-md"
-              nativeButton={false}
-              render={<Link href={backHref} />}
               type="button"
               variant="outline"
+              onClick={() => {
+                if (hasUnsavedChanges) {
+                  setExitDialogOpen(true);
+                } else {
+                  router.push(backHref);
+                }
+              }}
             >
               <ArrowLeftIcon data-icon="inline-start" />
               Back
@@ -707,6 +843,44 @@ export function QuotationForm({
           onNoteSectionsChange={setNoteSections}
         />
       </div>
+
+      <Dialog
+        open={exitDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) keepEditing();
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Save or discard this quotation?</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes. Save the quotation as a draft before
+              leaving, discard the changes, or keep editing.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={keepEditing}>
+              Keep Editing
+            </Button>
+            <Button
+              disabled={isSaving}
+              type="button"
+              variant="destructive"
+              onClick={() => void discardAndExit()}
+            >
+              Discard
+            </Button>
+            <Button
+              disabled={isSaving}
+              type="button"
+              onClick={() => void saveAndExit()}
+            >
+              <SaveIcon data-icon="inline-start" />
+              {isSaving ? "Saving..." : "Save Draft"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }

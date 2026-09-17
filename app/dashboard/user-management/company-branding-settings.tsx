@@ -22,6 +22,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DEFAULT_QUOTATION_INTRO_TEXT,
+  defaultQuotationOrderTermsText,
+} from "@/lib/quotations/commercial-copy";
 
 type BrandingVersion = {
   id: string;
@@ -31,6 +35,8 @@ type BrandingVersion = {
   footer_text?: string | null;
   terms_html?: string | null;
   terms_text?: string | null;
+  quotation_intro_text?: string | null;
+  quotation_order_terms_text?: string | null;
   effective_from: string;
   effective_to?: string | null;
   has_logo?: boolean;
@@ -112,6 +118,8 @@ export function CompanyBrandingSettings({
   const [phone, setPhone] = useState("");
   const [fax, setFax] = useState("");
   const [footerText, setFooterText] = useState("");
+  const [quotationIntroText, setQuotationIntroText] = useState("");
+  const [quotationOrderTermsText, setQuotationOrderTermsText] = useState("");
   const [termsHtml, setTermsHtml] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(today());
   const [logo, setLogo] = useState<File | null>(null);
@@ -148,6 +156,13 @@ export function CompanyBrandingSettings({
     setPhone(defaults?.phone ?? "");
     setFax(defaults?.fax ?? "");
     setFooterText(defaults?.footer_text ?? "");
+    setQuotationIntroText(
+      defaults?.quotation_intro_text || DEFAULT_QUOTATION_INTRO_TEXT,
+    );
+    setQuotationOrderTermsText(
+      defaults?.quotation_order_terms_text ||
+        defaultQuotationOrderTermsText(defaults?.company_name ?? "Organization"),
+    );
     setTermsHtml(
       defaults?.terms_html || plainTextAsHtml(defaults?.terms_text),
     );
@@ -167,6 +182,8 @@ export function CompanyBrandingSettings({
     formData.set("phone", phone);
     formData.set("fax", fax);
     formData.set("footer_text", footerText);
+    formData.set("quotation_intro_text", quotationIntroText);
+    formData.set("quotation_order_terms_text", quotationOrderTermsText);
     formData.set("terms_html", termsHtml);
     formData.set("effective_from", effectiveFrom);
     formData.set("remove_logo", String(removeLogo));
@@ -242,6 +259,24 @@ export function CompanyBrandingSettings({
               <BrandingField label="Phone" value={current.phone || "-"} />
               <BrandingField label="Fax" value={current.fax || "-"} />
               <BrandingField label="Footer" value={current.footer_text || "-"} />
+              <div className="sm:col-span-2">
+                <BrandingField
+                  label="Quotation Introduction"
+                  value={
+                    current.quotation_intro_text ||
+                    DEFAULT_QUOTATION_INTRO_TEXT
+                  }
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <BrandingField
+                  label="Order Terms Statement"
+                  value={
+                    current.quotation_order_terms_text ||
+                    defaultQuotationOrderTermsText(current.company_name)
+                  }
+                />
+              </div>
               <div className="sm:col-span-2">
                 <p className="text-xs font-medium text-zinc-500">
                   Terms and Conditions
@@ -330,6 +365,37 @@ export function CompanyBrandingSettings({
               </div>
 
               <div>
+                <Label required>Quotation Introduction</Label>
+                <p className="mb-2 mt-1 text-xs text-zinc-500">
+                  Displayed below the quotation totals and above Delivery.
+                </p>
+                <Textarea
+                  className="min-h-24"
+                  maxLength={2000}
+                  value={quotationIntroText}
+                  onChange={(event) =>
+                    setQuotationIntroText(event.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <Label required>Order Terms Statement</Label>
+                <p className="mb-2 mt-1 text-xs text-zinc-500">
+                  Displayed below Delivery, Terms, and FOB. Include the company
+                  name in the wording if required.
+                </p>
+                <Textarea
+                  className="min-h-24"
+                  maxLength={2000}
+                  value={quotationOrderTermsText}
+                  onChange={(event) =>
+                    setQuotationOrderTermsText(event.target.value)
+                  }
+                />
+              </div>
+
+              <div>
                 <Label>Terms and Conditions</Label>
                 <p className="mb-2 mt-1 text-xs text-zinc-500">
                   Use headings, emphasis, numbered lists, or bullet lists for long terms.
@@ -411,7 +477,13 @@ export function CompanyBrandingSettings({
 
           <DialogFooter showCloseButton={!isSaving}>
             <Button
-              disabled={isSaving || !companyName.trim() || !effectiveFrom}
+              disabled={
+                isSaving ||
+                !companyName.trim() ||
+                !quotationIntroText.trim() ||
+                !quotationOrderTermsText.trim() ||
+                !effectiveFrom
+              }
               type="button"
               onClick={() => void saveVersion()}
             >
@@ -428,7 +500,7 @@ function BrandingField({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs font-medium text-zinc-500">{label}</p>
-      <div className="mt-2 min-h-10 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800">
+      <div className="mt-2 min-h-10 whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800">
         {value}
       </div>
     </div>

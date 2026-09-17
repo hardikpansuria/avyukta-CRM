@@ -11,6 +11,7 @@ export type EmployeeSkill = {
 
 export type DirectoryEmployee = {
   id: string;
+  employee_code: string;
   employee_name: string;
   email: string | null;
   contact_number: string | null;

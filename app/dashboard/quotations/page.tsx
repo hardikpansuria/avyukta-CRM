@@ -14,6 +14,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
 import {
   Select,
   SelectContent,
@@ -60,6 +61,7 @@ type Quotation = {
   expiry_date?: string | null;
   project_name?: string | null;
   customer_rfq_number?: string | null;
+  revision_number?: number | string | null;
   status?: string | null;
   grand_total?: number | string | null;
   updated_at?: string | null;
@@ -83,6 +85,9 @@ export default function QuotationsPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [openingQuotationId, setOpeningQuotationId] = useState<string | null>(
+    null,
+  );
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -134,7 +139,7 @@ export default function QuotationsPage() {
 
     const timeoutId = window.setTimeout(() => {
       void loadQuotations();
-    }, 250);
+    }, queryString ? 250 : 0);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -143,6 +148,8 @@ export default function QuotationsPage() {
   }, [queryString]);
 
   function openQuotation(quotationId: string) {
+    if (openingQuotationId) return;
+    setOpeningQuotationId(quotationId);
     router.push(`/dashboard/quotations/${quotationId}`);
   }
 
@@ -163,12 +170,23 @@ export default function QuotationsPage() {
 
   return (
     <div className="mx-auto max-w-7xl pb-12">
+      {openingQuotationId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/75 p-4 backdrop-blur-sm dark:bg-zinc-950/75">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white px-6 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+            <LoadingState
+              description="Retrieving scopes, pricing, and revision history."
+              message="Opening quotation..."
+            />
+          </div>
+        </div>
+      ) : null}
+
       <PageHeader
         action={
           <Button
             className="h-10 rounded-md px-4 font-semibold"
             nativeButton={false}
-            render={<Link href="/dashboard/quotations/new" />}
+            render={<Link href="/dashboard/quotations/new" prefetch={false} />}
             size="lg"
           >
             <PlusIcon data-icon="inline-start" />
@@ -283,7 +301,7 @@ export default function QuotationsPage() {
               <Button
                 className="rounded-md px-4"
                 nativeButton={false}
-                render={<Link href="/dashboard/quotations/new" />}
+                render={<Link href="/dashboard/quotations/new" prefetch={false} />}
               >
                 Create Quotation
               </Button>
@@ -300,6 +318,7 @@ export default function QuotationsPage() {
                 <TableHeader className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-900/80 dark:text-zinc-400">
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Quotation Number</TableHead>
+                    <TableHead>Revision</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Project</TableHead>
                     <TableHead>Quote Date</TableHead>
@@ -317,6 +336,16 @@ export default function QuotationsPage() {
                       className="cursor-pointer focus-within:bg-zinc-50 hover:bg-zinc-50 dark:focus-within:bg-zinc-900/70 dark:hover:bg-zinc-900/70"
                       key={quotation.id}
                       tabIndex={0}
+                      onFocus={() =>
+                        router.prefetch(
+                          `/dashboard/quotations/${quotation.id}`,
+                        )
+                      }
+                      onMouseEnter={() =>
+                        router.prefetch(
+                          `/dashboard/quotations/${quotation.id}`,
+                        )
+                      }
                       onClick={() => openQuotation(quotation.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
@@ -326,6 +355,9 @@ export default function QuotationsPage() {
                     >
                       <TableCell className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
                         {quotation.quotation_number ?? "Pending"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                        {quotation.revision_number ?? 0}
                       </TableCell>
                       <TableCell className="font-medium text-zinc-950 dark:text-zinc-50">
                         {quotation.customer?.company_name ?? "-"}
@@ -371,14 +403,22 @@ export default function QuotationsPage() {
               {quotations.map((quotation) => (
                 <button
                   className="w-full p-4 text-left transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-zinc-400 dark:hover:bg-zinc-900"
+                  disabled={Boolean(openingQuotationId)}
                   key={quotation.id}
                   type="button"
+                  onFocus={() =>
+                    router.prefetch(`/dashboard/quotations/${quotation.id}`)
+                  }
+                  onPointerEnter={() =>
+                    router.prefetch(`/dashboard/quotations/${quotation.id}`)
+                  }
                   onClick={() => openQuotation(quotation.id)}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
                         {quotation.quotation_number ?? "Pending"}
+                        <span className="ml-2">Rev {quotation.revision_number ?? 0}</span>
                       </p>
                       <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-zinc-50">
                         {quotation.customer?.company_name ?? "-"}
@@ -436,10 +476,10 @@ function QuotationTableSkeleton() {
     <div className="space-y-3">
       {Array.from({ length: 6 }).map((_, index) => (
         <div
-          className="grid gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800 md:grid-cols-[120px_1fr_1fr_110px_110px_1fr_1fr_130px_110px]"
+          className="grid gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800 md:grid-cols-[120px_70px_1fr_1fr_110px_110px_1fr_1fr_130px_110px]"
           key={index}
         >
-          {Array.from({ length: 9 }).map((__, cellIndex) => (
+          {Array.from({ length: 10 }).map((__, cellIndex) => (
             <Skeleton className="h-5 rounded-md" key={cellIndex} />
           ))}
         </div>

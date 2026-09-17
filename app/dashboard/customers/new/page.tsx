@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ArrowLeftIcon } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { RequiredMark } from "@/components/ui/label";
 import {
   CUSTOMER_INDUSTRIES,
@@ -379,12 +381,15 @@ export default function NewCustomerPage() {
             Create a complete company profile for this organization.
           </p>
         </div>
-        <Link
-          className="text-sm font-medium text-zinc-600 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50"
-          href="/dashboard/customers"
+        <Button
+          nativeButton={false}
+          render={<Link href="/dashboard/customers" />}
+          type="button"
+          variant="outline"
         >
+          <ArrowLeftIcon data-icon="inline-start" />
           Back to customers
-        </Link>
+        </Button>
       </div>
 
       {error ? (

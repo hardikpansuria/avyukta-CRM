@@ -8,6 +8,75 @@ export type DashboardDateRange = {
   label: string;
 };
 
+export const DASHBOARD_TIME_ZONE = "America/Toronto";
+
+function ontarioDateTimeParts(now: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA-u-ca-iso8601", {
+    timeZone: DASHBOARD_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  return Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+}
+
+export function ontarioDate(now = new Date()) {
+  const values = ontarioDateTimeParts(now);
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function ontarioMidnightUtc(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const desiredWallTime = Date.UTC(year, month - 1, day);
+  let timestamp = desiredWallTime;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = ontarioDateTimeParts(new Date(timestamp));
+    const representedWallTime = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
+    );
+    timestamp += desiredWallTime - representedWallTime;
+  }
+
+  return new Date(timestamp);
+}
+
+export function ontarioDayUtcRange(now = new Date()) {
+  const date = ontarioDate(now);
+  const nextDate = new Date(`${date}T00:00:00.000Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const start = ontarioMidnightUtc(date);
+  const nextStart = ontarioMidnightUtc(isoDate(nextDate));
+
+  return {
+    start: start.toISOString(),
+    end: new Date(nextStart.getTime() - 1).toISOString(),
+  };
+}
+
+export function formatOntarioDashboardDate(now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: DASHBOARD_TIME_ZONE,
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(now);
+}
+
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -19,10 +88,10 @@ export function resolveDashboardDateRange(input: {
 }, now = new Date()): DashboardDateRange {
   const period = dashboardPeriods.includes(input.period as DashboardPeriod)
     ? (input.period as DashboardPeriod)
-    : "month";
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    : "year";
+  const end = new Date(`${ontarioDate(now)}T00:00:00.000Z`);
   let start = new Date(end);
-  let label = "This Month";
+  let label = "This Year";
 
   if (period === "today") label = "Today";
   if (period === "week") {
@@ -30,7 +99,10 @@ export function resolveDashboardDateRange(input: {
     start.setUTCDate(start.getUTCDate() - (day === 0 ? 6 : day - 1));
     label = "This Week";
   }
-  if (period === "month") start.setUTCDate(1);
+  if (period === "month") {
+    start.setUTCDate(1);
+    label = "This Month";
+  }
   if (period === "quarter") {
     start = new Date(Date.UTC(start.getUTCFullYear(), Math.floor(start.getUTCMonth() / 3) * 3, 1));
     label = "This Quarter";

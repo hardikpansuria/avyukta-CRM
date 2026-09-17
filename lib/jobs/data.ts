@@ -22,6 +22,11 @@ type JobRow = {
 
 type CompletionListRow = NonNullable<JobListItem["completion"]> & { job_id: string };
 
+export type CompletedJobSort =
+  | "completion_date"
+  | "company_name"
+  | "job_number";
+
 function includesSearch(item: JobListItem, search: string) {
   const query = search.trim().toLocaleLowerCase();
   if (!query) return true;
@@ -53,6 +58,8 @@ export async function listJobs(
     jobNumber?: string;
     quotationNumber?: string;
     poNumber?: string;
+    completedSort?: CompletedJobSort;
+    sortDirection?: "asc" | "desc";
   } = {},
 ) {
   let query = admin
@@ -215,7 +222,31 @@ export async function listJobs(
     .filter((job) => !options.completionTo || Boolean(job.completion && job.completion.completion_date <= options.completionTo))
     .sort((left, right) => {
       if (options.status === "work_completed") {
-        return String(right.completion?.completed_at ?? "").localeCompare(String(left.completion?.completed_at ?? ""));
+        const sort = options.completedSort ?? "completion_date";
+        const leftValue =
+          sort === "company_name"
+            ? left.customer?.company_name
+            : sort === "job_number"
+              ? left.job_number
+              : left.completion?.completion_date;
+        const rightValue =
+          sort === "company_name"
+            ? right.customer?.company_name
+            : sort === "job_number"
+              ? right.job_number
+              : right.completion?.completion_date;
+        const direction = options.sortDirection ?? "desc";
+        const comparison = String(leftValue ?? "").localeCompare(
+          String(rightValue ?? ""),
+          "en-CA",
+          { numeric: true, sensitivity: "base" },
+        );
+        if (comparison !== 0) return direction === "asc" ? comparison : -comparison;
+        return String(left.job_number ?? "").localeCompare(
+          String(right.job_number ?? ""),
+          "en-CA",
+          { numeric: true, sensitivity: "base" },
+        );
       }
       return String(right.accepted_at ?? "").localeCompare(String(left.accepted_at ?? ""));
     });

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { RequiredMark } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -12,8 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { requiresCrmRoleConfirmation } from "@/lib/employees/role-change";
 
 import { CompanyBrandingSettings } from "./company-branding-settings";
+import { AdminAuditLogs } from "./admin-audit-logs";
 
 type Employee = {
   id: string;
@@ -81,6 +84,18 @@ type AdminDemotionRequest = {
   role: string;
 };
 
+type CrmRoleChangeRequest = {
+  employee: Employee;
+  role: string;
+};
+
+function roleLabel(role: string) {
+  if (role === "accountant") return "Accountant";
+  if (role === "sales") return "Sales";
+  if (role === "admin") return "Admin";
+  return role;
+}
+
 function formatDate(value: string | null) {
   if (!value) {
     return "-";
@@ -98,7 +113,7 @@ function formatDate(value: string | null) {
   }).format(date);
 }
 
-export function UserManagementClient() {
+export function UserManagementClient({ isAdmin }: { isAdmin: boolean }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -106,7 +121,7 @@ export function UserManagementClient() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [canManageAdmins, setCanManageAdmins] = useState(false);
+  const [canManageAdmins, setCanManageAdmins] = useState(isAdmin);
   const [isInviting, setIsInviting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
@@ -125,6 +140,9 @@ export function UserManagementClient() {
   const [adminConfirmation, setAdminConfirmation] = useState("");
   const [adminDemotionRequest, setAdminDemotionRequest] =
     useState<AdminDemotionRequest | null>(null);
+  const [crmRoleChangeRequest, setCrmRoleChangeRequest] =
+    useState<CrmRoleChangeRequest | null>(null);
+  const [auditRefreshKey, setAuditRefreshKey] = useState(0);
 
   async function loadEmployees() {
     setError(null);
@@ -211,6 +229,7 @@ export function UserManagementClient() {
       }
 
       setMessage(payload?.message ?? "Employee invited.");
+      setAuditRefreshKey((value) => value + 1);
       setFullName("");
       setEmail("");
       setRole("accountant");
@@ -252,6 +271,7 @@ export function UserManagementClient() {
         payload.override!,
       ]);
       setMessage("Custom permission saved.");
+      setAuditRefreshKey((value) => value + 1);
     } catch {
       setError("Unable to save permission.");
     } finally {
@@ -276,6 +296,7 @@ export function UserManagementClient() {
     }
     setOverrides((current) => current.filter((item) => item.user_id !== userId));
     setMessage(payload?.message ?? "Permissions reset to role defaults.");
+    setAuditRefreshKey((value) => value + 1);
   }
 
   async function updateEmployee(
@@ -327,6 +348,7 @@ export function UserManagementClient() {
         ),
       );
       setMessage(responsePayload.message ?? "Employee updated.");
+      setAuditRefreshKey((value) => value + 1);
       return true;
     } catch {
       setError("Unable to update employee.");
@@ -358,6 +380,7 @@ export function UserManagementClient() {
       }
 
       setMessage(payload?.message ?? "Invitation resent.");
+      setAuditRefreshKey((value) => value + 1);
       await loadEmployees();
     } catch {
       setError("Unable to resend the invitation.");
@@ -391,6 +414,7 @@ export function UserManagementClient() {
 
       setDeleteInviteRequest(null);
       setMessage(payload?.message ?? "Pending invitation deleted.");
+      setAuditRefreshKey((value) => value + 1);
       await loadEmployees();
       await loadPermissions();
     } catch {
@@ -401,6 +425,16 @@ export function UserManagementClient() {
   }
 
   function requestEmployeeUpdate(employee: Employee, update: EmployeeUpdate) {
+    if (
+      update.role !== undefined &&
+      requiresCrmRoleConfirmation(employee.role, update.role)
+    ) {
+      setError(null);
+      setMessage(null);
+      setCrmRoleChangeRequest({ employee, role: update.role });
+      return;
+    }
+
     if (employee.role !== "admin" && update.role === "admin") {
       setError(null);
       setMessage(null);
@@ -421,6 +455,13 @@ export function UserManagementClient() {
     }
 
     continueEmployeeUpdate(employee, update);
+  }
+
+  function confirmCrmRoleChange() {
+    if (!crmRoleChangeRequest) return;
+    const { employee, role: nextRole } = crmRoleChangeRequest;
+    setCrmRoleChangeRequest(null);
+    continueEmployeeUpdate(employee, { role: nextRole });
   }
 
   function continueEmployeeUpdate(
@@ -525,16 +566,31 @@ export function UserManagementClient() {
         </div>
       ) : null}
 
-      {canManageAdmins ? (
-        <CompanyBrandingSettings
-          onMessage={(brandingMessage) => {
-            setError(null);
-            setMessage(brandingMessage);
-          }}
-        />
-      ) : null}
+      <Tabs defaultValue={isAdmin ? "company-branding" : "invite-employee"}>
+        <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-md bg-zinc-100 p-1">
+          {isAdmin ? (
+            <TabsTrigger value="company-branding">Company Branding</TabsTrigger>
+          ) : null}
+          <TabsTrigger value="invite-employee">Invite Employee</TabsTrigger>
+          <TabsTrigger value="crm-users">CRM Users</TabsTrigger>
+          <TabsTrigger value="module-permissions">Module Permissions</TabsTrigger>
+          {isAdmin ? <TabsTrigger value="logs">Logs</TabsTrigger> : null}
+        </TabsList>
 
-      <section className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
+        {isAdmin ? (
+          <TabsContent className="pt-5" value="company-branding">
+            <CompanyBrandingSettings
+              onMessage={(brandingMessage) => {
+                setError(null);
+                setMessage(brandingMessage);
+                setAuditRefreshKey((value) => value + 1);
+              }}
+            />
+          </TabsContent>
+        ) : null}
+
+        <TabsContent className="pt-5" value="invite-employee">
+      <section className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Invite employee</h2>
         <form
           className="mt-5 grid gap-4 md:grid-cols-2"
@@ -593,7 +649,9 @@ export function UserManagementClient() {
           </div>
         </form>
       </section>
+        </TabsContent>
 
+        <TabsContent className="pt-5" value="crm-users">
       <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 px-6 py-4">
           <h2 className="text-lg font-semibold">CRM users</h2>
@@ -774,6 +832,46 @@ export function UserManagementClient() {
       </Dialog>
 
       <Dialog
+        open={Boolean(crmRoleChangeRequest)}
+        onOpenChange={(open) => {
+          if (!open && !updatingId) setCrmRoleChangeRequest(null);
+        }}
+      >
+        <DialogContent showCloseButton={!updatingId}>
+          <DialogHeader>
+            <DialogTitle>Confirm CRM role change</DialogTitle>
+            <DialogDescription>
+              Change {crmRoleChangeRequest?.employee.full_name ?? "this user"} from{" "}
+              {roleLabel(crmRoleChangeRequest?.employee.role ?? "")} to{" "}
+              {roleLabel(crmRoleChangeRequest?.role ?? "")}?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            This will update the user&apos;s CRM access and dashboard permissions immediately.
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(updatingId)}
+              onClick={() => setCrmRoleChangeRequest(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={Boolean(updatingId)}
+              onClick={confirmCrmRoleChange}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={Boolean(transferRequest)}
         onOpenChange={(open) => {
           if (!open && !updatingId) {
@@ -945,8 +1043,10 @@ export function UserManagementClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
 
-      <section className="mt-8 rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
+        <TabsContent className="pt-5" value="module-permissions">
+      <section className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">Module permissions</h2>
@@ -984,6 +1084,14 @@ export function UserManagementClient() {
           </p>
         )}
       </section>
+        </TabsContent>
+
+        {isAdmin ? (
+          <TabsContent className="pt-5" value="logs">
+            <AdminAuditLogs refreshKey={auditRefreshKey} />
+          </TabsContent>
+        ) : null}
+      </Tabs>
     </div>
   );
 }

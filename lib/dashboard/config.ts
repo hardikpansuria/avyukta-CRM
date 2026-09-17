@@ -28,8 +28,6 @@ export const dashboardWidgets: Record<DashboardKind, DashboardWidgetDefinition[]
   owner: [
     { id: "executive-summary", title: "Executive Summary", permission: "dashboard.view", scope: "company", destination: "/dashboard" },
     { id: "attention", title: "Needs Your Attention", permission: "dashboard.view", scope: "company", destination: "/dashboard" },
-    { id: "sales-overview", title: "Sales Overview", permission: "quotations.view", scope: "company", destination: "/dashboard/quotations" },
-    { id: "jobs", title: "Jobs Currently On The Go", permission: "jobs.view", scope: "company", destination: "/dashboard/jobs/purchase-orders" },
     { id: "financial", title: "Financial Overview", permission: "invoices.view", scope: "financial", destination: "/dashboard/invoices" },
   ],
   sales: [

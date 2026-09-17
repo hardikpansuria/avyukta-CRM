@@ -26,7 +26,7 @@ Production branch: `main`
 
 Production domain: `https://protech.avyukta.ca`
 
-Configure the same four variable names twice, with different environment scopes:
+Configure the application variables twice, with environment-specific values:
 
 | Variable | Preview value | Production value | Exposure |
 | --- | --- | --- | --- |
@@ -34,6 +34,8 @@ Configure the same four variable names twice, with different environment scopes:
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://bfsorhjuivyqlvqrkwgn.supabase.co` | `https://lnybnkbetjjluhpspvjy.supabase.co` | Browser-safe configuration |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Development publishable key | Production publishable key | Browser-safe configuration |
 | `SUPABASE_SERVICE_ROLE_KEY` | Development secret key | Production secret key | Sensitive, server only |
+| `RESEND_API_KEY` | Dedicated Development sending key | Dedicated Production sending key | Sensitive, server only |
+| `LEGAL_ACCEPTANCE_EMAIL_FROM` | `Avyukta CRM <no-reply@auth.avyukta.ca>` | `Avyukta CRM <no-reply@auth.avyukta.ca>` | Server-only sender identity |
 
 Rules:
 
@@ -93,10 +95,17 @@ Password:     dedicated Production Resend API key (stored securely)
 
 Use a dedicated Production sending key restricted to `auth.avyukta.ca` when that option is available. Do not reuse the website or Development key.
 
+The application also uses the Resend HTTPS API for legal-acceptance receipts.
+Configure `RESEND_API_KEY` and `LEGAL_ACCEPTANCE_EMAIL_FROM` in the matching
+Vercel environment. A receipt is attempted only after acceptance evidence is
+successfully recorded; an email-provider failure is logged and does not revoke
+the user's accepted status.
+
 Email-template checks:
 
-1. Invitation email must take the user to the password setup flow.
-2. In **Supabase Dashboard > Authentication > Email Templates > Reset password**, use this recovery link instead of `{{ .ConfirmationURL }}`:
+1. In **Supabase Dashboard > Authentication > Email Templates > Invite user**, set the subject to `You are invited to Avyukta CRM` and copy the version-controlled HTML from `supabase/templates/invite.html`. Apply it separately to the verified `crm-dev` and `crm-prod` projects. The application supplies the invitee name, organization name, and organization code as user metadata; the template also uses Supabase's built-in email value as the username.
+2. Confirm that the invitation email greets the user by name, identifies the inviting organization, prominently shows the organization code and email-as-username, and takes the user to the password setup flow.
+3. In **Supabase Dashboard > Authentication > Email Templates > Reset password**, use this recovery link instead of `{{ .ConfirmationURL }}`:
 
    ```html
    <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&amp;type=recovery">
@@ -105,9 +114,9 @@ Email-template checks:
    ```
 
    The application passes `/auth/confirm` as `RedirectTo`. Sending the token hash to that page lets the user deliberately select **Continue** before the one-time token is verified, reducing failures caused by email-link prefetching. The callback also accepts Supabase's PKCE `?code=` format for backward compatibility when the originating browser still has the PKCE verifier, but the token-hash template is the Production standard and also works when the email opens in another browser.
-3. Send one real invitation and one password-reset email to controlled inboxes.
-4. Confirm the recovery email opens `/auth/confirm?token_hash=...&type=recovery`, then reaches `/auth/reset-password` after **Continue**.
-5. Confirm delivery and link behavior in Resend logs and the browser.
+4. Send one real invitation and one password-reset email to controlled inboxes.
+5. Confirm the recovery email opens `/auth/confirm?token_hash=...&type=recovery`, then reaches `/auth/reset-password` after **Continue**.
+6. Confirm delivery and link behavior in Resend logs and the browser.
 
 ## 5. Super administrator setup
 
@@ -264,6 +273,10 @@ These items are not proven merely by entering environment variables:
 
 ## 11. Safe future deployment procedure
 
+Also follow `docs/source-control-and-production-release-safety.md`. It records the
+GitHub `Protect main` ruleset, external-integration scoping, and the staged
+Vercel Production promotion gate introduced after the 2026-09-04 incident.
+
 1. Complete and test changes on `develop` against `crm-dev`.
 2. Require lint, tests, production build, database tests, migration replay, and migration lint to pass.
 3. Back up Development database and all seven Storage buckets when the release requires it.
@@ -288,11 +301,12 @@ npx supabase migration list --linked
 npx supabase db push --linked --dry-run
 ```
 
-7. Merge the reviewed `develop` commit into `main`; do not delete or rewrite `main` history.
+7. Merge the reviewed `develop` pull request into `main`; do not push directly to `main`, and do not delete or rewrite `main` history.
 8. Apply only reviewed pending migrations to the confirmed Production project.
-9. Push `main`, wait for the Vercel Production deployment, and confirm the custom domain points to it.
-10. Run the Section 9 smoke tests and monitor Vercel and Supabase logs.
-11. Record the result and create verified Production backups.
+9. Confirm Vercel created a **Staged** Production deployment and that the custom domain still points to the previous Current deployment. If the deployment became Current automatically, stop and correct the Production Branch Tracking setting before the next release.
+10. Verify the staged deployment's commit SHA, run the Section 9 smoke tests, and inspect relevant Vercel logs.
+11. Manually promote the reviewed staged deployment to Production, then confirm the custom domain points to it.
+12. Monitor Vercel and Supabase logs, record the result, and create verified Production backups.
 
 Never run:
 

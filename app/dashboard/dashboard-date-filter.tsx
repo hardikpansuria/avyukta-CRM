@@ -18,7 +18,7 @@ export function DashboardDateFilter({ range }: { range: DashboardDateRange }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select onValueChange={(value) => update(value as DashboardPeriod)} value={range.period}>
-        <SelectTrigger aria-label="Dashboard date range" className="h-10 w-44 bg-background"><SelectValue /></SelectTrigger>
+        <SelectTrigger aria-label="Dashboard date range" className="h-10 w-44 bg-background"><SelectValue>{range.label}</SelectValue></SelectTrigger>
         <SelectContent>
           <SelectItem value="today">Today</SelectItem><SelectItem value="week">This Week</SelectItem><SelectItem value="month">This Month</SelectItem>
           <SelectItem value="quarter">This Quarter</SelectItem><SelectItem value="year">This Year</SelectItem><SelectItem value="custom">Custom Range</SelectItem>

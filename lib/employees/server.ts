@@ -43,6 +43,16 @@ export function isDuplicateEmailError(error: { code?: string; message?: string }
   );
 }
 
+export function isDuplicateEmployeeCodeError(error: {
+  code?: string;
+  message?: string;
+}) {
+  return (
+    error.code === "23505" &&
+    (error.message?.toLowerCase().includes("employee_code") ?? false)
+  );
+}
+
 export async function fetchSkillsForEmployees(
   admin: SupabaseClient,
   orgId: string,

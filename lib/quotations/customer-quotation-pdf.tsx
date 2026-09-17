@@ -37,6 +37,8 @@ export type CustomerQuotationPdfData = {
     footer_text?: string | null;
     terms_html?: string | null;
     terms_text?: string | null;
+    quotation_intro_text: string;
+    quotation_order_terms_text: string;
   };
   logo_data_url?: string | null;
   document: {
@@ -123,9 +125,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 24,
     left: 38,
-    width: 450,
+    right: 38,
     color: "#52525b",
     fontSize: 7.5,
+    lineHeight: 1,
+    textAlign: "center",
   },
   pageNumber: {
     position: "absolute",
@@ -404,10 +408,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 10,
     left: 24,
-    width: 480,
+    right: 24,
     color: "#52525b",
-    fontSize: 4.8,
+    fontSize: 7.5,
     lineHeight: 1,
+    textAlign: "center",
   },
 });
 
@@ -627,14 +632,7 @@ function FixedChrome({
       </View>
       <View fixed style={styles.footerRule} />
       <Text fixed style={styles.footerText}>
-        {organization.footer_text ||
-          [
-            organization.company_name,
-            organization.phone ? `Phone: ${organization.phone}` : null,
-            organization.fax ? `Fax: ${organization.fax}` : null,
-          ]
-            .filter(Boolean)
-            .join("  ")}
+        {organizationFooterText(organization)}
       </Text>
       <Text
         fixed
@@ -673,9 +671,24 @@ function TermsChrome({
       </View>
       <View fixed style={styles.termsFooterRule} />
       <Text fixed style={styles.termsFooterText}>
-        {organization.footer_text || companyLine}
+        {organizationFooterText(organization)}
       </Text>
     </>
+  );
+}
+
+function organizationFooterText(
+  organization: CustomerQuotationPdfData["organization"],
+) {
+  return (
+    organization.footer_text ||
+    [
+      organization.company_name,
+      organization.phone ? `Phone: ${organization.phone}` : null,
+      organization.fax ? `Fax: ${organization.fax}` : null,
+    ]
+      .filter(Boolean)
+      .join("  ")
   );
 }
 
@@ -809,10 +822,7 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
           </View>
         </View>
 
-        <Text style={styles.thankYou}>
-          Thank you, for the opportunity to quote on your requirements, please
-          call if you require further information.
-        </Text>
+        <Text style={styles.thankYou}>{organization.quotation_intro_text}</Text>
         <View style={styles.commercialRow}>
           <Text style={styles.commercialLabel}>Delivery:</Text>
           <Text style={styles.commercialValue}>
@@ -830,8 +840,7 @@ function CustomerQuotationPdf({ data }: { data: CustomerQuotationPdfData }) {
           <Text style={styles.commercialValue}>{document.fob_text || "-"}</Text>
         </View>
         <Text style={styles.subjectText}>
-          Order Subject to {organization.company_name} Standard terms and
-          conditions of sale.
+          {organization.quotation_order_terms_text}
         </Text>
         <Text>Sincerely,</Text>
         <Text style={styles.signature}>

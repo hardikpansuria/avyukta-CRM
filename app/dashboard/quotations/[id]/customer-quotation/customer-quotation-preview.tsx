@@ -15,6 +15,8 @@ type PreviewData = {
     footer_text?: string | null;
     terms_html?: string | null;
     terms_text?: string | null;
+    quotation_intro_text: string;
+    quotation_order_terms_text: string;
     logo_signed_url?: string | null;
   };
   document: Record<string, unknown>;
@@ -191,10 +193,7 @@ export function CustomerQuotationPreview({
         </div>
 
         <div className="mt-8 space-y-3 text-xs leading-5">
-          <p>
-            Thank you, for the opportunity to quote on your requirements,
-            please call if you require further information.
-          </p>
+          <p>{organization.quotation_intro_text}</p>
           <p>
             <strong>Delivery:</strong>{" "}
             {String(document.delivery_text || "-")}
@@ -205,10 +204,7 @@ export function CustomerQuotationPreview({
           <p>
             <strong>FOB:</strong> {String(document.fob_text || "-")}
           </p>
-          <p className="pt-2">
-            Order Subject to {organization.company_name} Standard terms and
-            conditions of sale.
-          </p>
+          <p className="pt-2">{organization.quotation_order_terms_text}</p>
           <p className="pt-3">Sincerely,</p>
           <p>{String(document.prepared_by_name_snapshot || "-")}</p>
         </div>

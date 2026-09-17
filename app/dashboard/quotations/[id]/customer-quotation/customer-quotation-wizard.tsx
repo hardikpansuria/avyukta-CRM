@@ -84,6 +84,8 @@ type Organization = {
   footer_text: string;
   terms_html: string;
   terms_text: string;
+  quotation_intro_text: string;
+  quotation_order_terms_text: string;
   logo_signed_url: string | null;
   logo_storage_path: string | null;
   has_logo: boolean;
@@ -808,9 +810,8 @@ export function CustomerQuotationWizard({
             title="Commercial Terms"
           >
             <div className="space-y-5">
-              <p className="rounded-md bg-zinc-50 p-4 text-sm leading-6 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                Thank you, for the opportunity to quote on your requirements,
-                please call if you require further information.
+              <p className="whitespace-pre-wrap rounded-md bg-zinc-50 p-4 text-sm leading-6 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                {organization.quotation_intro_text}
               </p>
               <TextareaField
                 label="Delivery"
@@ -828,10 +829,8 @@ export function CustomerQuotationWizard({
                 onChange={(value) => updateDocument({ fob_text: value })}
               />
               <Separator />
-              <p className="text-sm">
-                Order Subject to{" "}
-                <strong>{organization.company_name}</strong> Standard terms and
-                conditions of sale.
+              <p className="whitespace-pre-wrap text-sm">
+                {organization.quotation_order_terms_text}
               </p>
               <div>
                 <p className="text-sm">Sincerely,</p>

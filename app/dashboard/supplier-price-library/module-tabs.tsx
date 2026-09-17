@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 const links = [
-  ["/dashboard/supplier-price-library", "Dashboard"],
   ["/dashboard/supplier-price-library/suppliers", "Suppliers"],
   ["/dashboard/supplier-price-library/categories", "Categories"],
   ["/dashboard/supplier-price-library/materials", "Materials"],
@@ -16,10 +15,7 @@ export function ModuleTabs() {
   return (
     <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1">
       {links.map(([href, label]) => {
-        const active =
-          href === "/dashboard/supplier-price-library"
-            ? pathname === href
-            : pathname === href || pathname.startsWith(`${href}/`);
+        const active = pathname === href || pathname.startsWith(`${href}/`);
 
         return (
           <Button

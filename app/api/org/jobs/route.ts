@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
-import { listJobs } from "@/lib/jobs/data";
+import { listJobs, type CompletedJobSort } from "@/lib/jobs/data";
 import type { JobStatus } from "@/lib/jobs/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -10,6 +10,11 @@ const statuses = new Set<JobStatus>([
   "po_pending",
   "work_in_process",
   "work_completed",
+]);
+const completedSorts = new Set<CompletedJobSort>([
+  "completion_date",
+  "company_name",
+  "job_number",
 ]);
 
 export async function GET(request: Request) {
@@ -21,6 +26,7 @@ export async function GET(request: Request) {
   const statusValue = searchParams.get("status")?.trim() ?? "";
   const pageValue = Number(searchParams.get("page") ?? 1);
   const pageSizeValue = Number(searchParams.get("pageSize") ?? 20);
+  const completedSortValue = searchParams.get("sort")?.trim() ?? "";
   const result = await listJobs(createAdminClient(), session.org_id, {
     status: statuses.has(statusValue as JobStatus)
       ? (statusValue as JobStatus)
@@ -34,6 +40,10 @@ export async function GET(request: Request) {
     jobNumber: searchParams.get("job_number")?.trim() || undefined,
     quotationNumber: searchParams.get("quotation_number")?.trim() || undefined,
     poNumber: searchParams.get("po_number")?.trim() || undefined,
+    completedSort: completedSorts.has(completedSortValue as CompletedJobSort)
+      ? (completedSortValue as CompletedJobSort)
+      : undefined,
+    sortDirection: searchParams.get("direction") === "asc" ? "asc" : "desc",
     page: Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1,
     pageSize:
       Number.isInteger(pageSizeValue) && pageSizeValue > 0 ? pageSizeValue : 20,

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cache } from "react";
 
 import type { OrgSession } from "@/lib/auth/verify-org-session";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
@@ -106,7 +107,11 @@ export async function authorizeOrgRequest(
   return { session } as const;
 }
 
-export async function getEffectivePermissionKeys(session: OrgSession) {
+const getEffectivePermissionKeysCached = cache(async (
+  userId: string,
+  orgId: string,
+  role: string,
+) => {
   const admin = createAdminClient();
   const [{ data: definitions, error: definitionsError }, { data: overrides, error: overridesError }] =
     await Promise.all([
@@ -115,12 +120,12 @@ export async function getEffectivePermissionKeys(session: OrgSession) {
         .select("action_key, permission_modules!inner(module_key), role_default_permissions!inner(allowed, role_key)")
         .eq("is_active", true)
         .eq("permission_modules.is_active", true)
-        .eq("role_default_permissions.role_key", session.role),
+        .eq("role_default_permissions.role_key", role),
       admin
         .from("user_permission_overrides")
         .select("allowed, permission_definitions!inner(action_key, permission_modules!inner(module_key))")
-        .eq("org_id", session.org_id)
-        .eq("user_id", session.user.id),
+        .eq("org_id", orgId)
+        .eq("user_id", userId),
     ]);
 
   if (definitionsError || overridesError) {
@@ -153,6 +158,14 @@ export async function getEffectivePermissionKeys(session: OrgSession) {
   }
 
   return allowed;
+});
+
+export async function getEffectivePermissionKeys(session: OrgSession) {
+  return getEffectivePermissionKeysCached(
+    session.user.id,
+    session.org_id,
+    session.role,
+  );
 }
 
 export async function getSupplierPricePermissions(
