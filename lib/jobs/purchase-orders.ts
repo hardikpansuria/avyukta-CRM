@@ -21,12 +21,21 @@ type AllocationRow = {
   id: string;
   purchase_order_id: string;
   job_id: string;
+  quotation_id_snapshot: string;
   quotation_number_snapshot: string;
   revision_number_snapshot: number | string;
   project_name_snapshot?: string | null;
   quotation_total: number | string;
   total_po_amount: number | string;
   difference_amount: number | string;
+  po_amount_before_tax: number | string;
+  tax_name_snapshot?: string | null;
+  tax_rate_snapshot: number | string;
+  tax_amount: number | string;
+  difference_acknowledged: boolean;
+  is_active: boolean;
+  unlinked_at?: string | null;
+  unlink_reason?: string | null;
 };
 
 type InvoiceRow = {
@@ -92,7 +101,7 @@ export async function getPurchaseOrderData(
     admin
       .from("job_purchase_order_allocations")
       .select(
-        "id,purchase_order_id,job_id,quotation_number_snapshot,revision_number_snapshot,project_name_snapshot,quotation_total,total_po_amount,difference_amount",
+        "id,purchase_order_id,job_id,quotation_id_snapshot,quotation_number_snapshot,revision_number_snapshot,project_name_snapshot,quotation_total,po_amount_before_tax,tax_name_snapshot,tax_rate_snapshot,tax_amount,total_po_amount,difference_amount,difference_acknowledged,is_active,unlinked_at,unlink_reason",
       )
       .eq("org_id", orgId),
     admin
@@ -166,7 +175,7 @@ export async function listPurchaseOrders(
   const items = data.purchaseOrders
     .map((po) => {
       const allocations = data.allocations!.filter(
-        (row) => row.purchase_order_id === po.id,
+        (row) => row.purchase_order_id === po.id && row.is_active,
       );
       const poInvoices = data.invoices!.filter(
         (row) => row.purchase_order_id === po.id,
@@ -193,6 +202,7 @@ export async function listPurchaseOrders(
         ),
       };
     })
+    .filter((po) => po.job_count > 0)
     .filter((po) => {
       if (!query) return true;
       return [
@@ -319,9 +329,32 @@ export async function getPurchaseOrder(
       })),
   }));
   const currentAllocationIds = new Set(
-    (revisions[0]?.items ?? [])
-      .filter((item: { is_included: boolean }) => item.is_included)
-      .map((item: { allocation_id: string }) => item.allocation_id),
+    revisions.length
+      ? (revisions[0]?.items ?? [])
+          .filter((item: { is_included: boolean }) => item.is_included)
+          .map((item: { allocation_id: string }) => item.allocation_id)
+      : allocations.filter((allocation) => allocation.is_active).map((allocation) => allocation.id),
+  );
+  const { data: activityRows, error: activityError } = await admin
+    .from("job_purchase_order_activity")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("purchase_order_id", po.id)
+    .order("created_at", { ascending: false });
+  if (activityError) return { error: activityError };
+  const activityActorIds = Array.from(
+    new Set(
+      (activityRows ?? [])
+        .map((activity) => activity.actor_id as string | null)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const { data: activityProfiles, error: activityProfilesError } = activityActorIds.length
+    ? await admin.from("profiles").select("id,full_name,email").in("id", activityActorIds)
+    : { data: [], error: null };
+  if (activityProfilesError) return { error: activityProfilesError };
+  const activityProfilesById = new Map(
+    (activityProfiles ?? []).map((profile) => [profile.id, profile]),
   );
   const { data: primaryContact, error: contactError } = await admin
     .from("customer_contacts")
@@ -341,10 +374,17 @@ export async function getPurchaseOrder(
       customer_contact: primaryContact ?? null,
       allocations: allocations.map((allocation) => ({
         ...allocation,
-        is_currently_included: currentAllocationIds.has(allocation.id),
+        is_currently_included:
+          allocation.is_active && currentAllocationIds.has(allocation.id),
       })),
       documents,
       revisions,
+      activity: (activityRows ?? []).map((activity) => ({
+        ...activity,
+        actor_profile: activity.actor_id
+          ? (activityProfilesById.get(activity.actor_id as string) ?? null)
+          : null,
+      })),
       ...totals,
       remaining_uninvoiced: numeric(po.current_po_total) - totals.invoiced,
     },

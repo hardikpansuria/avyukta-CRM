@@ -94,7 +94,9 @@ select ok(
     from unnest(array[
       'public.create_job_purchase_order(text,date,text,jsonb)'::regprocedure,
       'public.create_quotation_revision(uuid,text)'::regprocedure,
-      'public.create_job_purchase_order_revision(uuid,date,uuid,jsonb,uuid[],text,boolean)'::regprocedure
+      'public.create_job_purchase_order_revision(uuid,date,uuid,jsonb,uuid[],text,boolean)'::regprocedure,
+      'public.update_job_purchase_order(uuid,text,date,text,jsonb)'::regprocedure,
+      'public.unlink_job_purchase_order_allocation(uuid,text)'::regprocedure
     ]) function_oid
   ),
   'Authenticated clients retain only the reviewed mutation RPC entry points'
@@ -155,7 +157,10 @@ select ok(
     from unnest(array[
       'private.create_job_purchase_order_impl(text,date,text,jsonb)'::regprocedure,
       'private.create_quotation_revision_impl(uuid,text)'::regprocedure,
-      'private.create_job_purchase_order_revision_impl(uuid,date,uuid,jsonb,uuid[],text,boolean)'::regprocedure
+      'private.create_job_purchase_order_revision_impl(uuid,date,uuid,jsonb,uuid[],text,boolean)'::regprocedure,
+      'private.update_job_purchase_order_impl(uuid,text,date,text,jsonb)'::regprocedure,
+      'private.unlink_job_purchase_order_allocation_impl(uuid,text)'::regprocedure,
+      'private.recalculate_job_purchase_order_totals(uuid,uuid)'::regprocedure
     ]) function_oid
   ),
   'Private mutation implementations cannot be invoked directly by API roles'
