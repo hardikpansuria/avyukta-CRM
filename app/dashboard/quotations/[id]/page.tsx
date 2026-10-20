@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { allowedNextQuotationStatuses } from "@/lib/quotations/status-transitions";
+import { canCreatePostAcceptanceRevision } from "@/lib/quotations/revision-eligibility";
 
 import {
   formatCurrency,
@@ -441,6 +442,12 @@ export default function QuotationDetailPage() {
   const auditHistory = detail.revision_audit ?? [];
   const printableDetail = detail;
   const allowedStatuses = allowedNextQuotationStatuses(quotation.status);
+  const isPostAcceptanceRevision = canCreatePostAcceptanceRevision(
+    quotation.status,
+    detail.purchase_order_job?.job_status,
+  );
+  const canCreateRevision =
+    quotation.status === "sent" || isPostAcceptanceRevision;
 
   async function updateStatus() {
     if (!pendingStatus || isChangingStatus) return;
@@ -460,6 +467,7 @@ export default function QuotationDetailPage() {
             quotation?: Quotation;
             error?: string;
             job_created?: boolean;
+            job_updated?: boolean;
             job?: { id: string; job_status?: string | null };
           }
         | null;
@@ -478,6 +486,8 @@ export default function QuotationDetailPage() {
       setSuccessMessage(
         payload.job_created
           ? "Quotation accepted. A PO Pending Job on the Go was created automatically."
+          : payload.job_updated
+            ? "Quotation revision accepted. The existing Job on the Go now uses this approved revision."
           : `Quotation status changed to ${formatStatus(savedStatus)}.`,
       );
       setJobCreated(Boolean(payload.job_created));
@@ -526,7 +536,11 @@ export default function QuotationDetailPage() {
         setError(payload?.error ?? "Unable to create revision.");
         return;
       }
-      if (payload?.quotation_id) window.location.assign(`/dashboard/quotations/${payload.quotation_id}`);
+      if (payload?.quotation_id) {
+        window.location.assign(
+          `/dashboard/quotations/${payload.quotation_id}/edit`,
+        );
+      }
     } catch {
       setError("Unable to create revision.");
     } finally {
@@ -617,7 +631,18 @@ export default function QuotationDetailPage() {
               ? "Edit Customer Quotation"
               : "Prepare Customer Quotation"}
           </Button>
-          {quotation.status === "sent" ? <Button className="h-10 rounded-md" type="button" variant="outline" onClick={() => setRevisionDialogOpen(true)}>Create Revision</Button> : null}
+          {canCreateRevision ? (
+            <Button
+              className="h-10 rounded-md"
+              type="button"
+              variant="outline"
+              onClick={() => setRevisionDialogOpen(true)}
+            >
+              {isPostAcceptanceRevision
+                ? "Revise Accepted Quotation"
+                : "Create Revision"}
+            </Button>
+          ) : null}
           <Button className="h-10 rounded-md" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} prefetch={false} />} variant="outline"><GitCompareIcon className="size-4" />Compare Revisions</Button>
           {!quotation.is_locked ? <Button
             className="h-10 rounded-md"
@@ -1106,7 +1131,61 @@ export default function QuotationDetailPage() {
       </div>
 
       <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
-        <DialogContent className="rounded-lg"><DialogHeader><DialogTitle>Create New Revision</DialogTitle><DialogDescription>Quotation {quotation.quotation_number ?? "—"} · Current Revision {quotation.revision_number ?? 0}</DialogDescription></DialogHeader><div><Label htmlFor="revision-purpose" required>Purpose of Revision</Label><Textarea className="mt-2 min-h-28" id="revision-purpose" placeholder="Customer requested additional work\nMaterial specification updated\nQuantity revised\nPrice adjustment\nDrawing revision\nScope of work modified" required value={revisionPurpose} onChange={(event) => setRevisionPurpose(event.target.value)} /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button><Button disabled={isWorking || !revisionPurpose.trim()} type="button" onClick={() => void createRevision()}>{isWorking ? "Creating..." : "Create Revision"}</Button></DialogFooter></DialogContent>
+        <DialogContent className="rounded-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {isPostAcceptanceRevision
+                ? "Revise Accepted Quotation"
+                : "Create New Revision"}
+            </DialogTitle>
+            <DialogDescription>
+              {isPostAcceptanceRevision
+                ? `A new editable revision will be created for ${quotation.quotation_number ?? "this quotation"}. The accepted revision remains locked and Job ${detail.purchase_order_job?.job_number ?? "on the Go"} remains the same.`
+                : `Quotation ${quotation.quotation_number ?? "—"} · Current Revision ${quotation.revision_number ?? 0}`}
+            </DialogDescription>
+          </DialogHeader>
+          {isPostAcceptanceRevision ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+              Edit the new revision, generate the customer-facing quotation,
+              and send it for acceptance. The job scope changes only after the
+              new revision is accepted. Do not enter the same scope change
+              again as a separate Change Order.
+            </p>
+          ) : null}
+          <div>
+            <Label htmlFor="revision-purpose" required>
+              Purpose of Revision
+            </Label>
+            <Textarea
+              className="mt-2 min-h-28"
+              id="revision-purpose"
+              placeholder="Customer requested two additional tanks\nMaterial specification updated\nQuantity revised\nPrice adjustment\nDrawing revision\nScope of work modified"
+              required
+              value={revisionPurpose}
+              onChange={(event) => setRevisionPurpose(event.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRevisionDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isWorking || !revisionPurpose.trim()}
+              type="button"
+              onClick={() => void createRevision()}
+            >
+              {isWorking
+                ? "Creating..."
+                : isPostAcceptanceRevision
+                  ? "Create Editable Revision"
+                  : "Create Revision"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       <Dialog

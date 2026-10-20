@@ -1,0 +1,17 @@
+export const postAcceptanceRevisionJobStatuses = [
+  "po_pending",
+  "work_in_process",
+  "on_hold",
+] as const;
+
+export function canCreatePostAcceptanceRevision(
+  quotationStatus: string | null | undefined,
+  jobStatus: string | null | undefined,
+) {
+  return (
+    quotationStatus === "accepted" &&
+    postAcceptanceRevisionJobStatuses.includes(
+      jobStatus as (typeof postAcceptanceRevisionJobStatuses)[number],
+    )
+  );
+}
