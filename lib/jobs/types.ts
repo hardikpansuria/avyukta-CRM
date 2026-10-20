@@ -1,19 +1,4 @@
-export type JobStatus =
-  | "po_pending"
-  | "work_in_process"
-  | "on_hold"
-  | "work_completed"
-  | "cancelled"
-  | "terminated";
-
-export type JobPurchaseOrderSummary = {
-  id: string;
-  po_number: string;
-  po_received_date: string;
-  allocation_id: string;
-  allocation_type: "baseline" | "replacement" | "supplemental";
-  total_po_amount: number | string;
-};
+export type JobStatus = "po_pending" | "work_in_process" | "work_completed";
 
 export type ProfileSummary = {
   id: string;
@@ -47,14 +32,16 @@ export type JobListItem = {
   customer_id: string;
   job_number?: string | null;
   job_status: JobStatus;
-  status_reason?: string | null;
   accepted_at?: string | null;
   salesperson_id?: string | null;
   quotation: QuotationSummary | null;
   customer: CustomerSummary | null;
   salesperson: ProfileSummary | null;
-  purchase_order: JobPurchaseOrderSummary | null;
-  purchase_orders: JobPurchaseOrderSummary[];
+  purchase_order: {
+    id: string;
+    po_number: string;
+    po_received_date: string;
+  } | null;
   completion: {
     id: string;
     certificate_number: string;

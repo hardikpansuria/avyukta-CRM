@@ -27,11 +27,6 @@ type Job = {
   customer?: { company_name?: string | null; currency?: string | null } | null;
   quotation?: { quotation_number?: string | null; revision_number?: number | null; project_name?: string | null } | null;
   purchase_order?: { po_number?: string | null; po_received_date?: string | null } | null;
-  purchase_orders: Array<{
-    id: string;
-    po_number?: string | null;
-    po_received_date?: string | null;
-  }>;
   salesperson?: { full_name?: string | null; email?: string | null } | null;
   totals: { allocated_po_total: number; invoiced: number; remaining_uninvoiced: number };
 };
@@ -72,7 +67,6 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobId, setJobId] = useState(initialJobId);
   const [job, setJob] = useState<Job | null>(null);
-  const [purchaseOrderId, setPurchaseOrderId] = useState("");
   const [invoiceType, setInvoiceType] = useState("deposit");
   const [amountType, setAmountType] = useState("percentage");
   const [amountValue, setAmountValue] = useState("50");
@@ -107,7 +101,7 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
       .then(async (response) => ({ response, payload: await response.json() }))
       .then(({ response, payload }) => {
         if (!response.ok) setError(payload.error ?? "Unable to load jobs.");
-        else setJobs((payload.jobs ?? []).filter((option: JobOption) => ["work_in_process", "on_hold", "work_completed"].includes(option.job_status)));
+        else setJobs((payload.jobs ?? []).filter((option: JobOption) => option.job_status !== "po_pending"));
       })
       .catch(() => { if (!controller.signal.aborted) setError("Unable to load jobs."); })
       .finally(() => { if (!controller.signal.aborted) setJobsLoading(false); });
@@ -124,11 +118,6 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
         else {
           setJob(payload.job);
           setCustomerId(payload.job.customer_id);
-          setPurchaseOrderId(
-            payload.job.purchase_orders?.length === 1
-              ? payload.job.purchase_orders[0].id
-              : "",
-          );
           setError(null);
         }
       })
@@ -139,9 +128,6 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
   const currency = job?.customer?.currency ?? "CAD";
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
   const selectedJob = jobs.find((option) => option.id === jobId);
-  const selectedPurchaseOrder = job?.purchase_orders.find(
-    (purchaseOrder) => purchaseOrder.id === purchaseOrderId,
-  );
   const calculated = job
     ? amountType === "percentage"
       ? job.totals.allocated_po_total * Number(amountValue || 0) / 100
@@ -157,7 +143,6 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
     setError(null);
     const form = new FormData();
     form.set("job_id", job.id);
-    form.set("purchase_order_id", purchaseOrderId);
     form.set("invoice_type", invoiceType);
     form.set("amount_type", amountType);
     form.set("amount_value", amountType === "remaining_balance" ? "0" : amountValue);
@@ -295,19 +280,10 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
         </CardContent></Card>
       ) : null}
       {job ? <>
-        {job.purchase_orders.length > 1 ? (
-          <Card><CardHeader><CardTitle>Select Purchase Order</CardTitle></CardHeader><CardContent className="space-y-2">
-            <Label required>Active PO for this invoice request</Label>
-            <Select value={purchaseOrderId} onValueChange={(value) => setPurchaseOrderId(String(value))}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select an active PO" /></SelectTrigger>
-              <SelectContent>{job.purchase_orders.map((po) => <SelectItem key={po.id} value={po.id}>{po.po_number ?? "PO"} · {po.po_received_date ?? "Date unavailable"}</SelectItem>)}</SelectContent>
-            </Select>
-          </CardContent></Card>
-        ) : null}
         <Card><CardHeader><CardTitle>Auto-fetched from accepted PO</CardTitle></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            ["Job Number", job.job_number ?? "-"], ["PO Number", selectedPurchaseOrder?.po_number ?? job.purchase_order?.po_number ?? "-"],
-            ["PO Received", selectedPurchaseOrder?.po_received_date ?? job.purchase_order?.po_received_date ?? "-"], ["Customer", job.customer?.company_name ?? "-"],
+            ["Job Number", job.job_number ?? "-"], ["PO Number", job.purchase_order?.po_number ?? "-"],
+            ["PO Received", job.purchase_order?.po_received_date ?? "-"], ["Customer", job.customer?.company_name ?? "-"],
             ["Project", job.quotation?.project_name ?? "-"], ["Quotation", job.quotation?.quotation_number ?? "-"],
             ["Revision", String(job.quotation?.revision_number ?? 0)], ["Salesperson", job.salesperson?.full_name ?? job.salesperson?.email ?? "-"],
             ["PO Total", money(job.totals.allocated_po_total, currency)], ["Previously Invoiced", money(job.totals.invoiced, currency)],
@@ -324,7 +300,7 @@ export function NewInvoiceRequestForm({ initialJobId }: { initialJobId: string }
           <div className="space-y-2 sm:col-span-2"><Label htmlFor="supporting-documents">Supporting Documents</Label><Input accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" id="supporting-documents" multiple type="file" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} /><p className="text-xs text-zinc-500">Delivery slips, site reports, photos, completion approvals, and packing slips. Maximum 15 MB each.</p></div>
           <div className="space-y-2 sm:col-span-2"><Label htmlFor="accounts-comments">Comments for Accounts</Label><Textarea id="accounts-comments" placeholder="e.g. Customer requested invoice before Friday." value={comments} onChange={(event) => setComments(event.target.value)} /></div>
         </CardContent></Card>
-        <div className="flex justify-end"><Button disabled={submitting || !purchaseOrderId || !description.trim() || calculated <= 0} type="submit">{submitting ? "Submitting..." : "Submit Invoice Request"}</Button></div>
+        <div className="flex justify-end"><Button disabled={submitting || !description.trim() || calculated <= 0} type="submit">{submitting ? "Submitting..." : "Submit Invoice Request"}</Button></div>
       </> : null}
     </form>
   );

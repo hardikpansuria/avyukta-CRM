@@ -9,10 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const statuses = new Set<JobStatus>([
   "po_pending",
   "work_in_process",
-  "on_hold",
   "work_completed",
-  "cancelled",
-  "terminated",
 ]);
 const completedSorts = new Set<CompletedJobSort>([
   "completion_date",
@@ -27,10 +24,6 @@ export async function GET(request: Request) {
   if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const statusValue = searchParams.get("status")?.trim() ?? "";
-  const statusValues = (searchParams.get("statuses") ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value): value is JobStatus => statuses.has(value as JobStatus));
   const pageValue = Number(searchParams.get("page") ?? 1);
   const pageSizeValue = Number(searchParams.get("pageSize") ?? 20);
   const completedSortValue = searchParams.get("sort")?.trim() ?? "";
@@ -38,7 +31,6 @@ export async function GET(request: Request) {
     status: statuses.has(statusValue as JobStatus)
       ? (statusValue as JobStatus)
       : undefined,
-    statuses: statusValue ? undefined : statusValues,
     search: searchParams.get("search")?.trim() ?? "",
     customerId: searchParams.get("customer_id")?.trim() || undefined,
     completionFrom: searchParams.get("completion_from")?.trim() || undefined,

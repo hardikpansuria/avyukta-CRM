@@ -8,11 +8,6 @@ import {
   uploadInvoiceDocument,
   validateDocument,
 } from "@/lib/jobs/documents";
-import {
-  activeAllocationTotal,
-  isInvoiceEligibleJobStatus,
-  resolveActiveAllocation,
-} from "@/lib/jobs/change-orders";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function jsonError(error: string, status: number) {
@@ -113,7 +108,6 @@ export async function POST(request: Request) {
   const invoiceAmount = Number(value("invoice_amount"));
   const remarks = value("remarks") || null;
   const invoiceRequestId = value("invoice_request_id");
-  const requestedPurchaseOrderId = value("purchase_order_id");
   const overInvoicingAcknowledged =
     value("over_invoicing_acknowledged") === "true";
   if (!customerId || !jobId || !invoiceNumber) {
@@ -141,22 +135,17 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (jobError) return jsonError("Unable to validate job", 500);
   if (!job) return jsonError("Job not found", 404);
-  if (!isInvoiceEligibleJobStatus(job.job_status)) {
-    return jsonError("Only active or completed jobs can be invoiced", 409);
-  }
   if (job.customer_id !== customerId) {
     return jsonError("Selected job does not belong to the customer", 400);
   }
-  const { data: allocations, error: allocationError } = await admin
+  const { data: allocation, error: allocationError } = await admin
     .from("job_purchase_order_allocations")
-    .select("id,purchase_order_id,total_po_amount")
+    .select("purchase_order_id,total_po_amount")
     .eq("job_id", jobId)
     .eq("org_id", session.org_id)
-    .eq("is_active", true);
+    .maybeSingle();
   if (allocationError) return jsonError("Unable to validate PO allocation", 500);
-  if (!allocations?.length) return jsonError("Job does not have an active purchase order", 409);
-  const allocation = resolveActiveAllocation(allocations, requestedPurchaseOrderId);
-  if (!allocation) return jsonError("Select which active Purchase Order this invoice belongs to", 400);
+  if (!allocation) return jsonError("Job does not have a purchase order", 409);
   const { data: purchaseOrder, error: purchaseOrderError } = await admin
     .from("job_purchase_orders")
     .select("id,currency")
@@ -196,8 +185,8 @@ export async function POST(request: Request) {
     (sum, invoice) => sum + numeric(invoice.invoice_amount),
     0,
   );
-  const activePoTotal = activeAllocationTotal(allocations);
-  const overBy = previouslyInvoiced + invoiceAmount - activePoTotal;
+  const overBy =
+    previouslyInvoiced + invoiceAmount - numeric(allocation.total_po_amount);
   if (overBy > 0.005 && !overInvoicingAcknowledged) {
     return jsonError(
       "Invoice total exceeds the job PO allocation. Acknowledgement is required.",

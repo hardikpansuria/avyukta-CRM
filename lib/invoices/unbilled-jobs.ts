@@ -12,7 +12,7 @@ export type UnbilledJob = {
   customer_id: string;
   salesperson_id: string | null;
   quotation_id: string;
-  purchase_order_id: string | null;
+  purchase_order_id: string;
   po_number: string;
   currency: string;
   customer_name: string;

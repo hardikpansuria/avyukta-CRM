@@ -8,11 +8,6 @@ import {
   uploadInvoiceRequestDocument,
   validateDocument,
 } from "@/lib/jobs/documents";
-import {
-  activeAllocationTotal,
-  isInvoiceEligibleJobStatus,
-  resolveActiveAllocation,
-} from "@/lib/jobs/change-orders";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const invoiceTypes = new Set([
@@ -105,7 +100,6 @@ export async function POST(request: Request) {
     return jsonError("Invalid form data", 400);
   }
   const jobId = formValue(form, "job_id");
-  const requestedPurchaseOrderId = formValue(form, "purchase_order_id");
   const invoiceType = formValue(form, "invoice_type");
   const amountType = formValue(form, "amount_type");
   const amountValue = Number(formValue(form, "amount_value") || 0);
@@ -148,18 +142,18 @@ export async function POST(request: Request) {
     .eq("org_id", session.org_id)
     .maybeSingle();
   if (jobError) return jsonError("Unable to validate job", 500);
-  if (!job || !isInvoiceEligibleJobStatus(job.job_status)) {
-    return jsonError("Only active or completed jobs can be invoiced", 409);
+  if (!job || job.job_status === "po_pending") {
+    return jsonError("A received purchase order is required", 409);
   }
 
   const [allocationResult, customerResult, quotationResult, salespersonResult] =
     await Promise.all([
       admin
         .from("job_purchase_order_allocations")
-        .select("id,purchase_order_id,total_po_amount,quotation_number_snapshot,revision_number_snapshot,project_name_snapshot,tax_name_snapshot,tax_rate_snapshot")
+        .select("purchase_order_id,total_po_amount,quotation_number_snapshot,revision_number_snapshot,project_name_snapshot,tax_name_snapshot,tax_rate_snapshot")
         .eq("job_id", jobId)
         .eq("org_id", session.org_id)
-        .eq("is_active", true),
+        .maybeSingle(),
       admin
         .from("customers")
         .select("id,company_name,credit_terms,gst_hst_number,tax_exempt,currency")
@@ -179,15 +173,9 @@ export async function POST(request: Request) {
   const relationError =
     allocationResult.error ?? customerResult.error ?? quotationResult.error ?? salespersonResult.error;
   if (relationError) return jsonError("Unable to load billing context", 500);
-  const allocations = allocationResult.data ?? [];
-  const allocation = resolveActiveAllocation(allocations, requestedPurchaseOrderId);
+  const allocation = allocationResult.data;
   const customer = customerResult.data;
-  if (!customer || allocations.length === 0) {
-    return jsonError("Job billing context is incomplete", 409);
-  }
-  if (!allocation) {
-    return jsonError("Select which active Purchase Order this request belongs to", 400);
-  }
+  if (!allocation || !customer) return jsonError("Job billing context is incomplete", 409);
 
   const [poResult, addressesResult, contactResult, invoicesResult, requestsResult] =
     await Promise.all([
@@ -226,7 +214,7 @@ export async function POST(request: Request) {
   const po = poResult.data;
   if (!po) return jsonError("Purchase order not found", 404);
 
-  const poTotal = activeAllocationTotal(allocations);
+  const poTotal = Number(allocation.total_po_amount ?? 0);
   const committed = [...(invoicesResult.data ?? []), ...(requestsResult.data ?? [])].reduce(
     (sum, row) => sum + Number("invoice_amount" in row ? row.invoice_amount : row.requested_amount),
     0,
