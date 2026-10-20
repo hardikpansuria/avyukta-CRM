@@ -102,26 +102,6 @@ type QuotationDetail = {
   series_revisions?: SeriesRevision[];
   revision_audit?: AuditEvent[];
   tax_warning?: string | null;
-  purchase_order_attachment?: {
-    id: string;
-    allocation_id: string;
-    job_id: string;
-    po_number: string;
-    po_received_date: string;
-    current_po_total: number | string;
-    allocated_total: number | string;
-    currency: string;
-  } | null;
-  purchase_order_job?: {
-    id: string;
-    job_number?: string | null;
-    job_status: string;
-  } | null;
-  purchase_order_permissions?: {
-    can_edit?: boolean;
-    can_remove?: boolean;
-    can_attach?: boolean;
-  };
 };
 
 type SeriesRevision = {
@@ -310,8 +290,6 @@ export default function QuotationDetailPage() {
   >([]);
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
   const [revisionPurpose, setRevisionPurpose] = useState("");
-  const [removePoDialogOpen, setRemovePoDialogOpen] = useState(false);
-  const [isRemovingPo, setIsRemovingPo] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -555,38 +533,6 @@ export default function QuotationDetailPage() {
     }
   }
 
-  async function removePurchaseOrder() {
-    const attachment = detail?.purchase_order_attachment;
-    if (!attachment || isRemovingPo) return;
-    setError(null);
-    setSuccessMessage(null);
-    setIsRemovingPo(true);
-    try {
-      const response = await fetch(
-        `/api/org/job-purchase-orders/${attachment.id}/allocations/${attachment.allocation_id}`,
-        {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: "Removed from quotation detail" }),
-        },
-      );
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      if (!response.ok) {
-        setError(payload?.error ?? "Unable to remove purchase order.");
-        return;
-      }
-      setRemovePoDialogOpen(false);
-      setSuccessMessage("Purchase order removed from this quotation. You can now attach the correct PO.");
-      setRefreshKey((key) => key + 1);
-    } catch {
-      setError("Unable to remove purchase order.");
-    } finally {
-      setIsRemovingPo(false);
-    }
-  }
-
   return (
     <div className="mx-auto max-w-6xl pb-24">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -713,36 +659,6 @@ export default function QuotationDetailPage() {
               quotation.grand_total,
           )}
         />
-      </section>
-
-      <section className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">Purchase Order</h2>
-            {detail.purchase_order_attachment ? (
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                PO No: {detail.purchase_order_attachment.po_number} · Received {formatPlainDate(detail.purchase_order_attachment.po_received_date)} · Allocated {formatCurrency(detail.purchase_order_attachment.allocated_total)}
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">No purchase order is currently attached to this quotation.</p>
-            )}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {detail.purchase_order_attachment ? (
-              <>
-                <Button nativeButton={false} render={<Link href={`/dashboard/jobs/purchase-orders/${detail.purchase_order_attachment.id}`} />} variant="outline">View PO</Button>
-                {detail.purchase_order_permissions?.can_edit ? (
-                  <Button nativeButton={false} render={<Link href={`/dashboard/jobs/purchase-orders/${detail.purchase_order_attachment.id}/edit`} />} variant="outline">Edit PO</Button>
-                ) : null}
-                {detail.purchase_order_permissions?.can_remove ? (
-                  <Button type="button" variant="destructive" onClick={() => setRemovePoDialogOpen(true)}>Remove PO</Button>
-                ) : null}
-              </>
-            ) : detail.purchase_order_job?.job_status === "po_pending" && detail.purchase_order_permissions?.can_attach ? (
-              <Button nativeButton={false} render={<Link href={`/dashboard/jobs/po-pending/${detail.purchase_order_job.id}/attach`} />}>Attach PO</Button>
-            ) : null}
-          </div>
-        </div>
       </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -1107,26 +1023,6 @@ export default function QuotationDetailPage() {
 
       <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
         <DialogContent className="rounded-lg"><DialogHeader><DialogTitle>Create New Revision</DialogTitle><DialogDescription>Quotation {quotation.quotation_number ?? "—"} · Current Revision {quotation.revision_number ?? 0}</DialogDescription></DialogHeader><div><Label htmlFor="revision-purpose" required>Purpose of Revision</Label><Textarea className="mt-2 min-h-28" id="revision-purpose" placeholder="Customer requested additional work\nMaterial specification updated\nQuantity revised\nPrice adjustment\nDrawing revision\nScope of work modified" required value={revisionPurpose} onChange={(event) => setRevisionPurpose(event.target.value)} /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button><Button disabled={isWorking || !revisionPurpose.trim()} type="button" onClick={() => void createRevision()}>{isWorking ? "Creating..." : "Create Revision"}</Button></DialogFooter></DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={removePoDialogOpen}
-        onOpenChange={(open) => {
-          if (!isRemovingPo) setRemovePoDialogOpen(open);
-        }}
-      >
-        <DialogContent className="rounded-lg" showCloseButton={!isRemovingPo}>
-          <DialogHeader>
-            <DialogTitle>Remove Purchase Order?</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove this purchase order from this quotation? This action will unlink the PO from the quotation.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button disabled={isRemovingPo} type="button" variant="outline" onClick={() => setRemovePoDialogOpen(false)}>Cancel</Button>
-            <Button disabled={isRemovingPo} type="button" variant="destructive" onClick={() => void removePurchaseOrder()}>{isRemovingPo ? "Removing..." : "Confirm Removal"}</Button>
-          </DialogFooter>
-        </DialogContent>
       </Dialog>
 
       <Dialog

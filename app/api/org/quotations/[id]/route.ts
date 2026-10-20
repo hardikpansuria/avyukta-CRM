@@ -82,45 +82,6 @@ export async function GET(
     : { data: [] };
   const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
 
-  const [allocationResult, jobResult, canEditPo, canRemovePo, canAttachPo] =
-    await Promise.all([
-      admin
-        .from("job_purchase_order_allocations")
-        .select("id,job_id,purchase_order_id,total_po_amount")
-        .eq("org_id", session.org_id)
-        .eq("quotation_id_snapshot", id)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle(),
-      admin
-        .from("jobs")
-        .select("id,job_number,job_status,latest_accepted_quotation_id")
-        .eq("org_id", session.org_id)
-        .eq("latest_accepted_quotation_id", id)
-        .limit(1)
-        .maybeSingle(),
-      hasOrgPermission(session, "purchase_orders", "edit"),
-      hasOrgPermission(session, "purchase_orders", "delete"),
-      hasOrgPermission(session, "purchase_orders", "attach_po"),
-    ]);
-  if (allocationResult.error || jobResult.error) {
-    return jsonError("Unable to fetch Purchase Order attachment", 500);
-  }
-
-  const attachedAllocation = allocationResult.data;
-  const { data: attachedPurchaseOrder, error: attachedPurchaseOrderError } =
-    attachedAllocation
-      ? await admin
-          .from("job_purchase_orders")
-          .select("id,po_number,po_received_date,current_po_total,currency")
-          .eq("id", attachedAllocation.purchase_order_id)
-          .eq("org_id", session.org_id)
-          .maybeSingle()
-      : { data: null, error: null };
-  if (attachedPurchaseOrderError) {
-    return jsonError("Unable to fetch Purchase Order attachment", 500);
-  }
-
   return NextResponse.json({
     quotation: result.quotation,
     contacts: result.contacts ?? [],
@@ -138,20 +99,6 @@ export async function GET(
       actor_profile: profilesById.get(event.actor_id as string) ?? null,
     })),
     tax_warning: result.tax_warning ?? null,
-    purchase_order_attachment: attachedAllocation && attachedPurchaseOrder
-      ? {
-          ...attachedPurchaseOrder,
-          allocation_id: attachedAllocation.id,
-          job_id: attachedAllocation.job_id,
-          allocated_total: attachedAllocation.total_po_amount,
-        }
-      : null,
-    purchase_order_job: jobResult.data ?? null,
-    purchase_order_permissions: {
-      can_edit: canEditPo,
-      can_remove: canRemovePo,
-      can_attach: canAttachPo,
-    },
   });
 }
 

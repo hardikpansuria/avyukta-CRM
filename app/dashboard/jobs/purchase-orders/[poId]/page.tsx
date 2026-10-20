@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   ArrowLeftIcon,
@@ -10,7 +10,6 @@ import {
   FileIcon,
   UploadIcon,
   PlusIcon,
-  PencilIcon,
 } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -100,13 +99,6 @@ type PurchaseOrder = {
       is_included: boolean;
     }>;
   }>;
-  activity?: Array<{
-    id: string;
-    action: "edited" | "document_replaced" | "unlinked";
-    created_at: string;
-    notes?: string | null;
-    actor_profile?: { full_name?: string | null; email?: string | null } | null;
-  }>;
 };
 
 function money(value: number | string, currency: string) {
@@ -144,7 +136,6 @@ function Summary({
 
 export default function PurchaseOrderDetailPage() {
   const { poId } = useParams<{ poId: string }>();
-  const searchParams = useSearchParams();
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -154,7 +145,6 @@ export default function PurchaseOrderDetailPage() {
     useState<"purchase_order" | "supporting_document">("supporting_document");
   const [uploading, setUploading] = useState(false);
   const [viewingRevisionId, setViewingRevisionId] = useState<string | null>(null);
-  const [canEdit, setCanEdit] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -166,18 +156,13 @@ export default function PurchaseOrderDetailPage() {
           signal: controller.signal,
         });
         const payload = (await response.json().catch(() => null)) as
-          | {
-              purchase_order?: PurchaseOrder;
-              permissions?: { can_edit?: boolean };
-              error?: string;
-            }
+          | { purchase_order?: PurchaseOrder; error?: string }
           | null;
         if (!response.ok || !payload?.purchase_order) {
           setError(payload?.error ?? "Unable to load purchase order.");
           return;
         }
         setPo(payload.purchase_order);
-        setCanEdit(Boolean(payload.permissions?.can_edit));
         setError(null);
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
@@ -277,16 +262,6 @@ export default function PurchaseOrderDetailPage() {
               ? `Revision ${po.current_revision_number}`
               : "Original"}
           </Badge>
-          {canEdit ? (
-            <Button
-              nativeButton={false}
-              render={<Link href={`/dashboard/jobs/purchase-orders/${po.id}/edit`} />}
-              size="sm"
-              variant="outline"
-            >
-              <PencilIcon /> Edit PO
-            </Button>
-          ) : null}
           <Button
             nativeButton={false}
             render={<Link href={`/dashboard/jobs/purchase-orders/${po.id}/revisions/new`} />}
@@ -296,11 +271,6 @@ export default function PurchaseOrderDetailPage() {
           </Button>
         </div>
       </div>
-      {searchParams.get("message") ? (
-        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
-          <AlertDescription>{searchParams.get("message")}</AlertDescription>
-        </Alert>
-      ) : null}
       {error ? (
         <Alert>
           <AlertDescription>{error}</AlertDescription>
