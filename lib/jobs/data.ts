@@ -15,6 +15,7 @@ type JobRow = {
   customer_id: string;
   job_number?: string | null;
   job_status: JobStatus;
+  status_reason?: string | null;
   accepted_at?: string | null;
   salesperson_id?: string | null;
   latest_work_completion_id?: string | null;
@@ -36,7 +37,7 @@ function includesSearch(item: JobListItem, search: string) {
     item.quotation?.quotation_number,
     item.quotation?.project_name,
     item.customer?.company_name,
-    item.purchase_order?.po_number,
+    ...item.purchase_orders.map((purchaseOrder) => purchaseOrder.po_number),
     item.salesperson?.full_name,
     item.salesperson?.email,
   ].some((value) => String(value ?? "").toLocaleLowerCase().includes(query));
@@ -47,6 +48,7 @@ export async function listJobs(
   orgId: string,
   options: {
     status?: JobStatus;
+    statuses?: JobStatus[];
     search?: string;
     page?: number;
     pageSize?: number;
@@ -65,12 +67,13 @@ export async function listJobs(
   let query = admin
     .from("jobs")
     .select(
-      "id,quotation_series_id,latest_accepted_quotation_id,customer_id,job_number,job_status,accepted_at,salesperson_id,latest_work_completion_id",
+      "id,quotation_series_id,latest_accepted_quotation_id,customer_id,job_number,job_status,status_reason,accepted_at,salesperson_id,latest_work_completion_id",
     )
     .eq("org_id", orgId)
     .order("accepted_at", { ascending: false });
 
   if (options.status) query = query.eq("job_status", options.status);
+  else if (options.statuses?.length) query = query.in("job_status", options.statuses);
   if (options.customerId) query = query.eq("customer_id", options.customerId);
 
   const { data: rows, error } = await query;
@@ -91,8 +94,9 @@ export async function listJobs(
   const [allocationResult, scopeAssignmentsResult] = await Promise.all([
     jobIds.length ? admin
         .from("job_purchase_order_allocations")
-        .select("job_id,purchase_order_id")
+        .select("id,job_id,purchase_order_id,allocation_type,total_po_amount,created_at")
         .eq("org_id", orgId)
+        .eq("is_active", true)
         .in("job_id", jobIds)
       : Promise.resolve({ data: [], error: null }),
     jobIds.length ? admin
@@ -106,8 +110,12 @@ export async function listJobs(
     return { error: allocationResult.error ?? scopeAssignmentsResult.error, jobs: [] as JobListItem[], total: 0 };
   }
   const allocations = (allocationResult.data ?? []) as Array<{
+    id: string;
     job_id: string;
     purchase_order_id: string;
+    allocation_type: "baseline" | "replacement" | "supplemental";
+    total_po_amount: number | string;
+    created_at: string;
   }>;
   const purchaseOrderIds = Array.from(new Set(allocations.map((row) => row.purchase_order_id)));
 
@@ -177,7 +185,12 @@ export async function listJobs(
   const purchaseOrders = new Map(
     (purchaseOrderResult.data ?? []).map((row) => [row.id, row]),
   );
-  const allocationByJob = new Map(allocations.map((row) => [row.job_id, row]));
+  const allocationsByJob = new Map<string, typeof allocations>();
+  for (const allocation of allocations) {
+    const values = allocationsByJob.get(allocation.job_id) ?? [];
+    values.push(allocation);
+    allocationsByJob.set(allocation.job_id, values);
+  }
   const scopesByJob = new Map<string, JobListItem["assigned_scopes"]>();
   for (const row of scopeAssignmentsResult.data ?? []) {
     const relation = row.quotation_scopes as unknown as { scope_title: string; scope_description?: string | null; sort_order?: number | null };
@@ -197,15 +210,27 @@ export async function listJobs(
 
   const filtered = jobs
     .map((job): JobListItem => {
-      const allocation = allocationByJob.get(job.id);
+      const jobAllocations = (allocationsByJob.get(job.id) ?? []).sort((a, b) =>
+        a.created_at.localeCompare(b.created_at),
+      );
+      const purchaseOrderSummaries = jobAllocations.flatMap((allocation) => {
+        const purchaseOrder = purchaseOrders.get(allocation.purchase_order_id);
+        return purchaseOrder
+          ? [{
+              ...purchaseOrder,
+              allocation_id: allocation.id,
+              allocation_type: allocation.allocation_type,
+              total_po_amount: allocation.total_po_amount,
+            }]
+          : [];
+      }) as JobListItem["purchase_orders"];
       return {
         ...job,
         quotation: quotations.get(job.latest_accepted_quotation_id) ?? null,
         customer: customers.get(job.customer_id) ?? null,
         salesperson: job.salesperson_id ? (profiles.get(job.salesperson_id) ?? null) : null,
-        purchase_order: allocation
-          ? (purchaseOrders.get(allocation.purchase_order_id) as JobListItem["purchase_order"] ?? null)
-          : null,
+        purchase_order: purchaseOrderSummaries.at(-1) ?? null,
+        purchase_orders: purchaseOrderSummaries,
         completion: ((job.latest_work_completion_id
           ? completionsById.get(job.latest_work_completion_id)
           : completionByJob.get(job.id)) as JobListItem["completion"]) ?? null,
@@ -217,7 +242,7 @@ export async function listJobs(
     .filter((job) => includes(job.salesperson?.full_name ?? job.salesperson?.email, options.salespersonSearch))
     .filter((job) => includes(job.job_number, options.jobNumber))
     .filter((job) => includes(job.quotation?.quotation_number, options.quotationNumber))
-    .filter((job) => includes(job.purchase_order?.po_number, options.poNumber))
+    .filter((job) => !options.poNumber?.trim() || job.purchase_orders.some((purchaseOrder) => includes(purchaseOrder.po_number, options.poNumber)))
     .filter((job) => !options.completionFrom || Boolean(job.completion && job.completion.completion_date >= options.completionFrom))
     .filter((job) => !options.completionTo || Boolean(job.completion && job.completion.completion_date <= options.completionTo))
     .sort((left, right) => {
@@ -313,7 +338,8 @@ export async function getJobDetail(
       .select("*")
       .eq("job_id", jobId)
       .eq("org_id", orgId)
-      .maybeSingle(),
+      .eq("is_active", true)
+      .order("created_at", { ascending: true }),
     admin
       .from("job_invoices")
       .select("*")
@@ -351,15 +377,15 @@ export async function getJobDetail(
     quotationHistoryResult.error;
   if (relatedError) return { error: relatedError, job: null };
 
-  const allocation = allocationResult.data;
-  const purchaseOrderResult = allocation?.purchase_order_id
+  const allocations = allocationResult.data ?? [];
+  const purchaseOrderIds = Array.from(new Set(allocations.map((row) => row.purchase_order_id)));
+  const purchaseOrderResult = purchaseOrderIds.length
     ? await admin
         .from("job_purchase_orders")
         .select("id,po_number,po_received_date,currency")
-        .eq("id", allocation.purchase_order_id)
         .eq("org_id", orgId)
-        .maybeSingle()
-    : { data: null, error: null };
+        .in("id", purchaseOrderIds)
+    : { data: [], error: null };
   if (purchaseOrderResult.error) {
     return { error: purchaseOrderResult.error, job: null };
   }
@@ -367,7 +393,7 @@ export async function getJobDetail(
   const [scopeAssignmentsResult, completionsResult] = await Promise.all([
     admin
       .from("job_scope_assignments")
-      .select("scope_id,quotation_id,quotation_scopes!inner(scope_title,scope_description,sort_order)")
+      .select("scope_id,quotation_id,quotation_scopes!inner(scope_title,scope_description,quantity,scope_total_after_discount,sort_order)")
       .eq("job_id", jobId)
       .eq("org_id", orgId),
     admin
@@ -479,7 +505,17 @@ export async function getJobDetail(
     },
     { invoiced: 0, paid: 0, outstanding: 0 },
   );
-  const allocationTotal = Number(allocation?.total_po_amount ?? 0);
+  const allocationTotal = allocations.reduce(
+    (sum, allocation) => sum + Number(allocation.total_po_amount ?? 0),
+    0,
+  );
+  const purchaseOrdersById = new Map(
+    (purchaseOrderResult.data ?? []).map((purchaseOrder) => [purchaseOrder.id, purchaseOrder]),
+  );
+  const activePurchaseOrders = allocations.flatMap((allocation) => {
+    const purchaseOrder = purchaseOrdersById.get(allocation.purchase_order_id);
+    return purchaseOrder ? [{ ...purchaseOrder, allocation }] : [];
+  });
 
   return {
     error: null,
@@ -488,8 +524,10 @@ export async function getJobDetail(
       quotation: quotationResult.data,
       customer: customerResult.data,
       salesperson: profileResult.data,
-      allocation,
-      purchase_order: purchaseOrderResult.data,
+      allocation: allocations.at(-1) ?? null,
+      allocations,
+      purchase_order: activePurchaseOrders.at(-1) ?? null,
+      purchase_orders: activePurchaseOrders,
       assigned_scopes: (scopeAssignmentsResult.data ?? []).map((row) => ({
         id: row.scope_id,
         quotation_id: row.quotation_id,

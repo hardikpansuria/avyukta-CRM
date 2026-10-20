@@ -29,6 +29,7 @@ type AllocationRow = {
   quotation_id_snapshot: string;
   quotation_number_snapshot: string;
   revision_number_snapshot: number;
+  is_active: boolean;
 };
 type JobRow = { id: string; job_number: string | null; customer_id: string };
 type PoRow = { id: string; customer_id: string; po_number: string };
@@ -170,7 +171,7 @@ export async function collectOrganizationDocuments(
     admin.from("quotations").select("id,customer_id,quotation_number,revision_number").eq("org_id", session.org_id),
     admin.from("jobs").select("id,job_number,customer_id").eq("org_id", session.org_id),
     admin.from("job_purchase_orders").select("id,customer_id,po_number").eq("org_id", session.org_id),
-    admin.from("job_purchase_order_allocations").select("purchase_order_id,job_id,quotation_id_snapshot,quotation_number_snapshot,revision_number_snapshot").eq("org_id", session.org_id),
+    admin.from("job_purchase_order_allocations").select("purchase_order_id,job_id,quotation_id_snapshot,quotation_number_snapshot,revision_number_snapshot,is_active").eq("org_id", session.org_id),
     admin.from("job_invoices").select("id,job_id,purchase_order_id,invoice_number").eq("org_id", session.org_id),
     admin.from("invoice_requests").select("id,job_id,purchase_order_id,quotation_number_snapshot,revision_number_snapshot").eq("org_id", session.org_id),
     materialQuery,
@@ -203,7 +204,12 @@ export async function collectOrganizationDocuments(
   const jobs = new Map((jobsResult.data as JobRow[]).map((row) => [row.id, row]));
   const purchaseOrders = new Map((purchaseOrdersResult.data as PoRow[]).map((row) => [row.id, row]));
   const allocations = allocationsResult.data as AllocationRow[];
-  const allocationByJob = new Map(allocations.map((row) => [row.job_id, row]));
+  const activeAllocationByJob = new Map(
+    allocations.filter((row) => row.is_active).map((row) => [row.job_id, row]),
+  );
+  const allocationByJobAndPo = new Map(
+    allocations.map((row) => [`${row.job_id}:${row.purchase_order_id}`, row]),
+  );
   const allocationsByPo = new Map<string, AllocationRow[]>();
   allocations.forEach((row) => allocationsByPo.set(row.purchase_order_id, [...(allocationsByPo.get(row.purchase_order_id) ?? []), row]));
   const invoices = new Map((invoicesResult.data as InvoiceRow[]).map((row) => [row.id, row]));
@@ -279,7 +285,7 @@ export async function collectOrganizationDocuments(
     const invoice = requireRelation(invoices.get(row.invoice_id), "an invoice document's invoice");
     const job = requireRelation(jobs.get(invoice.job_id), "an invoice's job");
     const po = requireRelation(purchaseOrders.get(invoice.purchase_order_id), "an invoice's purchase order");
-    const allocation = requireRelation(allocationByJob.get(invoice.job_id), "an invoice's accepted quotation");
+    const allocation = requireRelation(allocationByJobAndPo.get(`${invoice.job_id}:${invoice.purchase_order_id}`), "an invoice's accepted quotation");
     const customer = requireRelation(customers.get(job.customer_id), "an invoice's customer");
     documents.push(documentBase(row.id, customer, {
       quotationNumber: allocation.quotation_number_snapshot,
@@ -292,7 +298,7 @@ export async function collectOrganizationDocuments(
   for (const row of (workCompletionResult.data ?? []) as WorkCompletionRow[]) {
     const job = requireRelation(jobs.get(row.job_id), "a work completion certificate's job");
     const customer = requireRelation(customers.get(job.customer_id), "a work completion certificate's customer");
-    const allocation = allocationByJob.get(job.id);
+    const allocation = activeAllocationByJob.get(job.id);
     const po = allocation ? purchaseOrders.get(allocation.purchase_order_id) : undefined;
     documents.push(documentBase(row.id, customer, {
       quotationNumber: allocation?.quotation_number_snapshot ?? null,

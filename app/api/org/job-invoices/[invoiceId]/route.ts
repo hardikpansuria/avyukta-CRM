@@ -76,7 +76,7 @@ export async function PATCH(
       .select("total_po_amount")
       .eq("job_id", invoice.job_id)
       .eq("org_id", session.org_id)
-      .maybeSingle(),
+      .eq("is_active", true),
     admin
       .from("job_invoices")
       .select("invoice_amount")
@@ -91,9 +91,12 @@ export async function PATCH(
     (sum, row) => sum + numeric(row.invoice_amount),
     0,
   );
+  const activePoTotal = (allocationResult.data ?? []).reduce(
+    (sum, row) => sum + numeric(row.total_po_amount),
+    0,
+  );
   if (
-    otherTotal + invoiceAmount >
-      numeric(allocationResult.data?.total_po_amount) + 0.005 &&
+    otherTotal + invoiceAmount > activePoTotal + 0.005 &&
     body.over_invoicing_acknowledged !== true
   ) {
     return jsonError("Over-invoicing acknowledgement is required", 409);

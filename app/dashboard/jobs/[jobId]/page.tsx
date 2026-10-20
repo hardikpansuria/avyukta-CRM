@@ -10,6 +10,7 @@ import {
   ExternalLinkIcon,
   FilePlus2Icon,
   PencilIcon,
+  PauseCircleIcon,
   PrinterIcon,
   RotateCcwIcon,
 } from "lucide-react";
@@ -45,11 +46,13 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 import { JobCompletionDialog, type EditableCompletion } from "../job-completion-dialog";
+import { JobChangeOrders } from "./job-change-orders";
 
 type JobDetail = {
   id: string;
   job_number?: string | null;
   job_status: string;
+  status_reason?: string | null;
   accepted_at?: string | null;
   quotation?: {
     quotation_number?: string | null;
@@ -62,6 +65,8 @@ type JobDetail = {
   salesperson?: { full_name?: string | null; email?: string | null } | null;
   allocation?: { total_po_amount?: number | string | null } | null;
   purchase_order?: { id: string; po_number?: string | null } | null;
+  purchase_orders: Array<{ id: string; po_number?: string | null; allocation: { id: string; total_po_amount?: number | string | null } }>;
+  assigned_scopes: Array<{ id: string; scope_title: string; quantity?: number | string | null }>;
   invoices: Array<{
     id: string;
     invoice_number: string;
@@ -161,10 +166,14 @@ export default function JobDetailPage() {
   const [completionOpen, setCompletionOpen] = useState(false);
   const [canReopen, setCanReopen] = useState(false);
   const [canEditCompletion, setCanEditCompletion] = useState(false);
+  const [canUpdateStatus, setCanUpdateStatus] = useState(false);
   const [editCompletionOpen, setEditCompletionOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
   const [reopening, setReopening] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<"on_hold" | "cancelled" | "terminated" | "work_in_process" | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
+  const [updatingLifecycle, setUpdatingLifecycle] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -176,7 +185,7 @@ export default function JobDetailPage() {
           signal: controller.signal,
         });
         const payload = (await response.json().catch(() => null)) as
-          | { job?: JobDetail; permissions?: { can_reopen?: boolean; can_edit_completion?: boolean }; error?: string }
+          | { job?: JobDetail; permissions?: { can_reopen?: boolean; can_edit_completion?: boolean; can_update_status?: boolean }; error?: string }
           | null;
         if (!response.ok || !payload?.job) {
           setError(payload?.error ?? "Unable to load job.");
@@ -184,6 +193,7 @@ export default function JobDetailPage() {
           setJob(payload.job);
           setCanReopen(payload.permissions?.can_reopen === true);
           setCanEditCompletion(payload.permissions?.can_edit_completion === true);
+          setCanUpdateStatus(payload.permissions?.can_update_status === true);
           setError(null);
         }
       } catch (loadError) {
@@ -219,6 +229,21 @@ export default function JobDetailPage() {
     setReopening(false);
   }
 
+  async function updateLifecycle() {
+    if (!lifecycleAction || updatingLifecycle) return;
+    if (lifecycleAction !== "work_in_process" && !lifecycleReason.trim()) return;
+    setUpdatingLifecycle(true); setError(null);
+    const response = await fetch(`/api/org/jobs/${jobId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: lifecycleAction, reason: lifecycleReason }),
+    });
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    if (!response.ok) setError(payload?.error ?? "Unable to update job status.");
+    else { setLifecycleAction(null); setLifecycleReason(""); setRefresh((value) => value + 1); }
+    setUpdatingLifecycle(false);
+  }
+
   async function openCertificate(completionId: string, mode: "view" | "download" | "print") {
     setError(null);
     const response = await fetch(`/api/org/jobs/${jobId}/completion-certificates/${completionId}${mode === "download" ? "?download=1" : ""}`, { cache: "no-store" });
@@ -250,7 +275,9 @@ export default function JobDetailPage() {
         render={
           <Link
             href={
-              job.job_status === "work_completed"
+              ["cancelled", "terminated"].includes(job.job_status)
+                ? "/dashboard/jobs/cancelled"
+                : job.job_status === "work_completed"
                 ? "/dashboard/jobs/completed"
                 : job.purchase_order
                 ? `/dashboard/jobs/purchase-orders/${job.purchase_order.id}`
@@ -273,7 +300,7 @@ export default function JobDetailPage() {
           </p>
         </div>
         {job.job_status === "work_in_process" ? (
-          <Select
+          <div className="flex flex-wrap justify-end gap-2"><Select
             value={job.job_status}
             onValueChange={(value) => {
               const next = String(value ?? "");
@@ -287,11 +314,13 @@ export default function JobDetailPage() {
               <SelectItem value="work_in_process">Work In Progress</SelectItem>
               <SelectItem value="work_completed">Work Completed</SelectItem>
             </SelectContent>
-          </Select>
+          </Select>{canUpdateStatus ? <><Button size="sm" variant="outline" onClick={() => setLifecycleAction("on_hold")}><PauseCircleIcon />On Hold</Button><Button size="sm" variant="outline" onClick={() => setLifecycleAction("cancelled")}>Cancel Job</Button><Button size="sm" variant="destructive" onClick={() => setLifecycleAction("terminated")}>Terminate</Button></> : null}</div>
+        ) : job.job_status === "on_hold" ? (
+          <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">On Hold</Badge>{canUpdateStatus ? <><Button size="sm" onClick={() => setLifecycleAction("work_in_process")}>Resume Work</Button><Button size="sm" variant="outline" onClick={() => setLifecycleAction("cancelled")}>Cancel Job</Button><Button size="sm" variant="destructive" onClick={() => setLifecycleAction("terminated")}>Terminate</Button></> : null}</div>
         ) : job.job_status === "work_completed" ? (
           <div className="flex items-center gap-2"><Badge variant="outline">Work Completed</Badge>{canReopen ? <Button size="sm" variant="outline" onClick={() => setReopenOpen(true)}><RotateCcwIcon />Reopen Job</Button> : null}</div>
         ) : (
-          <Badge variant="outline">PO Pending</Badge>
+          <Badge variant="outline">{title(job.job_status)}</Badge>
         )}
       </div>
       {error ? (
@@ -309,7 +338,7 @@ export default function JobDetailPage() {
             />
             <Detail
               label="PO Number"
-              value={job.purchase_order?.po_number ?? "-"}
+              value={job.purchase_orders.map((purchaseOrder) => purchaseOrder.po_number).filter(Boolean).join(", ") || "-"}
             />
             <Detail
               label="Quotation Number"
@@ -351,6 +380,7 @@ export default function JobDetailPage() {
           </dl>
         </CardContent>
       </Card>
+      <JobChangeOrders jobId={job.id} jobStatus={job.job_status} baselineScopes={job.assigned_scopes ?? []} />
       {completion ? (
         <Card>
           <CardHeader className="flex-row items-center justify-between">
@@ -405,7 +435,7 @@ export default function JobDetailPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Invoice Requests</CardTitle>
-          {job.purchase_order ? (
+          {job.purchase_order && ["work_in_process", "on_hold", "work_completed"].includes(job.job_status) ? (
             <Button
               nativeButton={false}
               render={<Link href={`/dashboard/invoice-requests/new?jobId=${job.id}`} />}
@@ -537,6 +567,13 @@ export default function JobDetailPage() {
             <Button disabled={reopening} type="button" variant="outline" onClick={() => setReopenOpen(false)}>Cancel</Button>
             <Button disabled={reopening || !reopenReason.trim()} type="button" onClick={() => void reopenJob()}>{reopening ? "Reopening..." : "Reopen Job"}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={lifecycleAction !== null} onOpenChange={(open) => { if (!open && !updatingLifecycle) { setLifecycleAction(null); setLifecycleReason(""); } }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{lifecycleAction === "work_in_process" ? "Resume Job" : lifecycleAction === "on_hold" ? "Put Job On Hold" : lifecycleAction === "terminated" ? "Terminate Job" : "Cancel Job"}</DialogTitle><DialogDescription>{lifecycleAction === "work_in_process" ? "The job will return to Work In Progress." : "The reason is mandatory and will remain in the permanent job audit history."}</DialogDescription></DialogHeader>
+          {lifecycleAction !== "work_in_process" ? <div className="space-y-2"><Label htmlFor="lifecycle-reason" required>Reason</Label><Textarea id="lifecycle-reason" className="min-h-28" value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)} /></div> : null}
+          <DialogFooter><Button disabled={updatingLifecycle} variant="outline" onClick={() => setLifecycleAction(null)}>Cancel</Button><Button disabled={updatingLifecycle || (lifecycleAction !== "work_in_process" && !lifecycleReason.trim())} variant={lifecycleAction === "terminated" ? "destructive" : "default"} onClick={() => void updateLifecycle()}>{updatingLifecycle ? "Updating…" : "Confirm"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

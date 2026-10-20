@@ -31,6 +31,11 @@ type Job = {
   customer?: { company_name?: string | null; currency?: string | null } | null;
   quotation?: { quotation_number?: string | null } | null;
   purchase_order?: { po_number?: string | null } | null;
+  purchase_orders: Array<{
+    id: string;
+    po_number?: string | null;
+    po_received_date?: string | null;
+  }>;
   totals: {
     allocated_po_total: number;
     invoiced: number;
@@ -61,6 +66,7 @@ export function NewInvoiceForm({
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [jobId, setJobId] = useState(initialJobId);
   const [job, setJob] = useState<Job | null>(null);
+  const [purchaseOrderId, setPurchaseOrderId] = useState("");
   const [jobOptions, setJobOptions] = useState<
     Array<{
       id: string;
@@ -101,6 +107,7 @@ export function NewInvoiceForm({
                 requested_amount: number | string;
                 billing_description: string;
                 status: string;
+                purchase_order_id: string;
               };
               error?: string;
             }
@@ -117,6 +124,7 @@ export function NewInvoiceForm({
         setInvoiceAmount(String(payload.request.requested_amount));
         setRemarks(payload.request.billing_description);
         setRequestReference(`IR-${String(payload.request.request_number).padStart(3, "0")}`);
+        setPurchaseOrderId(payload.request.purchase_order_id);
       } catch {
         if (!controller.signal.aborted) setError("Unable to load invoice request.");
       }
@@ -172,8 +180,8 @@ export function NewInvoiceForm({
           return;
         }
         setJobOptions(
-          (payload?.jobs ?? []).filter(
-            (option) => option.job_status !== "po_pending",
+          (payload?.jobs ?? []).filter((option) =>
+            ["work_in_process", "on_hold", "work_completed"].includes(option.job_status),
           ),
         );
       } catch {
@@ -204,8 +212,14 @@ export function NewInvoiceForm({
           setError(payload?.error ?? "Unable to load job.");
           return;
         }
-        setJob(payload.job);
-        setSelectedCustomerId(payload.job.customer_id);
+        const loadedJob = payload.job;
+        setJob(loadedJob);
+        setSelectedCustomerId(loadedJob.customer_id);
+        setPurchaseOrderId((current) => current || (
+          loadedJob.purchase_orders?.length === 1
+            ? loadedJob.purchase_orders[0].id
+            : ""
+        ));
         setError(null);
       } catch {
         if (!controller.signal.aborted) {
@@ -227,6 +241,9 @@ export function NewInvoiceForm({
     (customer) => customer.id === selectedCustomerId,
   );
   const selectedJobOption = jobOptions.find((option) => option.id === jobId);
+  const selectedPurchaseOrder = job?.purchase_orders.find(
+    (purchaseOrder) => purchaseOrder.id === purchaseOrderId,
+  );
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -236,6 +253,7 @@ export function NewInvoiceForm({
     const form = new FormData();
     form.set("customer_id", selectedCustomerId);
     form.set("job_id", job.id);
+    form.set("purchase_order_id", purchaseOrderId);
     form.set("invoice_number", invoiceNumber);
     form.set("invoice_date", invoiceDate);
     form.set("invoice_amount", invoiceAmount);
@@ -388,6 +406,18 @@ export function NewInvoiceForm({
       ) : null}
       {job ? (
         <>
+          {job.purchase_orders.length > 1 ? (
+            <Card>
+              <CardHeader><CardTitle>Select Purchase Order</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                <Label required>Active PO for this invoice</Label>
+                <Select value={purchaseOrderId} onValueChange={(value) => setPurchaseOrderId(String(value))}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Select an active PO" /></SelectTrigger>
+                  <SelectContent>{job.purchase_orders.map((po) => <SelectItem key={po.id} value={po.id}>{po.po_number ?? "PO"} · {po.po_received_date ?? "Date unavailable"}</SelectItem>)}</SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader>
               <CardTitle>Job and allocation</CardTitle>
@@ -396,7 +426,7 @@ export function NewInvoiceForm({
               {[
                 ["Job Number", job.job_number ?? "-"],
                 ["Quotation", job.quotation?.quotation_number ?? "-"],
-                ["PO Number", job.purchase_order?.po_number ?? "-"],
+                ["PO Number", selectedPurchaseOrder?.po_number ?? job.purchase_order?.po_number ?? "-"],
                 ["Customer", job.customer?.company_name ?? "-"],
                 [
                   "PO Allocation",
@@ -510,6 +540,7 @@ export function NewInvoiceForm({
                 !invoiceDate ||
                 !invoiceAmount ||
                 !invoicePdf ||
+                !purchaseOrderId ||
                 amount < 0 ||
                 (overInvoicing && !acknowledged)
               }

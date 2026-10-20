@@ -156,10 +156,19 @@ export async function POST(
 
   const { data: existingAllocations, error: allocationsError } = await admin
     .from("job_purchase_order_allocations")
-    .select("job_id")
+    .select("id,job_id,change_order_id")
     .eq("org_id", session.org_id)
-    .eq("purchase_order_id", poId);
+    .eq("purchase_order_id", poId)
+    .eq("is_active", true);
   if (allocationsError) return jsonError("Unable to validate purchase order ownership", 500);
+  if ((existingAllocations ?? []).some((allocation) =>
+    removedIds.includes(allocation.id) && allocation.change_order_id,
+  )) {
+    return jsonError(
+      "A Change Order PO cannot be removed through a PO revision. Cancel the Change Order instead.",
+      409,
+    );
+  }
   const scopedJobIds = Array.from(new Set([
     ...(existingAllocations ?? []).map((row) => row.job_id as string),
     ...addedAllocations.map((allocation) => allocation.job_id),

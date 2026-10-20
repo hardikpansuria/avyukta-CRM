@@ -120,7 +120,7 @@ export async function listInvoices(
   );
   const jobs = new Map(data.jobs!.map((row) => [row.id as string, row]));
   const allocations = new Map(
-    data.allocations!.map((row) => [row.job_id as string, row]),
+    data.allocations!.map((row) => [`${row.job_id}:${row.purchase_order_id}`, row]),
   );
   const customers = new Map(
     data.customers!.map((row) => [row.id as string, row]),
@@ -141,7 +141,7 @@ export async function listInvoices(
         job,
         purchase_order: po,
         customer,
-        allocation: allocations.get(invoice.job_id) ?? null,
+        allocation: allocations.get(`${invoice.job_id}:${invoice.purchase_order_id}`) ?? null,
         ...invoiceAging(invoice),
       };
     })
@@ -215,6 +215,7 @@ export async function getInvoiceDetail(
         .from("job_purchase_order_allocations")
         .select("*")
         .eq("job_id", invoice.job_id)
+        .eq("purchase_order_id", invoice.purchase_order_id)
         .eq("org_id", orgId)
         .maybeSingle(),
       admin

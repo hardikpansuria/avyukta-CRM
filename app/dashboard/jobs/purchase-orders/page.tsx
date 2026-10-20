@@ -38,7 +38,7 @@ export default function PurchaseOrdersPage() {
   }, [search]);
 
   const query = useMemo(() => {
-    const params = new URLSearchParams({ status: "work_in_process", page: String(page), pageSize: "20" });
+    const params = new URLSearchParams({ statuses: "work_in_process,on_hold", page: String(page), pageSize: "20" });
     if (debounced) params.set("search", debounced);
     return params.toString();
   }, [debounced, page]);
@@ -72,16 +72,16 @@ export default function PurchaseOrdersPage() {
         {error ? <div className="rounded-lg border border-red-200 p-4 text-sm text-red-700">{error}</div> : null}
         {loading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, index) => <Skeleton className="h-14" key={index} />)}</div> : null}
         {!loading && !jobs.length ? <div className="min-h-52 rounded-lg border border-dashed p-10 text-center text-sm text-zinc-500">No active PO Received jobs found.</div> : null}
-        {!loading && jobs.length ? <Table><TableHeader><TableRow><TableHead>Job #</TableHead><TableHead>Customer</TableHead><TableHead>PO #</TableHead><TableHead>Project</TableHead><TableHead>Sales Rep</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+        {!loading && jobs.length ? <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Job #</TableHead><TableHead>Customer</TableHead><TableHead>PO #</TableHead><TableHead>Project</TableHead><TableHead>Sales Rep</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
           {jobs.map((job) => <TableRow key={job.id}>
             <TableCell><Link className="font-medium hover:underline" href={`/dashboard/jobs/${job.id}`}>{job.job_number ?? "-"}</Link></TableCell>
             <TableCell>{job.customer?.company_name ?? "-"}</TableCell>
-            <TableCell>{job.purchase_order ? <Link className="hover:underline" href={`/dashboard/jobs/purchase-orders/${job.purchase_order.id}`}>{job.purchase_order.po_number}</Link> : "-"}</TableCell>
+            <TableCell><div className="flex min-w-32 flex-col gap-1">{job.purchase_orders.length ? job.purchase_orders.map((po) => <Link className="hover:underline" href={`/dashboard/jobs/purchase-orders/${po.id}`} key={po.allocation_id}>{po.po_number}{po.allocation_type === "supplemental" ? " (Supplemental)" : po.allocation_type === "replacement" ? " (Replacement)" : ""}</Link>) : "-"}</div></TableCell>
             <TableCell>{job.quotation?.project_name ?? "-"}</TableCell>
             <TableCell>{salesperson(job)}</TableCell>
-            <TableCell><Select value="work_in_process" onValueChange={(value) => { if (value === "work_completed") setCompletionJob(job); }}><SelectTrigger className="w-44"><SelectValue>Work In Progress</SelectValue></SelectTrigger><SelectContent><SelectItem value="work_in_process">Work In Progress</SelectItem><SelectItem value="work_completed">Work Completed</SelectItem></SelectContent></Select></TableCell>
+            <TableCell>{job.job_status === "on_hold" ? <Badge variant="outline">On Hold</Badge> : <Select value="work_in_process" onValueChange={(value) => { if (value === "work_completed") setCompletionJob(job); }}><SelectTrigger className="w-44"><SelectValue>Work In Progress</SelectValue></SelectTrigger><SelectContent><SelectItem value="work_in_process">Work In Progress</SelectItem><SelectItem value="work_completed">Work Completed</SelectItem></SelectContent></Select>}</TableCell>
           </TableRow>)}
-        </TableBody></Table> : null}
+        </TableBody></Table></div> : null}
         {totalPages > 1 ? <div className="flex justify-end gap-2 border-t pt-4"><Button disabled={page === 1} size="sm" variant="outline" onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</Button><Badge variant="outline">Page {page} of {totalPages}</Badge><Button disabled={page === totalPages} size="sm" variant="outline" onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</Button></div> : null}
       </CardContent></Card>
       {completionJob ? <JobCompletionDialog jobId={completionJob.id} jobNumber={completionJob.job_number} open onOpenChange={(open) => { if (!open) setCompletionJob(null); }} onCompleted={() => { setJobs((current) => current.filter((job) => job.id !== completionJob.id)); setCompletionJob(null); }} /> : null}

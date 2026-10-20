@@ -15,6 +15,7 @@ export const permissionModules = [
   "purchase_orders",
   "work_orders",
   "jobs",
+  "change_orders",
   "invoice_requests",
   "invoices",
   "document_exports",
@@ -38,6 +39,8 @@ export type PermissionAction =
   | "process"
   | "archive"
   | "reopen"
+  | "approve"
+  | "cancel"
   | "manage"
   | "date_range_export"
   | "full_backup";

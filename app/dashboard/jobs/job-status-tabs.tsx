@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 
-type JobStatusTab = "po_pending" | "po_received" | "po_completed";
+type JobStatusTab = "po_pending" | "po_received" | "po_completed" | "cancelled";
 
 const tabs: Array<{ href: string; label: string; value: JobStatusTab }> = [
   {
@@ -19,6 +19,11 @@ const tabs: Array<{ href: string; label: string; value: JobStatusTab }> = [
     href: "/dashboard/jobs/completed",
     label: "PO Completed",
     value: "po_completed",
+  },
+  {
+    href: "/dashboard/jobs/cancelled",
+    label: "Cancelled / Terminated",
+    value: "cancelled",
   },
 ];
 

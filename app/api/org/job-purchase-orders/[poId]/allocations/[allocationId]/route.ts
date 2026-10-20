@@ -24,13 +24,19 @@ export async function DELETE(
   const admin = createAdminClient();
   const { data: allocation, error: allocationError } = await admin
     .from("job_purchase_order_allocations")
-    .select("id,job_id,quotation_id_snapshot,is_active")
+    .select("id,job_id,quotation_id_snapshot,is_active,change_order_id")
     .eq("id", allocationId)
     .eq("purchase_order_id", poId)
     .eq("org_id", session.org_id)
     .maybeSingle();
   if (allocationError) return jsonError("Unable to validate Purchase Order attachment", 500);
   if (!allocation?.is_active) return jsonError("Active Purchase Order attachment not found", 404);
+  if (allocation.change_order_id) {
+    return jsonError(
+      "This PO was applied by a Change Order. Cancel the Change Order to reverse it safely.",
+      409,
+    );
+  }
 
   const { data: job, error: jobError } = await admin
     .from("jobs")

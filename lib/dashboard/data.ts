@@ -134,7 +134,7 @@ export async function getDashboardData(
       admin.from("quotations").select("id,quotation_number,quotation_series_id,revision_number,customer_id,sales_rep_id,status,quote_date,created_at,project_name,grand_total_before_tax,grand_total_after_tax").eq("org_id", orgId).order("revision_number", { ascending: false }),
       admin.from("jobs").select("id,customer_id,latest_accepted_quotation_id,job_number,job_status,salesperson_id,accepted_at,created_at,latest_work_completion_id").eq("org_id", orgId),
       admin.from("job_purchase_orders").select("id,customer_id,po_number,po_received_date,combined_po_total,current_po_total,created_at,current_revision_number").eq("org_id", orgId),
-      admin.from("job_purchase_order_allocations").select("purchase_order_id,job_id,project_name_snapshot,total_po_amount").eq("org_id", orgId),
+      admin.from("job_purchase_order_allocations").select("purchase_order_id,job_id,project_name_snapshot,total_po_amount").eq("org_id", orgId).eq("is_active", true),
       admin.from("job_invoices").select("id,job_id,purchase_order_id,invoice_number,invoice_date,invoice_amount,status,sent_at,payment_date,created_at").eq("org_id", orgId),
       admin.from("job_work_completions").select("id,job_id,completion_date,completed_at,reopened_at").eq("org_id", orgId),
       admin.from("org_members").select("user_id,role,status").eq("org_id", orgId).eq("status", "active"),
@@ -182,7 +182,11 @@ export async function getDashboardData(
   const poById = new Map(purchaseOrders.map((po) => [text(po.id), po]));
   const jobById = new Map(jobs.map((job) => [text(job.id), job]));
   const completionByJob = new Map(completions.map((completion) => [text(completion.job_id), completion]));
-  const allocationByJob = new Map(allocations.map((allocation) => [text(allocation.job_id), allocation]));
+  const allocationsByJob = new Map<string, Row[]>();
+  allocations.forEach((allocation) => {
+    const jobId = text(allocation.job_id);
+    allocationsByJob.set(jobId, [...(allocationsByJob.get(jobId) ?? []), allocation]);
+  });
   const invoiceJobIds = new Set(invoices.map((invoice) => text(invoice.job_id)));
 
   const filteredQuotes = latestQuotes.filter((quote) => dateInRange(text(quote.quote_date, text(quote.created_at, "")), range));
@@ -190,7 +194,7 @@ export async function getDashboardData(
   const filteredInvoices = invoices.filter((invoice) => dateInRange(text(invoice.invoice_date, text(invoice.created_at, "")), range));
   const openStatuses = new Set(["draft", "pending_approval", "sent"]);
   const openQuotes = latestQuotes.filter((quote) => openStatuses.has(text(quote.status, "")));
-  const activeJobs = jobs.filter((job) => job.job_status === "work_in_process");
+  const activeJobs = jobs.filter((job) => ["work_in_process", "on_hold"].includes(text(job.job_status)));
   const completedJobs = jobs.filter((job) => job.job_status === "work_completed");
   const receivedJobIds = new Set(
     [...activeJobs, ...completedJobs].map((job) => text(job.id)),
@@ -216,21 +220,22 @@ export async function getDashboardData(
 
   const dashboardJobs = (rows: Row[]): DashboardJob[] => rows.map((job) => {
     const quote = quoteById.get(text(job.latest_accepted_quotation_id));
-    const allocation = allocationByJob.get(text(job.id));
-    const po = allocation ? poById.get(text(allocation.purchase_order_id)) : undefined;
+    const jobAllocations = allocationsByJob.get(text(job.id)) ?? [];
+    const allocation = jobAllocations[0];
+    const poNumbers = jobAllocations.map((row) => poById.get(text(row.purchase_order_id))?.po_number).filter(Boolean);
     const completion = completionByJob.get(text(job.id));
     return {
       id: text(job.id),
       number: text(job.job_number, "Pending"),
       customer: text(customerById.get(text(job.customer_id))?.company_name, "Unknown customer"),
       project: text(allocation?.project_name_snapshot, text(quote?.project_name, "No project name")),
-      poNumber: text(po?.po_number),
+      poNumber: poNumbers.map((value) => text(value)).join(", "),
       salesperson: profileName.get(text(job.salesperson_id)) ?? "Unassigned",
       salespersonId: text(job.salesperson_id, ""),
       status: text(job.job_status),
       startedAt: typeof job.accepted_at === "string" ? job.accepted_at : null,
       completionDate: typeof completion?.completion_date === "string" ? completion.completion_date : null,
-      amount: numeric(allocation?.total_po_amount ?? po?.current_po_total ?? po?.combined_po_total),
+      amount: jobAllocations.reduce((sum, row) => sum + numeric(row.total_po_amount), 0),
     };
   });
 
@@ -277,7 +282,7 @@ export async function getDashboardData(
     return { key, label, count: rows.length, value: rows.reduce((sum, row) => sum + numeric(row.grand_total_after_tax ?? row.grand_total_before_tax), 0) };
   });
 
-  const readyValue = readyJobs.reduce((sum, job) => sum + numeric(allocationByJob.get(text(job.id))?.total_po_amount), 0);
+  const readyValue = readyJobs.reduce((sum, job) => sum + (allocationsByJob.get(text(job.id)) ?? []).reduce((allocationSum, allocation) => allocationSum + numeric(allocation.total_po_amount), 0), 0);
   const paidInvoices = filteredInvoices.filter((invoice) => invoice.status === "payment_received");
   const invoicePipeline = [
     { key: "ready", label: "Ready", count: readyJobs.length, value: readyValue },

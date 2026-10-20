@@ -32,6 +32,7 @@ export async function GET(
     permissions: {
       can_reopen: canReopen,
       can_edit_completion: canEditCompletion,
+      can_update_status: canEditCompletion,
     },
   });
 }

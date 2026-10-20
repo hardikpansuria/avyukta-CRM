@@ -62,7 +62,7 @@ export async function getWorkCompletionPdfData(
   const [quotationResult, customerResult, allocationResult, techniciansResult, scopesResult] = await Promise.all([
     admin.from("quotations").select("id,quotation_number,quote_date,project_name,project_location,sales_rep_id").eq("id", job.latest_accepted_quotation_id).eq("org_id", orgId).maybeSingle(),
     admin.from("customers").select("id,company_name").eq("id", job.customer_id).eq("org_id", orgId).maybeSingle(),
-    admin.from("job_purchase_order_allocations").select("purchase_order_id,quotation_number_snapshot").eq("job_id", jobId).eq("org_id", orgId).maybeSingle(),
+    admin.from("job_purchase_order_allocations").select("purchase_order_id,quotation_number_snapshot").eq("job_id", jobId).eq("org_id", orgId).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     admin.from("job_work_completion_technicians").select("employee_id,employee_name_snapshot,sort_order").eq("completion_id", completionId).eq("org_id", orgId).order("sort_order", { ascending: true }),
     admin.from("job_work_completion_scopes").select("scope_id,scope_title_snapshot,scope_description_snapshot,sort_order").eq("completion_id", completionId).eq("org_id", orgId).order("sort_order", { ascending: true }),
   ]);

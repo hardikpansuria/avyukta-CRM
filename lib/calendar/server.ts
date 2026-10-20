@@ -270,6 +270,8 @@ export async function getCalendarJob(
       .select("purchase_order_id")
       .eq("job_id", job.id)
       .eq("org_id", orgId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
