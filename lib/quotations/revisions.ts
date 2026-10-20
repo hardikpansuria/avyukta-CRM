@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
 
 export const lockedRevisionMessage =
-  "This quotation revision is locked because it has already been sent or accepted. Create a new revision to make changes.";
+  "This quotation revision is locked because it has already been sent.";
 
 type Row = Record<string, unknown>;
 
