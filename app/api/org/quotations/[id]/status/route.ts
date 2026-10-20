@@ -85,6 +85,23 @@ export async function PATCH(
     }
   }
 
+  const isAcceptance = currentStatus === "sent" && nextStatus === "accepted";
+  let existingJob: {
+    id: string;
+    job_number?: string | null;
+    job_status?: string | null;
+  } | null = null;
+  if (isAcceptance && existingQuotation.quotation_series_id) {
+    const { data: job, error: jobError } = await admin
+      .from("jobs")
+      .select("id,job_number,job_status")
+      .eq("org_id", session.org_id)
+      .eq("quotation_series_id", existingQuotation.quotation_series_id)
+      .maybeSingle();
+    if (jobError) return jsonError("Unable to validate the existing job", 500);
+    existingJob = job;
+  }
+
   const { data: quotation, error: updateError } = await admin
     .from("quotations")
     .update({ status: nextStatus, updated_by: session.user.id })
@@ -133,9 +150,10 @@ export async function PATCH(
     job_number?: string | null;
     job_status?: string | null;
   } | null = null;
-  const jobWasCreated = currentStatus === "sent" && nextStatus === "accepted";
+  const jobWasCreated = isAcceptance && !existingJob;
+  const jobWasUpdated = isAcceptance && Boolean(existingJob);
 
-  if (jobWasCreated && quotation.quotation_series_id) {
+  if (isAcceptance && quotation.quotation_series_id) {
     const { data: job, error: jobError } = await admin
       .from("jobs")
       .select("id,job_number,job_status")
@@ -158,8 +176,11 @@ export async function PATCH(
     message:
       jobWasCreated && operationalJob
         ? "Quotation accepted and Job on the Go created"
+        : jobWasUpdated && operationalJob
+          ? "Quotation revision accepted and existing Job on the Go updated"
         : "Quotation status updated",
     job_created: jobWasCreated && Boolean(operationalJob),
+    job_updated: jobWasUpdated && Boolean(operationalJob),
     job: operationalJob,
   });
 }

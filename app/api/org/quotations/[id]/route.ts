@@ -82,6 +82,18 @@ export async function GET(
     : { data: [] };
   const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
 
+  const { data: revisionJob, error: revisionJobError } = seriesId
+    ? await admin
+        .from("jobs")
+        .select("id,job_number,job_status,latest_accepted_quotation_id")
+        .eq("org_id", session.org_id)
+        .eq("quotation_series_id", seriesId)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (revisionJobError) {
+    return jsonError("Unable to fetch quotation job", 500);
+  }
+
   return NextResponse.json({
     quotation: result.quotation,
     contacts: result.contacts ?? [],
@@ -99,6 +111,7 @@ export async function GET(
       actor_profile: profilesById.get(event.actor_id as string) ?? null,
     })),
     tax_warning: result.tax_warning ?? null,
+    revision_job: revisionJob,
   });
 }
 

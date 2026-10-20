@@ -8,6 +8,7 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   FileIcon,
+  PencilIcon,
   UploadIcon,
   PlusIcon,
 } from "lucide-react";
@@ -93,12 +94,24 @@ type PurchaseOrder = {
     items: Array<{
       allocation_id: string;
       quotation_number_snapshot: string;
+      quotation_revision_snapshot: number | string;
       project_name_snapshot?: string | null;
       po_amount_snapshot: number | string;
-      change_type: "original" | "carried" | "added" | "removed";
+      change_type: "original" | "carried" | "added" | "removed" | "updated";
       is_included: boolean;
     }>;
   }>;
+};
+
+type PurchaseOrderAuditEvent = {
+  id: string;
+  description: string;
+  occurred_at: string;
+  metadata?: {
+    old_po_number?: unknown;
+    new_po_number?: unknown;
+  } | null;
+  actor?: { full_name?: string | null; email?: string | null } | null;
 };
 
 function money(value: number | string, currency: string) {
@@ -113,6 +126,13 @@ function title(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function dateTime(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function Summary({
@@ -145,6 +165,8 @@ export default function PurchaseOrderDetailPage() {
     useState<"purchase_order" | "supporting_document">("supporting_document");
   const [uploading, setUploading] = useState(false);
   const [viewingRevisionId, setViewingRevisionId] = useState<string | null>(null);
+  const [canEdit, setCanEdit] = useState(false);
+  const [auditHistory, setAuditHistory] = useState<PurchaseOrderAuditEvent[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -156,13 +178,20 @@ export default function PurchaseOrderDetailPage() {
           signal: controller.signal,
         });
         const payload = (await response.json().catch(() => null)) as
-          | { purchase_order?: PurchaseOrder; error?: string }
+          | {
+              purchase_order?: PurchaseOrder;
+              permissions?: { can_edit?: boolean };
+              audit_history?: PurchaseOrderAuditEvent[];
+              error?: string;
+            }
           | null;
         if (!response.ok || !payload?.purchase_order) {
           setError(payload?.error ?? "Unable to load purchase order.");
           return;
         }
         setPo(payload.purchase_order);
+        setCanEdit(Boolean(payload.permissions?.can_edit));
+        setAuditHistory(payload.audit_history ?? []);
         setError(null);
       } catch (loadError) {
         if ((loadError as Error).name !== "AbortError") {
@@ -262,6 +291,16 @@ export default function PurchaseOrderDetailPage() {
               ? `Revision ${po.current_revision_number}`
               : "Original"}
           </Badge>
+          {canEdit ? (
+            <Button
+              nativeButton={false}
+              render={<Link href={`/dashboard/jobs/purchase-orders/${po.id}/edit`} />}
+              size="sm"
+              variant="outline"
+            >
+              <PencilIcon /> Edit PO Number
+            </Button>
+          ) : null}
           <Button
             nativeButton={false}
             render={<Link href={`/dashboard/jobs/purchase-orders/${po.id}/revisions/new`} />}
@@ -302,6 +341,49 @@ export default function PurchaseOrderDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>PO Number Audit History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {auditHistory.length ? (
+            <div className="space-y-3">
+              {auditHistory.map((event) => {
+                const oldNumber = String(
+                  event.metadata?.old_po_number ?? "Previous value",
+                );
+                const newNumber = String(
+                  event.metadata?.new_po_number ?? "Updated value",
+                );
+                const actor =
+                  event.actor?.full_name ?? event.actor?.email ?? "System";
+
+                return (
+                  <div
+                    className="rounded-lg border p-4"
+                    key={event.id}
+                  >
+                    <p className="font-medium">
+                      <span className="line-through text-zinc-500">
+                        {oldNumber}
+                      </span>{" "}
+                      <span aria-hidden="true">→</span>{" "}
+                      <span>{newNumber}</span>
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-500">
+                      Changed by {actor} · {dateTime(event.occurred_at)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">
+              No PO number changes have been recorded.
+            </p>
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Documents</CardTitle>
@@ -416,6 +498,7 @@ export default function PurchaseOrderDetailPage() {
                 <TableHead>Date</TableHead>
                 <TableHead>Added Quotation(s)</TableHead>
                 <TableHead>Removed Quotation(s)</TableHead>
+                <TableHead>Updated Quotation(s)</TableHead>
                 <TableHead>PO Amount</TableHead>
                 <TableHead>Change</TableHead>
                 <TableHead>Created By</TableHead>
@@ -436,6 +519,9 @@ export default function PurchaseOrderDetailPage() {
                   </TableCell>
                   <TableCell>
                     {revision.items.filter((item) => item.change_type === "removed").map((item) => item.quotation_number_snapshot).join(", ") || "—"}
+                  </TableCell>
+                  <TableCell>
+                    {revision.items.filter((item) => item.change_type === "updated").map((item) => `${item.quotation_number_snapshot} Rev. ${item.quotation_revision_snapshot}`).join(", ") || "—"}
                   </TableCell>
                   <TableCell>{money(revision.revised_po_amount, po.currency)}</TableCell>
                   <TableCell>{Number(revision.revision_number) === 0 ? "—" : `${Number(revision.difference_amount) > 0 ? "+" : ""}${money(revision.difference_amount, po.currency)}`}</TableCell>

@@ -47,7 +47,7 @@ type RevisionItem = {
     completion_status: string;
     completion_date: string;
   } | null;
-  change_type: "original" | "carried" | "added" | "removed";
+  change_type: "original" | "carried" | "added" | "removed" | "updated";
   is_included: boolean;
 };
 type Revision = {
