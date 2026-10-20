@@ -95,14 +95,22 @@ export async function syncCustomerQuotationPricing({
     if (error) return { error };
   }
 
-  for (const [index, scope] of (scopes ?? []).entries()) {
-    const existing = itemsByScope.get(scope.id as string);
-    const sourceScopeTotal = roundMoney(Number(scope.scope_total_after_discount ?? 0));
-    const sourceQuantity = Number(scope.quantity ?? 1);
+  const invalidScope = (scopes ?? []).find((scope) => {
+    const quantity = Number(scope.quantity ?? 1);
+    return !Number.isFinite(quantity) || quantity <= 0;
+  });
+  if (invalidScope) {
+    return {
+      error: new Error(`Scope ${invalidScope.id} has an invalid quantity.`),
+    };
+  }
 
-    if (!Number.isFinite(sourceQuantity) || sourceQuantity <= 0) {
-      return { error: new Error(`Scope ${scope.id} has an invalid quantity.`) };
-    }
+  const pricingOperations = (scopes ?? []).map((scope, index) => {
+    const existing = itemsByScope.get(scope.id as string);
+    const sourceScopeTotal = roundMoney(
+      Number(scope.scope_total_after_discount ?? 0),
+    );
+    const sourceQuantity = Number(scope.quantity ?? 1);
 
     const priceEach = roundMoney(sourceScopeTotal / sourceQuantity);
     const priceExt = roundMoney(priceEach * sourceQuantity);
@@ -115,15 +123,15 @@ export async function syncCustomerQuotationPricing({
       price_each: priceEach,
       price_ext: priceExt,
     };
-    const result = existing
-      ? await adminClient
+    return existing
+      ? adminClient
           .from("quotation_customer_document_items")
           .update(pricing)
           .eq("id", existing.id)
           .eq("org_id", orgId)
           .eq("quotation_id", quotationId)
           .eq("customer_document_id", document.id)
-      : await adminClient.from("quotation_customer_document_items").insert({
+      : adminClient.from("quotation_customer_document_items").insert({
           id: crypto.randomUUID(),
           org_id: orgId,
           quotation_id: quotationId,
@@ -133,9 +141,11 @@ export async function syncCustomerQuotationPricing({
           description_text: String(scope.scope_title ?? ""),
           ...pricing,
         });
+  });
 
-    if (result.error) return { error: result.error };
-  }
+  const pricingResults = await Promise.all(pricingOperations);
+  const pricingError = pricingResults.find((result) => result.error)?.error;
+  if (pricingError) return { error: pricingError };
 
   const { data: synchronizedItems, error: synchronizedItemsError } =
     await adminClient
