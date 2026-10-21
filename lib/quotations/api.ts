@@ -54,6 +54,8 @@ type QuotationRow = {
   project_location?: string | null;
   customer_rfq_number?: string | null;
   revision_number?: number | string | null;
+  revision_purpose?: string | null;
+  currency?: string | null;
   prepared_by?: string | null;
   sales_rep_id?: string | null;
   status?: string | null;

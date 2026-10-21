@@ -4,8 +4,14 @@ import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { hasOrgPermission, requireOrgPermission } from "@/lib/auth/permissions";
 import { isDuplicatePurchaseOrderNumberError } from "@/lib/jobs/runtime-errors";
+import {
+  removePurchaseOrderDocument,
+  uploadPurchaseOrderDocument,
+  validateDocument,
+} from "@/lib/jobs/documents";
 import { getPurchaseOrder } from "@/lib/jobs/purchase-orders";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
@@ -108,12 +114,59 @@ export async function PATCH(
   const denied = await requireOrgPermission(session, "purchase_orders", "edit");
   if (denied) return denied;
 
-  const body = (await request.json().catch(() => null)) as
-    | { po_number?: unknown }
-    | null;
-  const poNumber =
-    typeof body?.po_number === "string" ? body.po_number.trim() : "";
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return jsonError("Invalid form data", 400);
+  }
+
+  const poNumber = String(formData.get("po_number") ?? "").trim();
   if (!poNumber) return jsonError("PO number is required", 400);
+  if (poNumber.length > 120) {
+    return jsonError("PO number must be 120 characters or less", 400);
+  }
+
+  const amountValue = String(formData.get("po_amount_before_tax") ?? "").trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(amountValue)) {
+    return jsonError(
+      "PO Amount Before Tax is required and must use no more than two decimal places",
+      400,
+    );
+  }
+  const poAmountBeforeTax = Number(amountValue);
+  if (!Number.isFinite(poAmountBeforeTax) || poAmountBeforeTax < 0) {
+    return jsonError("PO Amount Before Tax cannot be negative", 400);
+  }
+
+  const internalRemarks = String(formData.get("internal_remarks") ?? "").trim();
+  if (!internalRemarks) return jsonError("Internal Remarks are required", 400);
+  if (internalRemarks.length > 4000) {
+    return jsonError("Internal Remarks must be 4,000 characters or less", 400);
+  }
+
+  const receivedDateValue = String(formData.get("po_received_date") ?? "").trim();
+  const receivedDate = receivedDateValue || null;
+  if (receivedDate) {
+    const parsedDate = new Date(`${receivedDate}T00:00:00.000Z`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(receivedDate) ||
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.toISOString().slice(0, 10) !== receivedDate
+    ) {
+      return jsonError("Purchase Order Received Date is invalid", 400);
+    }
+  }
+
+  const documentEntry = formData.get("document");
+  const document =
+    documentEntry instanceof File && documentEntry.size > 0
+      ? documentEntry
+      : null;
+  if (document) {
+    const documentError = validateDocument(document, { poRevision: true });
+    if (documentError) return jsonError(documentError, 400);
+  }
 
   const { poId } = await context.params;
   const admin = createAdminClient();
@@ -157,38 +210,67 @@ export async function PATCH(
   );
   if (scopeDenied) return scopeDenied;
 
-  if (purchaseOrder.po_number === poNumber) {
-    const result = await getPurchaseOrder(admin, session.org_id, poId);
-    if (result.error || !result.purchaseOrder) {
-      return jsonError("Unable to fetch purchase order", 500);
+  let uploadedDocument:
+    | { id: string; file_path: string }
+    | null = null;
+  if (document) {
+    const uploadResult = await uploadPurchaseOrderDocument({
+      admin,
+      orgId: session.org_id,
+      purchaseOrderId: poId,
+      actorId: session.user.id,
+      file: document,
+      documentType: "po_revision",
+    });
+    if (uploadResult.error || !uploadResult.document) {
+      return jsonError("Unable to upload the replacement PO document", 500);
     }
-    return NextResponse.json({ purchase_order: result.purchaseOrder });
+    uploadedDocument = uploadResult.document as {
+      id: string;
+      file_path: string;
+    };
   }
 
-  const { data: updatedPurchaseOrder, error: updateError } = await admin
-    .from("job_purchase_orders")
-    .update({
-      po_number: poNumber,
-      updated_by: session.user.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", poId)
-    .eq("org_id", session.org_id)
-    .select("id")
-    .maybeSingle();
+  const supabase = await createSupabaseServerClient();
+  const { error: updateError } = await supabase.rpc(
+    "update_job_purchase_order_details",
+    {
+      p_purchase_order_id: poId,
+      p_po_number: poNumber,
+      p_po_amount_before_tax: poAmountBeforeTax,
+      p_internal_remarks: internalRemarks,
+      p_po_received_date: receivedDate,
+      p_document_id: uploadedDocument?.id ?? null,
+    },
+  );
 
   if (updateError) {
+    if (uploadedDocument) {
+      const cleanupResult = await removePurchaseOrderDocument({
+        admin,
+        orgId: session.org_id,
+        purchaseOrderId: poId,
+        document: uploadedDocument,
+      });
+      if (cleanupResult.error) {
+        console.error("Unable to clean up rejected PO document upload", {
+          purchaseOrderId: poId,
+          documentId: uploadedDocument.id,
+          error: cleanupResult.error,
+        });
+      }
+    }
     if (isDuplicatePurchaseOrderNumberError(updateError)) {
       return jsonError(
         "This customer already has a purchase order with that PO number",
         409,
       );
     }
-    console.error("Unable to update purchase order number", updateError);
-    return jsonError("Unable to update purchase order number", 500);
-  }
-  if (!updatedPurchaseOrder) {
-    return jsonError("Purchase order changed while this request was processed", 409);
+    if (updateError.code === "P0001" || updateError.code === "23514") {
+      return jsonError(updateError.message, 409);
+    }
+    console.error("Unable to update purchase order details", updateError);
+    return jsonError("Unable to update purchase order details", 500);
   }
 
   const result = await getPurchaseOrder(admin, session.org_id, poId);
@@ -196,5 +278,8 @@ export async function PATCH(
     return jsonError("Purchase order was updated but could not be reloaded", 500);
   }
 
-  return NextResponse.json({ purchase_order: result.purchaseOrder });
+  return NextResponse.json({
+    purchase_order: result.purchaseOrder,
+    message: "Purchase order details updated successfully",
+  });
 }

@@ -4,6 +4,7 @@ import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
 import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { canCreatePostAcceptanceRevision } from "@/lib/quotations/revision-eligibility";
+import { validateRevisionPurpose } from "@/lib/quotations/revision-acceptance-review";
 import {
   cloneQuotationRevisionData,
   revisionIdFromRpc,
@@ -67,7 +68,8 @@ export async function POST(
   if (denied) return denied;
   const body = await request.json().catch(() => null) as { purpose?: unknown } | null;
   const purpose = typeof body?.purpose === "string" ? body.purpose.trim() : "";
-  if (!purpose) return jsonError("Purpose of revision is required", 400);
+  const purposeError = validateRevisionPurpose(purpose);
+  if (purposeError) return jsonError(purposeError, 400);
 
   const { id } = await context.params;
   const admin = createAdminClient();
