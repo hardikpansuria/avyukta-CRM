@@ -1064,7 +1064,9 @@ export default function QuotationDetailPage() {
             onValueChange={selectPendingStatus}
           >
             <SelectTrigger className="h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 sm:w-56">
-              <SelectValue>{pendingStatus ? formatStatus(pendingStatus) : "Change status"}</SelectValue>
+              <SelectValue>
+                Current status: {formatStatus(statusValue || quotation.status || "draft")}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent align="start">
               {quotationStatuses.filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => (
