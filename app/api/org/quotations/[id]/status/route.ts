@@ -5,6 +5,10 @@ import { requireOrgPermission } from "@/lib/auth/permissions";
 import { requireOwnedMutation } from "@/lib/auth/data-scope";
 import { logCustomerActivity } from "@/lib/customers/activity";
 import { logRevisionAudit } from "@/lib/quotations/revisions";
+import {
+  revisedTotalMatches,
+  validateRevisionPurpose,
+} from "@/lib/quotations/revision-acceptance-review";
 import { canTransitionQuotationStatus } from "@/lib/quotations/status-transitions";
 import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -31,6 +35,7 @@ export async function PATCH(
   }
 
   const requestedStatus = (body as Record<string, unknown>)?.status;
+  const confirmedTotal = (body as Record<string, unknown>)?.confirmed_total;
   if (typeof requestedStatus !== "string" || !requestedStatus.trim()) {
     return jsonError("Status is required", 400);
   }
@@ -85,6 +90,59 @@ export async function PATCH(
     }
   }
 
+  const isAcceptance = currentStatus === "sent" && nextStatus === "accepted";
+  let existingJob: {
+    id: string;
+    job_number?: string | null;
+    job_status?: string | null;
+    latest_accepted_quotation_id?: string | null;
+  } | null = null;
+  if (isAcceptance && existingQuotation.quotation_series_id) {
+    const { data: job, error: jobError } = await admin
+      .from("jobs")
+      .select("id,job_number,job_status,latest_accepted_quotation_id")
+      .eq("org_id", session.org_id)
+      .eq("quotation_series_id", existingQuotation.quotation_series_id)
+      .maybeSingle();
+    if (jobError) return jsonError("Unable to validate the existing job", 500);
+    existingJob = job;
+  }
+
+  const isPostAcceptanceRevision = Boolean(
+    isAcceptance &&
+      existingJob?.latest_accepted_quotation_id &&
+      existingJob.latest_accepted_quotation_id !== id,
+  );
+  let previousAcceptedTotal: number | null = null;
+  if (isPostAcceptanceRevision) {
+    const purposeError = validateRevisionPurpose(
+      existingQuotation.revision_purpose,
+    );
+    if (purposeError) {
+      return jsonError(
+        "This revision does not have a valid purpose. Create a new revision with a clear reason before accepting it.",
+        409,
+      );
+    }
+    if (!revisedTotalMatches(confirmedTotal, existingQuotation.grand_total_after_tax)) {
+      return jsonError(
+        "Enter the exact revised total amount to confirm this accepted revision",
+        400,
+      );
+    }
+
+    const { data: previousAccepted, error: previousAcceptedError } = await admin
+      .from("quotations")
+      .select("grand_total_after_tax")
+      .eq("org_id", session.org_id)
+      .eq("id", existingJob!.latest_accepted_quotation_id!)
+      .maybeSingle();
+    if (previousAcceptedError || !previousAccepted) {
+      return jsonError("Unable to validate the previous accepted revision", 500);
+    }
+    previousAcceptedTotal = Number(previousAccepted.grand_total_after_tax ?? 0);
+  }
+
   const { data: quotation, error: updateError } = await admin
     .from("quotations")
     .update({ status: nextStatus, updated_by: session.user.id })
@@ -126,6 +184,17 @@ export async function PATCH(
   await logRevisionAudit(admin, quotation, session.user.id, "status_changed", {
     previous_status: currentStatus,
     new_status: nextStatus,
+    ...(isPostAcceptanceRevision
+      ? {
+          revision_purpose: quotation.revision_purpose,
+          previous_accepted_total: previousAcceptedTotal,
+          revised_total: Number(quotation.grand_total_after_tax ?? 0),
+          amount_difference:
+            Number(quotation.grand_total_after_tax ?? 0) -
+            Number(previousAcceptedTotal ?? 0),
+          total_confirmation_entered: Number(confirmedTotal),
+        }
+      : {}),
   });
 
   let operationalJob: {
@@ -133,9 +202,10 @@ export async function PATCH(
     job_number?: string | null;
     job_status?: string | null;
   } | null = null;
-  const jobWasCreated = currentStatus === "sent" && nextStatus === "accepted";
+  const jobWasCreated = isAcceptance && !existingJob;
+  const jobWasUpdated = isAcceptance && Boolean(existingJob);
 
-  if (jobWasCreated && quotation.quotation_series_id) {
+  if (isAcceptance && quotation.quotation_series_id) {
     const { data: job, error: jobError } = await admin
       .from("jobs")
       .select("id,job_number,job_status")
@@ -158,8 +228,11 @@ export async function PATCH(
     message:
       jobWasCreated && operationalJob
         ? "Quotation accepted and Job on the Go created"
+        : jobWasUpdated && operationalJob
+          ? "Quotation revision accepted and existing Job on the Go updated"
         : "Quotation status updated",
     job_created: jobWasCreated && Boolean(operationalJob),
+    job_updated: jobWasUpdated && Boolean(operationalJob),
     job: operationalJob,
   });
 }

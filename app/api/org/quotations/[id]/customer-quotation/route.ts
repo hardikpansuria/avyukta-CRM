@@ -68,22 +68,24 @@ async function saveItemContent({
   customerDocumentId: string;
   items: Array<Record<string, unknown>>;
 }) {
-  for (const item of items) {
-    const { error } = await admin
-      .from("quotation_customer_document_items")
-      .update({
-        description_html: item.description_html,
-        description_text: item.description_text,
-        notes_html: item.notes_html,
-        notes_text: item.notes_text,
-      })
-      .eq("org_id", orgId)
-      .eq("quotation_id", quotationId)
-      .eq("customer_document_id", customerDocumentId)
-      .eq("scope_id", item.scope_id);
-    if (error) return { error };
-  }
-  return { error: null };
+  const results = await Promise.all(
+    items.map((item) =>
+      admin
+        .from("quotation_customer_document_items")
+        .update({
+          description_html: item.description_html,
+          description_text: item.description_text,
+          notes_html: item.notes_html,
+          notes_text: item.notes_text,
+        })
+        .eq("org_id", orgId)
+        .eq("quotation_id", quotationId)
+        .eq("customer_document_id", customerDocumentId)
+        .eq("scope_id", item.scope_id),
+    ),
+  );
+
+  return { error: results.find((result) => result.error)?.error ?? null };
 }
 
 export async function GET(
@@ -166,11 +168,10 @@ export async function POST(
   const admin = createAdminClient();
   const { data: lock } = await getQuotationLock(admin, session.org_id, id);
   if (lock?.is_locked) return jsonError(lockedRevisionMessage, 409);
-  const sourceResult = await getCustomerQuotationData(
-    admin,
-    session.org_id,
-    id,
-  );
+  const sourceResult = await getCustomerQuotationData(admin, session.org_id, id, {
+    brandingDate:
+      typeof body.quotation_date === "string" ? body.quotation_date : null,
+  });
 
   if (sourceResult.notFound) return jsonError("Quotation not found", 404);
   if (sourceResult.error || !sourceResult.value) {
@@ -199,16 +200,6 @@ export async function POST(
     return jsonError("Customer quotation contains an invalid scope", 400);
   }
 
-  const datedBrandingResult = await getCustomerQuotationData(
-    admin,
-    session.org_id,
-    id,
-    { brandingDate: draft.quotation_date },
-  );
-  if (datedBrandingResult.error || !datedBrandingResult.value) {
-    return jsonError("Unable to select quotation branding", 500);
-  }
-
   const { data: document, error: documentError } = await admin
     .from("quotation_customer_documents")
     .insert({
@@ -229,7 +220,7 @@ export async function POST(
       pricing_synced_at: new Date().toISOString(),
       generated_pdf_storage_path: null,
       generated_at: null,
-      ...brandingSnapshot(datedBrandingResult.value.organization),
+      ...brandingSnapshot(sourceResult.value.organization),
       created_by: session.user.id,
       updated_by: session.user.id,
     })

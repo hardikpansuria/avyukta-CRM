@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingState } from "@/components/ui/loading-state";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +28,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { canCreatePostAcceptanceRevision } from "@/lib/quotations/revision-eligibility";
+import {
+  revisedTotalMatches,
+  validateRevisionPurpose,
+  type RevisionScopeChange,
+} from "@/lib/quotations/revision-acceptance-review";
 import { allowedNextQuotationStatuses } from "@/lib/quotations/status-transitions";
 
 import {
@@ -65,6 +72,8 @@ type Quotation = {
   status?: string | null;
   is_locked?: boolean | null;
   quotation_series_id?: string | null;
+  revision_purpose?: string | null;
+  currency?: string | null;
   grand_total?: number | string | null;
   material_total?: number | string | null;
   material_profit_total?: number | string | null;
@@ -102,6 +111,22 @@ type QuotationDetail = {
   series_revisions?: SeriesRevision[];
   revision_audit?: AuditEvent[];
   tax_warning?: string | null;
+  revision_job?: {
+    id: string;
+    job_number?: string | null;
+    job_status?: string | null;
+    latest_accepted_quotation_id?: string | null;
+  } | null;
+  revision_acceptance_review?: {
+    purpose?: string | null;
+    previous_revision_number?: number | string | null;
+    revised_revision_number?: number | string | null;
+    currency?: string | null;
+    previous_total: number;
+    revised_total: number;
+    amount_difference: number;
+    scope_changes: RevisionScopeChange[];
+  } | null;
 };
 
 type SeriesRevision = {
@@ -290,6 +315,7 @@ export default function QuotationDetailPage() {
   >([]);
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
   const [revisionPurpose, setRevisionPurpose] = useState("");
+  const [revisedTotalConfirmation, setRevisedTotalConfirmation] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -419,6 +445,24 @@ export default function QuotationDetailPage() {
   const auditHistory = detail.revision_audit ?? [];
   const printableDetail = detail;
   const allowedStatuses = allowedNextQuotationStatuses(quotation.status);
+  const isPostAcceptanceRevision =
+    detail.revision_job?.latest_accepted_quotation_id === quotation.id &&
+    canCreatePostAcceptanceRevision(
+      quotation.status,
+      detail.revision_job?.job_status,
+    );
+  const canCreateRevision =
+    quotation.status === "sent" || isPostAcceptanceRevision;
+  const revisionAcceptanceReview = detail.revision_acceptance_review ?? null;
+  const isRevisionAcceptance =
+    pendingStatus === "accepted" && Boolean(revisionAcceptanceReview);
+  const revisedTotalConfirmed = Boolean(
+    revisionAcceptanceReview &&
+      revisedTotalMatches(
+        revisedTotalConfirmation,
+        revisionAcceptanceReview.revised_total,
+      ),
+  );
 
   async function updateStatus() {
     if (!pendingStatus || isChangingStatus) return;
@@ -431,13 +475,19 @@ export default function QuotationDetailPage() {
       const response = await fetch(`/api/org/quotations/${quotationId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: confirmedStatus }),
+        body: JSON.stringify({
+          status: confirmedStatus,
+          ...(isRevisionAcceptance
+            ? { confirmed_total: revisedTotalConfirmation }
+            : {}),
+        }),
       });
       const payload = (await response.json().catch(() => null)) as
         | {
             quotation?: Quotation;
             error?: string;
             job_created?: boolean;
+            job_updated?: boolean;
             job?: { id: string; job_status?: string | null };
           }
         | null;
@@ -453,9 +503,12 @@ export default function QuotationDetailPage() {
       setStatusValue(savedStatus);
       setPendingStatus(null);
       setStatusDialogOpen(false);
+      setRevisedTotalConfirmation("");
       setSuccessMessage(
         payload.job_created
           ? "Quotation accepted. A PO Pending Job on the Go was created automatically."
+          : payload.job_updated
+            ? "Quotation revision accepted. The existing job, linked PO allocation, scopes, and billing balance now use this approved revision."
           : `Quotation status changed to ${formatStatus(savedStatus)}.`,
       );
       setJobCreated(Boolean(payload.job_created));
@@ -464,6 +517,7 @@ export default function QuotationDetailPage() {
       setError("Unable to update status.");
       setPendingStatus(null);
       setStatusDialogOpen(false);
+      setRevisedTotalConfirmation("");
     } finally {
       setIsChangingStatus(false);
     }
@@ -473,6 +527,7 @@ export default function QuotationDetailPage() {
     const nextStatus = String(value ?? "");
     if (!nextStatus || nextStatus === statusValue) return;
     setPendingStatus(nextStatus);
+    setRevisedTotalConfirmation("");
     setStatusDialogOpen(true);
   }
 
@@ -480,11 +535,13 @@ export default function QuotationDetailPage() {
     if (isChangingStatus) return;
     setPendingStatus(null);
     setStatusDialogOpen(false);
+    setRevisedTotalConfirmation("");
   }
 
   async function createRevision() {
-    if (!revisionPurpose.trim()) {
-      setError("Purpose of revision is required.");
+    const purposeError = validateRevisionPurpose(revisionPurpose);
+    if (purposeError) {
+      setError(`${purposeError}.`);
       return;
     }
     setError(null);
@@ -504,7 +561,11 @@ export default function QuotationDetailPage() {
         setError(payload?.error ?? "Unable to create revision.");
         return;
       }
-      if (payload?.quotation_id) window.location.assign(`/dashboard/quotations/${payload.quotation_id}`);
+      if (payload?.quotation_id) {
+        window.location.assign(
+          `/dashboard/quotations/${payload.quotation_id}/edit`,
+        );
+      }
     } catch {
       setError("Unable to create revision.");
     } finally {
@@ -563,7 +624,18 @@ export default function QuotationDetailPage() {
               ? "Edit Customer Quotation"
               : "Prepare Customer Quotation"}
           </Button>
-          {quotation.status === "sent" ? <Button className="h-10 rounded-md" type="button" variant="outline" onClick={() => setRevisionDialogOpen(true)}>Create Revision</Button> : null}
+          {canCreateRevision ? (
+            <Button
+              className="h-10 rounded-md"
+              type="button"
+              variant="outline"
+              onClick={() => setRevisionDialogOpen(true)}
+            >
+              {isPostAcceptanceRevision
+                ? "Revise Accepted Quotation"
+                : "Create Revision"}
+            </Button>
+          ) : null}
           <Button className="h-10 rounded-md" nativeButton={false} render={<Link href={`/dashboard/quotations/${quotation.id}/compare`} prefetch={false} />} variant="outline"><GitCompareIcon className="size-4" />Compare Revisions</Button>
           {!quotation.is_locked ? <Button
             className="h-10 rounded-md"
@@ -992,7 +1064,9 @@ export default function QuotationDetailPage() {
             onValueChange={selectPendingStatus}
           >
             <SelectTrigger className="h-10 w-full rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 sm:w-56">
-              <SelectValue>{pendingStatus ? formatStatus(pendingStatus) : "Change status"}</SelectValue>
+              <SelectValue>
+                Current status: {formatStatus(statusValue || quotation.status || "draft")}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent align="start">
               {quotationStatuses.filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => (
@@ -1002,7 +1076,18 @@ export default function QuotationDetailPage() {
               ))}
             </SelectContent>
           </Select></> : null}
-          {quotation.status === "sent" ? <Button className="h-10 rounded-md" type="button" variant="outline" onClick={() => setRevisionDialogOpen(true)}>Create Revision</Button> : null}
+          {canCreateRevision ? (
+            <Button
+              className="h-10 rounded-md"
+              type="button"
+              variant="outline"
+              onClick={() => setRevisionDialogOpen(true)}
+            >
+              {isPostAcceptanceRevision
+                ? "Revise Accepted Quotation"
+                : "Create Revision"}
+            </Button>
+          ) : null}
           {!quotation.is_locked ? <Button
             className="h-10 rounded-md font-semibold"
             nativeButton={false}
@@ -1022,7 +1107,65 @@ export default function QuotationDetailPage() {
       </div>
 
       <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
-        <DialogContent className="rounded-lg"><DialogHeader><DialogTitle>Create New Revision</DialogTitle><DialogDescription>Quotation {quotation.quotation_number ?? "—"} · Current Revision {quotation.revision_number ?? 0}</DialogDescription></DialogHeader><div><Label htmlFor="revision-purpose" required>Purpose of Revision</Label><Textarea className="mt-2 min-h-28" id="revision-purpose" placeholder="Customer requested additional work\nMaterial specification updated\nQuantity revised\nPrice adjustment\nDrawing revision\nScope of work modified" required value={revisionPurpose} onChange={(event) => setRevisionPurpose(event.target.value)} /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button><Button disabled={isWorking || !revisionPurpose.trim()} type="button" onClick={() => void createRevision()}>{isWorking ? "Creating..." : "Create Revision"}</Button></DialogFooter></DialogContent>
+        <DialogContent className="rounded-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {isPostAcceptanceRevision
+                ? "Revise Accepted Quotation"
+                : "Create New Revision"}
+            </DialogTitle>
+            <DialogDescription>
+              {isPostAcceptanceRevision
+                ? `A new editable revision will be created for ${quotation.quotation_number ?? "this quotation"}. The accepted revision remains locked and Job ${detail.revision_job?.job_number ?? "on the Go"} remains the same.`
+                : `Quotation ${quotation.quotation_number ?? "—"} · Current Revision ${quotation.revision_number ?? 0}`}
+            </DialogDescription>
+          </DialogHeader>
+          {isPostAcceptanceRevision ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+              Edit the new revision, generate the customer-facing quotation,
+              and send it for acceptance. The job scope changes only after the
+              new revision is accepted.
+            </p>
+          ) : null}
+          <div>
+            <Label htmlFor="revision-purpose" required>
+              Purpose of Revision
+            </Label>
+            <Textarea
+              className="mt-2 min-h-28"
+              id="revision-purpose"
+              maxLength={1000}
+              placeholder="Customer requested two additional tanks\nMaterial specification updated\nQuantity revised\nPrice adjustment\nDrawing revision\nScope of work modified"
+              required
+              value={revisionPurpose}
+              onChange={(event) => setRevisionPurpose(event.target.value)}
+            />
+            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+              Enter a clear reason using at least 10 characters. This reason is
+              saved in the revision history and shown again at acceptance.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRevisionDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isWorking || Boolean(validateRevisionPurpose(revisionPurpose))}
+              type="button"
+              onClick={() => void createRevision()}
+            >
+              {isWorking
+                ? "Creating..."
+                : isPostAcceptanceRevision
+                  ? "Create Editable Revision"
+                  : "Create Revision"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       <Dialog
@@ -1031,15 +1174,123 @@ export default function QuotationDetailPage() {
           if (!open) cancelStatusChange();
         }}
       >
-        <DialogContent className="rounded-lg" showCloseButton={!isChangingStatus}>
+        <DialogContent
+          className={
+            isRevisionAcceptance
+              ? "max-h-[90vh] overflow-y-auto rounded-lg sm:max-w-2xl"
+              : "rounded-lg"
+          }
+          showCloseButton={!isChangingStatus}
+        >
           <DialogHeader>
-            <DialogTitle>Confirm Status Change</DialogTitle>
+            <DialogTitle>
+              {isRevisionAcceptance
+                ? "Review Revised Accepted Quotation"
+                : "Confirm Status Change"}
+            </DialogTitle>
             <DialogDescription>
-              Change quotation status from &quot;{formatStatus(statusValue)}&quot; to
-              &quot;{formatStatus(pendingStatus)}&quot;?
+              {isRevisionAcceptance
+                ? `Review every change before accepting Revision ${revisionAcceptanceReview?.revised_revision_number ?? quotation.revision_number ?? "—"}. The existing job will remain the same and will be updated to this approved scope.`
+                : `Change quotation status from "${formatStatus(statusValue)}" to "${formatStatus(pendingStatus)}"?`}
             </DialogDescription>
           </DialogHeader>
-          {pendingStatus ? (
+          {isRevisionAcceptance && revisionAcceptanceReview ? (
+            <div className="space-y-5">
+              <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Purpose of Revision
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900 dark:text-zinc-100">
+                  {revisionAcceptanceReview.purpose || "No purpose recorded"}
+                </p>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+                  Modified Scope Details
+                </h3>
+                <div className="mt-3 space-y-3">
+                  {revisionAcceptanceReview.scope_changes.length ? (
+                    revisionAcceptanceReview.scope_changes.map((change) => (
+                      <div
+                        className="rounded-md border border-zinc-200 p-4 dark:border-zinc-800"
+                        key={change.key}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="font-medium text-zinc-950 dark:text-zinc-50">
+                            {change.title}
+                          </p>
+                          <Badge variant="outline">
+                            {change.change_type === "added"
+                              ? "Added"
+                              : change.change_type === "removed"
+                                ? "Removed"
+                                : "Modified"}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 grid gap-2 text-sm text-zinc-600 dark:text-zinc-400 sm:grid-cols-2">
+                          <p>
+                            Quantity: {change.previous_quantity} → {change.revised_quantity}
+                          </p>
+                          <p>
+                            Amount: {formatCurrency(change.previous_amount)} → {formatCurrency(change.revised_amount)}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="rounded-md border border-dashed border-zinc-300 p-4 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+                      No scope-line changes were detected. Review the revised total below for final adjustments or tax changes.
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <section className="space-y-3 rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-950/30">
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <span>Previous accepted total</span>
+                  <span className="font-medium">
+                    {formatCurrency(revisionAcceptanceReview.previous_total)} CAD
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <span>PO amount difference</span>
+                  <span className="font-semibold">
+                    {revisionAcceptanceReview.amount_difference >= 0 ? "+" : "-"}
+                    {formatCurrency(Math.abs(revisionAcceptanceReview.amount_difference))} CAD
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4 border-t border-blue-200 pt-3 text-base dark:border-blue-900/60">
+                  <span className="font-semibold">Total revised amount</span>
+                  <span className="font-bold">
+                    {formatCurrency(revisionAcceptanceReview.revised_total)} CAD
+                  </span>
+                </div>
+              </section>
+
+              <div className="space-y-2">
+                <Label htmlFor="revised-total-confirmation" required>
+                  Enter Total Revised Amount to Confirm
+                </Label>
+                <Input
+                  aria-describedby="revised-total-help"
+                  autoComplete="off"
+                  id="revised-total-confirmation"
+                  inputMode="decimal"
+                  min="0"
+                  placeholder={revisionAcceptanceReview.revised_total.toFixed(2)}
+                  required
+                  step="0.01"
+                  type="number"
+                  value={revisedTotalConfirmation}
+                  onChange={(event) => setRevisedTotalConfirmation(event.target.value)}
+                />
+                <p className="text-xs text-zinc-500 dark:text-zinc-400" id="revised-total-help">
+                  Enter exactly {formatCurrency(revisionAcceptanceReview.revised_total)}. The confirmation button is enabled only after the amount matches.
+                </p>
+              </div>
+            </div>
+          ) : pendingStatus ? (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
               {statusChangeWarning(pendingStatus)}
             </p>
@@ -1054,11 +1305,21 @@ export default function QuotationDetailPage() {
               Cancel
             </Button>
             <Button
-              disabled={isChangingStatus || !pendingStatus}
+              disabled={
+                isChangingStatus ||
+                !pendingStatus ||
+                (isRevisionAcceptance && !revisedTotalConfirmed)
+              }
               type="button"
               onClick={() => void updateStatus()}
             >
-              {isChangingStatus ? "Changing Status..." : "Yes, Change Status"}
+              {isChangingStatus
+                ? isRevisionAcceptance
+                  ? "Revising Quotation..."
+                  : "Changing Status..."
+                : isRevisionAcceptance
+                  ? "Revise Accepted Quotation"
+                  : "Yes, Change Status"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -132,6 +132,37 @@ export async function uploadPurchaseOrderDocument(args: {
   return { document, error: null };
 }
 
+export async function removePurchaseOrderDocument(args: {
+  admin: SupabaseClient;
+  orgId: string;
+  purchaseOrderId: string;
+  document: { id: string; file_path: string };
+}) {
+  if (
+    !isExpectedPurchaseOrderDocumentPath({
+      path: args.document.file_path,
+      orgId: args.orgId,
+      purchaseOrderId: args.purchaseOrderId,
+      documentId: args.document.id,
+    })
+  ) {
+    return { error: "Unexpected purchase order document path" };
+  }
+
+  const { error: metadataError } = await args.admin
+    .from("job_purchase_order_documents")
+    .delete()
+    .eq("id", args.document.id)
+    .eq("org_id", args.orgId)
+    .eq("purchase_order_id", args.purchaseOrderId);
+  if (metadataError) return { error: metadataError.message };
+
+  const { error: storageError } = await args.admin.storage
+    .from(PURCHASE_ORDER_BUCKET)
+    .remove([args.document.file_path]);
+  return { error: storageError?.message ?? null };
+}
+
 export async function uploadInvoiceDocument(args: {
   admin: SupabaseClient;
   orgId: string;

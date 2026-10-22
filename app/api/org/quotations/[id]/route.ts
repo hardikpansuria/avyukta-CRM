@@ -25,6 +25,7 @@ import {
   lockedRevisionMessage,
   logRevisionAudit,
 } from "@/lib/quotations/revisions";
+import { buildRevisionScopeChanges } from "@/lib/quotations/revision-acceptance-review";
 import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
 
 function jsonError(error: string, status: number) {
@@ -82,6 +83,67 @@ export async function GET(
     : { data: [] };
   const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
 
+  const { data: revisionJob, error: revisionJobError } = seriesId
+    ? await admin
+        .from("jobs")
+        .select("id,job_number,job_status,latest_accepted_quotation_id")
+        .eq("org_id", session.org_id)
+        .eq("quotation_series_id", seriesId)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (revisionJobError) {
+    return jsonError("Unable to fetch quotation job", 500);
+  }
+
+  let revisionAcceptanceReview = null;
+  if (
+    result.quotation.status === "sent" &&
+    revisionJob?.latest_accepted_quotation_id &&
+    revisionJob.latest_accepted_quotation_id !== id
+  ) {
+    const [previousQuotationResult, previousScopesResult] = await Promise.all([
+      admin
+        .from("quotations")
+        .select("id,revision_number,grand_total_after_tax,currency")
+        .eq("org_id", session.org_id)
+        .eq("id", revisionJob.latest_accepted_quotation_id)
+        .maybeSingle(),
+      admin
+        .from("quotation_scopes")
+        .select("id,scope_title,quantity,scope_total_after_discount,sort_order")
+        .eq("org_id", session.org_id)
+        .eq("quotation_id", revisionJob.latest_accepted_quotation_id)
+        .order("sort_order", { ascending: true }),
+    ]);
+
+    if (previousQuotationResult.error || previousScopesResult.error) {
+      return jsonError("Unable to prepare the revision acceptance review", 500);
+    }
+    if (previousQuotationResult.data) {
+      const previousTotal = Number(
+        previousQuotationResult.data.grand_total_after_tax ?? 0,
+      );
+      const revisedTotal = Number(result.quotation.grand_total_after_tax ?? 0);
+      revisionAcceptanceReview = {
+        purpose: result.quotation.revision_purpose ?? null,
+        previous_revision_number:
+          previousQuotationResult.data.revision_number ?? null,
+        revised_revision_number: result.quotation.revision_number ?? null,
+        currency:
+          result.quotation.currency ??
+          previousQuotationResult.data.currency ??
+          "CAD",
+        previous_total: previousTotal,
+        revised_total: revisedTotal,
+        amount_difference: revisedTotal - previousTotal,
+        scope_changes: buildRevisionScopeChanges(
+          previousScopesResult.data ?? [],
+          result.scopes ?? [],
+        ),
+      };
+    }
+  }
+
   return NextResponse.json({
     quotation: result.quotation,
     contacts: result.contacts ?? [],
@@ -99,6 +161,8 @@ export async function GET(
       actor_profile: profilesById.get(event.actor_id as string) ?? null,
     })),
     tax_warning: result.tax_warning ?? null,
+    revision_job: revisionJob,
+    revision_acceptance_review: revisionAcceptanceReview,
   });
 }
 

@@ -113,6 +113,8 @@ type ApiPayload = {
   error?: string;
 };
 
+type GenerationStage = "saving" | "generating" | "finalizing";
+
 const inputClass =
   "h-10 rounded-md border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900";
 
@@ -206,6 +208,8 @@ export function CustomerQuotationWizard({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStage, setGenerationStage] =
+    useState<GenerationStage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -355,14 +359,16 @@ export function CustomerQuotationWizard({
   async function generatePdf() {
     if (!document) return;
     const documentType = document.document_type;
-    const saved = await saveDraft(false);
-    if (!saved) return;
-
     setIsGenerating(true);
+    setGenerationStage("saving");
     setError(null);
     setSuccess(null);
 
     try {
+      const saved = await saveDraft(false);
+      if (!saved) return;
+
+      setGenerationStage("generating");
       const response = await fetch(
         `/api/org/quotations/${quotationId}/customer-quotation/generate-pdf`,
         { method: "POST" },
@@ -376,6 +382,7 @@ export function CustomerQuotationWizard({
         return;
       }
 
+      setGenerationStage("finalizing");
       setGeneratedDocuments((current) => [
         payload.document!,
         ...current.filter(
@@ -395,6 +402,7 @@ export function CustomerQuotationWizard({
     } catch {
       setError("Unable to generate customer quotation PDF.");
     } finally {
+      setGenerationStage(null);
       setIsGenerating(false);
     }
   }
@@ -433,7 +441,10 @@ export function CustomerQuotationWizard({
   ];
 
   return (
-    <div className="mx-auto max-w-7xl pb-24">
+    <div
+      aria-busy={isSaving || isGenerating}
+      className="mx-auto max-w-7xl pb-24"
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link
@@ -457,7 +468,7 @@ export function CustomerQuotationWizard({
         </div>
         {!readOnly ? <Button
           className="rounded-md"
-          disabled={isSaving || !document.document_type}
+          disabled={isSaving || isGenerating || !document.document_type}
           type="button"
           variant="outline"
           onClick={() => void saveDraft()}
@@ -516,6 +527,9 @@ export function CustomerQuotationWizard({
         <div className="mt-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
           {success}
         </div>
+      ) : null}
+      {generationStage ? (
+        <GenerationProgress stage={generationStage} />
       ) : null}
 
       <main className="mt-6">
@@ -864,7 +878,13 @@ export function CustomerQuotationWizard({
                   onClick={() => void generatePdf()}
                 >
                   <FileDownIcon className="size-4" />
-                  {isGenerating ? "Generating..." : "Generate Final PDF"}
+                  {generationStage
+                    ? generationStage === "saving"
+                      ? "Saving latest changes..."
+                      : generationStage === "generating"
+                        ? "Generating PDF..."
+                        : "Finalizing PDF..."
+                    : "Generate Final PDF"}
                 </Button>
               </div>
             </StepCard>
@@ -949,7 +969,7 @@ export function CustomerQuotationWizard({
           <div className="flex items-center gap-2">
             {!readOnly ? <Button
               className="hidden rounded-md sm:inline-flex"
-              disabled={isSaving || !document.document_type}
+              disabled={isSaving || isGenerating || !document.document_type}
               type="button"
               variant="outline"
               onClick={() => void saveDraft()}
@@ -979,13 +999,63 @@ export function CustomerQuotationWizard({
                 onClick={() => void generatePdf()}
               >
                 <FileDownIcon className="size-4" />
-                Generate PDF
+                {generationStage ? "Please wait..." : "Generate PDF"}
               </Button>
             ) : null}
           </div>
         </div>
       </div>
 
+    </div>
+  );
+}
+
+function GenerationProgress({ stage }: { stage: GenerationStage }) {
+  const progress = {
+    saving: {
+      label: "Saving the latest quotation changes",
+      value: 35,
+      width: "w-[35%]",
+    },
+    generating: {
+      label: "Generating and securely storing the PDF",
+      value: 80,
+      width: "w-4/5",
+    },
+    finalizing: {
+      label: "Finalizing the PDF link",
+      value: 100,
+      width: "w-full",
+    },
+  }[stage];
+
+  return (
+    <div
+      aria-live="polite"
+      className="mt-5 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100"
+    >
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium">{progress.label}</span>
+        <span className="text-xs tabular-nums">{progress.value}%</span>
+      </div>
+      <div
+        aria-label="PDF generation progress"
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={progress.value}
+        className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950"
+        role="progressbar"
+      >
+        <div
+          className={cn(
+            "h-full rounded-full bg-blue-600 transition-[width] duration-500 ease-out dark:bg-blue-400",
+            progress.width,
+          )}
+        />
+      </div>
+      <p className="mt-2 text-xs text-blue-700 dark:text-blue-200">
+        Keep this page open. Complex quotations can take around 10–20 seconds.
+      </p>
     </div>
   );
 }

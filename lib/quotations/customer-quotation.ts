@@ -520,7 +520,10 @@ export async function getCustomerQuotationData(
   admin: SupabaseClient,
   orgId: string,
   quotationId: string,
-  options?: { brandingDate?: string | null },
+  options?: {
+    brandingDate?: string | null;
+    includeLogoSignedUrl?: boolean;
+  },
 ): Promise<{
   value?: CustomerQuotationData;
   error?: unknown;
@@ -567,21 +570,21 @@ export async function getCustomerQuotationData(
     (document ?? {}) as Record<string, unknown>,
     brandingResult.value,
   );
-  const logoSignedUrl = await signedBrandingLogo(
-    admin,
-    orgId,
-    branding.logo_storage_path,
-  );
-
-  const { data: savedItems, error: itemsError } = document
-    ? await admin
-        .from("quotation_customer_document_items")
-        .select("*")
-        .eq("org_id", orgId)
-        .eq("quotation_id", quotationId)
-        .eq("customer_document_id", document.id)
-        .order("sort_order", { ascending: true })
-    : { data: null, error: null };
+  const [logoSignedUrl, savedItemsResult] = await Promise.all([
+    options?.includeLogoSignedUrl === false
+      ? Promise.resolve(null)
+      : signedBrandingLogo(admin, orgId, branding.logo_storage_path),
+    document
+      ? admin
+          .from("quotation_customer_document_items")
+          .select("*")
+          .eq("org_id", orgId)
+          .eq("quotation_id", quotationId)
+          .eq("customer_document_id", document.id)
+          .order("sort_order", { ascending: true })
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  const { data: savedItems, error: itemsError } = savedItemsResult;
 
   if (itemsError) return { error: itemsError };
 

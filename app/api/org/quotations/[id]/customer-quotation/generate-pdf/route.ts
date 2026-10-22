@@ -11,6 +11,7 @@ import {
 } from "@/lib/quotations/customer-quotation-pdf";
 import { isCustomerDocumentType } from "@/lib/quotations/customer-document-type";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isOrgScopedStoragePath } from "@/lib/supabase/storage-path";
 import { getQuotationLock, lockedRevisionMessage, logRevisionAudit } from "@/lib/quotations/revisions";
 import { syncCustomerQuotationPricing } from "@/lib/quotations/sync-customer-quotation-pricing";
 
@@ -34,14 +35,25 @@ function safeFilePart(value: unknown) {
   );
 }
 
-async function logoDataUrl(signedUrl: unknown) {
-  if (typeof signedUrl !== "string" || !signedUrl) return null;
+async function logoDataUrl(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  storagePath: unknown,
+) {
+  if (
+    typeof storagePath !== "string" ||
+    !isOrgScopedStoragePath(storagePath, orgId)
+  ) {
+    return null;
+  }
 
-  const response = await fetch(signedUrl, { cache: "no-store" });
-  if (!response.ok) return null;
+  const { data, error } = await admin.storage
+    .from("crm-assets")
+    .download(storagePath);
+  if (error || !data) return null;
 
-  const contentType = response.headers.get("content-type") || "image/png";
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const contentType = data.type || "image/png";
+  const bytes = Buffer.from(await data.arrayBuffer());
   return `data:${contentType};base64,${bytes.toString("base64")}`;
 }
 
@@ -49,6 +61,11 @@ export async function POST(
   _request: Request,
   context: RouteContext<"/api/org/quotations/[id]/customer-quotation/generate-pdf">,
 ) {
+  const startedAt = performance.now();
+  const timings: Record<string, number> = {};
+  const mark = (name: string, stageStartedAt: number) => {
+    timings[name] = Math.round(performance.now() - stageStartedAt);
+  };
   const session = await verifyOrgSession();
 
   if (!session) return jsonError("Unauthorized", 401);
@@ -57,18 +74,26 @@ export async function POST(
 
   const { id } = await context.params;
   const admin = createAdminClient();
+  let stageStartedAt = performance.now();
   const { data: lock } = await getQuotationLock(admin, session.org_id, id);
+  mark("lock_ms", stageStartedAt);
   if (lock?.is_locked) return jsonError(lockedRevisionMessage, 409);
+  stageStartedAt = performance.now();
   const syncResult = await syncCustomerQuotationPricing({
     orgId: session.org_id,
     quotationId: id,
     actorId: session.user.id,
     adminClient: admin,
   });
+  mark("pricing_sync_ms", stageStartedAt);
   if (syncResult.error) {
     return jsonError("Unable to synchronize customer quotation pricing", 500);
   }
-  const result = await getCustomerQuotationData(admin, session.org_id, id);
+  stageStartedAt = performance.now();
+  const result = await getCustomerQuotationData(admin, session.org_id, id, {
+    includeLogoSignedUrl: false,
+  });
+  mark("data_load_ms", stageStartedAt);
 
   if (result.notFound) return jsonError("Quotation not found", 404);
   if (result.error || !result.value) {
@@ -90,7 +115,13 @@ export async function POST(
   const quotationNumber = safeFilePart(document.quotation_number_snapshot);
   const fileName = `${quotationNumber}-revision-${revisionNumber}-${generatedDocumentId.slice(0, 8)}.pdf`;
   const filePath = `${session.org_id}/quotations/${id}/customer-quotations/revision-${revisionNumber}/${generatedDocumentId}.pdf`;
-  const logo = await logoDataUrl(result.value.organization.logo_signed_url);
+  stageStartedAt = performance.now();
+  const logo = await logoDataUrl(
+    admin,
+    session.org_id,
+    result.value.organization.logo_storage_path,
+  );
+  mark("logo_download_ms", stageStartedAt);
   const pdfData: CustomerQuotationPdfData = {
     organization: result.value.organization,
     logo_data_url: logo,
@@ -104,7 +135,9 @@ export async function POST(
   let pdfBuffer: Buffer;
 
   try {
+    stageStartedAt = performance.now();
     pdfBuffer = await renderCustomerQuotationPdf(pdfData);
+    mark("pdf_render_ms", stageStartedAt);
   } catch (error) {
     console.error("Unable to render customer quotation PDF", error);
     return jsonError("Unable to render customer quotation PDF", 500);
@@ -114,18 +147,21 @@ export async function POST(
     return jsonError("Generated customer quotation PDF has an invalid size", 500);
   }
 
+  stageStartedAt = performance.now();
   const { error: uploadError } = await admin.storage
     .from(bucketName)
     .upload(filePath, pdfBuffer, {
       contentType: "application/pdf",
       upsert: false,
     });
+  mark("pdf_upload_ms", stageStartedAt);
 
   if (uploadError) {
     return jsonError("Unable to store customer quotation PDF", 500);
   }
 
   const generatedAt = new Date().toISOString();
+  stageStartedAt = performance.now();
   const { data: generatedDocument, error: historyError } = await admin
     .from("quotation_generated_documents")
     .insert({
@@ -143,12 +179,14 @@ export async function POST(
     })
     .select("*")
     .single();
+  mark("history_insert_ms", stageStartedAt);
 
   if (historyError || !generatedDocument) {
     await admin.storage.from(bucketName).remove([filePath]);
     return jsonError("Unable to save generated document history", 500);
   }
 
+  stageStartedAt = performance.now();
   const { error: documentUpdateError } = await admin
     .from("quotation_customer_documents")
     .update({
@@ -160,30 +198,42 @@ export async function POST(
     .eq("id", customerDocumentId)
     .eq("org_id", session.org_id)
     .eq("quotation_id", id);
+  mark("document_update_ms", stageStartedAt);
 
   if (documentUpdateError) {
     return jsonError("PDF generated, but draft status could not be updated", 500);
   }
 
-  const { data: signedData } = await admin.storage
-    .from(bucketName)
-    .createSignedUrl(filePath, 10 * 60);
-  const { data: generatorProfile } = await admin
-    .from("profiles")
-    .select("full_name")
-    .eq("id", session.user.id)
-    .maybeSingle();
+  stageStartedAt = performance.now();
+  const [signedUrlResult, generatorProfileResult] = await Promise.all([
+    admin.storage.from(bucketName).createSignedUrl(filePath, 10 * 60),
+    admin
+      .from("profiles")
+      .select("full_name")
+      .eq("id", session.user.id)
+      .maybeSingle(),
+  ]);
+  mark("response_metadata_ms", stageStartedAt);
 
+  stageStartedAt = performance.now();
   await logRevisionAudit(admin, { ...lock, id, org_id: session.org_id }, session.user.id, "customer_pdf_generated", {
     generated_document_id: generatedDocumentId,
     file_name: fileName,
+  });
+  mark("audit_ms", stageStartedAt);
+  timings.total_ms = Math.round(performance.now() - startedAt);
+  console.info("Customer quotation PDF generation timings", {
+    timings,
+    item_count: result.value.items.length,
+    pdf_bytes: pdfBuffer.length,
   });
 
   return NextResponse.json({
     document: {
       ...generatedDocument,
-      generated_by_name: generatorProfile?.full_name?.trim() || "System",
-      signed_url: signedData?.signedUrl ?? null,
+      generated_by_name:
+        generatorProfileResult.data?.full_name?.trim() || "System",
+      signed_url: signedUrlResult.data?.signedUrl ?? null,
     },
   });
 }

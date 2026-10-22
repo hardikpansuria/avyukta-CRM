@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { verifyOrgSession } from "@/lib/auth/verify-org-session";
 import { requireOrgPermission } from "@/lib/auth/permissions";
 import { requireOwnedMutation } from "@/lib/auth/data-scope";
+import { canCreatePostAcceptanceRevision } from "@/lib/quotations/revision-eligibility";
+import { validateRevisionPurpose } from "@/lib/quotations/revision-acceptance-review";
 import {
   cloneQuotationRevisionData,
   revisionIdFromRpc,
@@ -66,13 +68,14 @@ export async function POST(
   if (denied) return denied;
   const body = await request.json().catch(() => null) as { purpose?: unknown } | null;
   const purpose = typeof body?.purpose === "string" ? body.purpose.trim() : "";
-  if (!purpose) return jsonError("Purpose of revision is required", 400);
+  const purposeError = validateRevisionPurpose(purpose);
+  if (purposeError) return jsonError(purposeError, 400);
 
   const { id } = await context.params;
   const admin = createAdminClient();
   const { data: source, error: sourceError } = await admin
     .from("quotations")
-    .select("id,status,sales_rep_id")
+    .select("id,status,sales_rep_id,quotation_series_id")
     .eq("id", id)
     .eq("org_id", session.org_id)
     .maybeSingle();
@@ -84,7 +87,27 @@ export async function POST(
     [source.sales_rep_id],
   );
   if (scopeDenied) return scopeDenied;
-  if (source.status !== "sent") return jsonError("Only a sent quotation can be revised", 409);
+  if (source.status === "accepted") {
+    const { data: job, error: jobError } = await admin
+      .from("jobs")
+      .select("id,job_status,latest_accepted_quotation_id")
+      .eq("org_id", session.org_id)
+      .eq("quotation_series_id", source.quotation_series_id)
+      .maybeSingle();
+    if (jobError) return jsonError("Unable to validate the quotation job", 500);
+    if (
+      !job ||
+      job.latest_accepted_quotation_id !== source.id ||
+      !canCreatePostAcceptanceRevision(source.status, job.job_status)
+    ) {
+      return jsonError(
+        "Only the latest accepted quotation for a PO Pending or Work in Progress job can be revised",
+        409,
+      );
+    }
+  } else if (source.status !== "sent") {
+    return jsonError("Only a sent or eligible accepted quotation can be revised", 409);
+  }
 
   const supabase = await createSupabaseServerClient();
   const { data, error: rpcError } = await supabase.rpc("create_quotation_revision", {
@@ -94,7 +117,10 @@ export async function POST(
   const newQuotationId = revisionIdFromRpc(data);
   if (rpcError || !newQuotationId) {
     console.error("Unable to create quotation revision", rpcError);
-    return jsonError("Unable to create quotation revision", 500);
+    return jsonError(
+      rpcError?.message ?? "Unable to create quotation revision",
+      rpcError?.code === "P0001" ? 409 : 500,
+    );
   }
 
   try {
@@ -104,5 +130,11 @@ export async function POST(
     return jsonError("The revision was not created because its quotation data or attachments could not be copied safely.", 500);
   }
 
-  return NextResponse.json({ quotation_id: newQuotationId }, { status: 201 });
+  return NextResponse.json(
+    {
+      quotation_id: newQuotationId,
+      post_acceptance: source.status === "accepted",
+    },
+    { status: 201 },
+  );
 }
