@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { currentRelease } from "@/lib/releases/current-release";
 
 export default function LoginPage() {
   const [orgCode, setOrgCode] = useState("");
@@ -337,9 +338,23 @@ export default function LoginPage() {
               <li><Link className="hover:text-zinc-950 hover:underline dark:hover:text-zinc-50" href="/legal/privacy#contact">Contact Privacy Officer</Link></li>
             </ul>
           </nav>
-          <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
-            Access is limited to active organization members. · v1.0.0
-          </p>
+          <div className="mt-4 space-y-1 text-center text-xs text-zinc-500 dark:text-zinc-400">
+            <p>
+              Access is limited to active organization members. ·{" "}
+              <Link
+                className="font-medium underline underline-offset-2 hover:text-zinc-950 dark:hover:text-zinc-50"
+                href={currentRelease.href}
+              >
+                v{currentRelease.version}
+              </Link>
+            </p>
+            <p>
+              Last published:{" "}
+              <time dateTime={currentRelease.publishedAt}>
+                {currentRelease.publishedLabel}
+              </time>
+            </p>
+          </div>
         </div>
       </section>
     </main>
